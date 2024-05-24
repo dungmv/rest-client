@@ -37,50 +37,24 @@ function App() {
       gridTemplateAreas: `"head head head" "side drag body"`
     }}
   >
-    <div className="overflow-hidden bg-gray-100" style={{
-      gridRowStart: 'side',
-      gridColumnStart: 'side',
-      gridRowEnd: 'side',
-      gridColumnEnd: 'side'
-    }}>Sidebar</div>
+    <div className="overflow-hidden bg-gray-100" style={{ gridArea: 'side' }}>Sidebar</div>
     <div className="-translate-x-3 group z-10 flex h-full w-3 cursor-col-resize justify-end right-0"
       onMouseDown={handleMouseDown}
       style={{ gridArea: 'drag' }} />
-    <div className="h-md pt-[1px] w-full border-b min-w-0 pl-20 pr-1" style={{
-      gridRowStart: 'head',
-      gridColumnStart: 'head',
-      gridRowEnd: 'head',
-      gridColumnEnd: 'head'
-    }}>Header</div>
+    <div className="h-md pt-[1px] w-full border-b min-w-0 pl-20 pr-1" style={{ gridArea: 'head' }}>Header</div>
     <div className="p-3 gap-1.5 grid w-full h-full" style={{
-      gridRowStart: 'body',
-      gridColumnStart: 'body',
-      gridRowEnd: 'body',
-      gridColumnEnd: 'body',
+      gridArea: 'body',
       gridTemplateRows: 'minmax(0px, 1fr)',
       gridTemplateColumns: `${sidebarWidth}px 0px 1fr`,
       gridTemplateAreas: `"left drag right"`
     }}>
-      <div className="h-full grid grid-rows-[auto_minmax(0,1fr)] grid-cols-1 bg-slate-300" style={{
-        gridRowStart: 'left',
-        gridColumnStart: 'left',
-        gridRowEnd: 'left',
-        gridColumnEnd: 'left'
-      }}>
+      <div className="h-full grid grid-rows-[auto_minmax(0,1fr)] grid-cols-1 bg-slate-300" style={{ gridArea: 'left' }}>
         Request
       </div>
       <div className="-translate-x-1.5 group z-10 flex h-full w-3 cursor-col-resize justify-center left-0" style={{
-        gridRowStart: 'drag',
-        gridColumnStart: 'drag',
-        gridRowEnd: 'drag',
-        gridColumnEnd: 'drag'
+        gridArea: 'drag'
       }} />
-      <div className="h-full grid grid-rows-[auto_minmax(0,1fr)] grid-cols-1 bg-blue-200" style={{
-        gridRowStart: 'right',
-        gridColumnStart: 'right',
-        gridRowEnd: 'right',
-        gridColumnEnd: 'right'
-      }}>
+      <div className="h-full grid grid-rows-[auto_minmax(0,1fr)] grid-cols-1 bg-blue-200" style={{ gridArea: 'right' }}>
         Response
       </div>
     </div>
