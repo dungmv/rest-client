@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/tauri";
 import './App.css';
 
 function App() {
+  const contentRef = useRef();
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
 
@@ -18,8 +19,10 @@ function App() {
 
 
   const resizeRequest = (e) => {
-    console.log(e)
-    setRequestWidth();
+    const { width, left } = contentRef.current.getBoundingClientRect()
+    const fr = (e.clientX - left) / width;
+    setRequestWidth(fr);
+    console.log(fr)
   }
 
   const resizeSidebar = (e) => {
@@ -39,7 +42,7 @@ function App() {
       draggable={true} onDrag={resizeSidebar}
       style={{ gridArea: 'drag' }} />
     <div className="h-md pt-[1px] w-full border-b min-w-0 pl-20 pr-1" style={{ gridArea: 'head' }}>Header</div>
-    <div className="p-3 gap-1.5 grid w-full h-full" style={{
+    <div ref={contentRef} className="p-3 gap-1.5 grid w-full h-full" style={{
       gridArea: 'body',
       gridTemplateRows: 'minmax(0px, 1fr)',
       gridTemplateColumns: `${requestWidth}fr 0px ${1 - requestWidth}fr`,
