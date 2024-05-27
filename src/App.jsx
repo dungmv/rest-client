@@ -1,13 +1,16 @@
+import './App.css';
 import React, { useEffect, useRef, useState } from "react";
-import { appWindow } from "@tauri-apps/api/window";
 import { window as tauriWindow } from "@tauri-apps/api";
 import { invoke } from "@tauri-apps/api/tauri";
-import './App.css';
+import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
+import { fetch } from '@tauri-apps/api/http';
 
 function App() {
+  const urlInputRef = useRef();
   const contentRef = useRef();
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
+  const [response, setResponse] = useState("");
 
   async function greet() {
     // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
@@ -21,23 +24,6 @@ function App() {
     win.title().then(setTitle);
   }, [win]);
 
-  const [isScaleup, setScaleup] = useState(false);
-  // .minimize() - to minimize the window
-  const onMinimize = () => appWindow.minimize();
-  const onScaleup = () => {
-    // .toggleMaximize() - to swap the window between maximize and minimum
-    appWindow.toggleMaximize();
-    setScaleup(true);
-  }
-
-  const onScaledown = () => {
-    appWindow.toggleMaximize();
-    setScaleup(false);
-  }
-
-  // .close() - to close the window
-  const onClose = () => appWindow.close();
-
   const [requestWidth, setRequestWidth] = useState(0.5);
   const [sidebarWidth, setSidebarWidth] = useState(200);
 
@@ -50,6 +36,11 @@ function App() {
   const resizeSidebar = (e) => {
     setSidebarWidth(e.clientX);
   };
+
+  const sendRequest = async () => {
+    fetch(urlInputRef.current.value)
+      .then(resp => setResponse(resp.data))
+  }
 
   return (<div className="grid w-full h-full"
     style={{
@@ -71,15 +62,28 @@ function App() {
       gridTemplateColumns: `${requestWidth}fr 0px ${1 - requestWidth}fr`,
       gridTemplateAreas: `"left drag right"`
     }}>
-      <div className="h-full grid grid-rows-[auto_minmax(0,1fr)] grid-cols-1 bg-slate-300" style={{ gridArea: 'left' }}>
-        <input type="text" className="form-input rounded-md" value={name} onChange={(e) => setName(e.target.value)} />
+      <div className="h-full grid grid-rows-[auto_minmax(0,1fr)] grid-cols-1 bg-white" style={{ gridArea: 'left' }}>
+        <div className="flex items-center border border-gray-300 rounded-lg w-full">
+          <button className="text-gray-600 w-16 h-10">
+            POST
+          </button>
+          <input
+            ref={urlInputRef}
+            type="text"
+            className="flex-auto px-0 py-2 border-none focus:outline-none h-10"
+            placeholder="url"
+          />
+          <button className="text-gray-600 w-10 h-10" onClick={sendRequest}>
+            <PaperAirplaneIcon className="p-2" />
+          </button>
+        </div>
       </div>
       <div draggable={true} className="-translate-x-1.5 group z-10 flex h-full w-3 cursor-col-resize justify-center left-0"
         onDrag={resizeRequest}
         style={{ gridArea: 'drag' }}
       />
       <div className="h-full grid grid-rows-[auto_minmax(0,1fr)] grid-cols-1 bg-blue-200" style={{ gridArea: 'right' }}>
-        Response
+        {JSON.stringify(response)}
       </div>
     </div>
   </div>);
