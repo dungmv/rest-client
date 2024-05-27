@@ -15,10 +15,21 @@
       "shell": {
         "all": false,
         "open": true
+      },
+      "window": {
+        "startDragging": true,
+        "close": true,
+        "minimize": true,
+        "maximize": true,
+        "center": true
       }
     },
     "windows": [
       {
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "acceptFirstMouse": true,
+        "resizable": true,
         "title": "Rest Client",
         "width": 800,
         "height": 600
