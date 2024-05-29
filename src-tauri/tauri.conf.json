@@ -26,7 +26,7 @@
       "http": {
         "all": true,
         "request": true,
-        "scope": ["https://*"]
+        "scope": ["https://*", "http://*"]
       }
     },
     "windows": [
@@ -36,7 +36,7 @@
         "acceptFirstMouse": true,
         "resizable": true,
         "title": "Rest Client",
-        "width": 800,
+        "width": 1000,
         "height": 600
       }
     ],

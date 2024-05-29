@@ -2,15 +2,23 @@ import './App.css';
 import React, { useEffect, useRef, useState } from "react";
 import { window as tauriWindow } from "@tauri-apps/api";
 import { invoke } from "@tauri-apps/api/tauri";
-import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import { fetch } from '@tauri-apps/api/http';
+import { PaperAirplaneIcon, Cog6ToothIcon } from "@heroicons/react/24/outline";
+import { json } from "@codemirror/lang-json"
+import { lineNumbers, highlightSpecialChars,  } from "@codemirror/view"
+import { EditorState, } from "@codemirror/state"
+import { basicSetup, EditorView } from "codemirror"
 
 function App() {
+  /** @type {React.MutableRefObject<EditorView>} */
+  const editorViewRef = useRef();
+  /** @type {React.MutableRefObject<HTMLInputElement>} */
   const urlInputRef = useRef();
+  /** @type {React.MutableRefObject<HTMLDivElement>} */
   const contentRef = useRef();
+  const responseRef = useRef();
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
-  const [response, setResponse] = useState("");
 
   async function greet() {
     // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
@@ -23,6 +31,17 @@ function App() {
   useEffect(() => {
     win.title().then(setTitle);
   }, [win]);
+
+  useEffect(() => {
+    if (responseRef.current && !editorViewRef.current) {
+      editorViewRef.current = new EditorView({
+        doc: "{}",
+        extensions: [json(), lineNumbers(), highlightSpecialChars(), EditorState.readOnly.of(true), basicSetup],
+        parent: responseRef.current
+      })
+    }
+  }, [responseRef.current]);
+
 
   const [requestWidth, setRequestWidth] = useState(0.5);
   const [sidebarWidth, setSidebarWidth] = useState(200);
@@ -38,8 +57,11 @@ function App() {
   };
 
   const sendRequest = async () => {
-    fetch(urlInputRef.current.value)
-      .then(resp => setResponse(resp.data))
+    const response = await fetch(urlInputRef.current.value)
+    editorViewRef.current.setState(EditorState.create({
+      doc: JSON.stringify(response.data, null, 2),
+      extensions: [json(), lineNumbers(), highlightSpecialChars(), EditorState.readOnly.of(true), basicSetup],
+    }))
   }
 
   return (<div className="grid w-full h-full"
@@ -53,8 +75,12 @@ function App() {
     <div className="-translate-x-3 group z-10 flex h-full w-3 cursor-col-resize justify-end right-0"
       draggable={true} onDrag={resizeSidebar}
       style={{ gridArea: 'drag' }} />
-    <div className="h-md pt-[1px] h-8 w-full border-b min-w-0 pl-20 pr-1" style={{ gridArea: 'head' }} data-tauri-drag-region>
-      <span>{title}</span>
+    <div className="h-md pt-[1px] h-8 w-full border-b min-w-0 pl-20 pr-1 flex items-center justify-between bg-white" style={{ gridArea: 'head' }} data-tauri-drag-region>
+      <div>emddi</div>
+      <div>{title}</div>
+      <div>
+        <button className='text-gray-600 w-8 h-8'><Cog6ToothIcon className="p-2"/></button>
+      </div>
     </div>
     <div ref={contentRef} className="p-3 gap-1.5 grid w-full h-full" style={{
       gridArea: 'body',
@@ -70,6 +96,7 @@ function App() {
           <input
             ref={urlInputRef}
             type="text"
+            defaultValue={"https://api.myip.com"}
             className="flex-auto px-0 py-2 border-none focus:outline-none h-10"
             placeholder="url"
           />
@@ -82,8 +109,8 @@ function App() {
         onDrag={resizeRequest}
         style={{ gridArea: 'drag' }}
       />
-      <div className="h-full grid grid-rows-[auto_minmax(0,1fr)] grid-cols-1 bg-blue-200" style={{ gridArea: 'right' }}>
-        {JSON.stringify(response)}
+      <div className="h-full grid grid-rows-[auto_minmax(0,1fr)] grid-cols-1 p-2 border border-gray-300 rounded-lg bg-white" style={{ gridArea: 'right' }}>
+        <div ref={responseRef} className='border border-gray-300 rounded-lg w-full p-2' />
       </div>
     </div>
   </div>);
