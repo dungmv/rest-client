@@ -58,10 +58,11 @@ function App() {
 
   const sendRequest = async () => {
     const response = await fetch(urlInputRef.current.value)
-    editorViewRef.current.setState(EditorState.create({
-      doc: JSON.stringify(response.data, null, 2),
-      extensions: [json(), lineNumbers(), highlightSpecialChars(), EditorState.readOnly.of(true), basicSetup],
-    }))
+
+    const transaction = editorViewRef.current.state.update({
+      changes: { from: 0, to: editorViewRef.current.state.doc.length, insert: JSON.stringify(response.data, null, 2) }
+    });
+    editorViewRef.current.dispatch(transaction);
   }
 
   return (<div className="grid w-full h-full"
