@@ -1,10 +1,12 @@
 import Database from "@tauri-apps/plugin-sql";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 function useDatabase() {
     /** @type {[Database, React.Dispatch<React.SetStateAction<Database>>]} */
     const [database, setDatabase] = useState(null);
-    Database.load("sqlite:test.db").then(setDatabase);
+    useEffect(() => {
+        Database.load("sqlite:restclient.db").then(setDatabase).catch(console.error);
+    }, []);
     return database
 }
 

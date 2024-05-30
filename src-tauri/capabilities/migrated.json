@@ -6,6 +6,8 @@
     "main"
   ],
   "permissions": [
+    "sql:allow-load",
+    "sql:allow-execute",
     "path:default",
     "event:default",
     "window:default",

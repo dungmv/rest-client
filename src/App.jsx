@@ -60,19 +60,20 @@ function App() {
   }
 
   const resizeSidebar = (e) => {
+    console.log(e.clientX)
     setSidebarWidth(e.clientX);
   };
 
   const sendRequest = async () => {
     const response = await fetch(urlInputRef.current.value)
-
+    const value = await response.json()
     const transaction = editorViewRef.current.state.update({
-      changes: { from: 0, to: editorViewRef.current.state.doc.length, insert: JSON.stringify(response.data, null, 2) }
+      changes: { from: 0, to: editorViewRef.current.state.doc.length, insert: JSON.stringify(value, null, 2) }
     });
     editorViewRef.current.dispatch(transaction);
-    
-    db.execute('INSERT INTO requests (url, response) VALUES (?, ?)', [urlInputRef.current.value, JSON.stringify(response.data, null, 2)])
-    console.log('Inserted')
+
+    // db.execute('INSERT INTO requests (url, response) VALUES (?, ?)', [urlInputRef.current.value, JSON.stringify(response.data, null, 2)])
+    // console.log('Inserted')
   }
 
   return (<div className="grid w-full h-full"
