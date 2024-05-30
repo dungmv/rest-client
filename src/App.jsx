@@ -1,15 +1,21 @@
 import './App.css';
 import React, { useEffect, useRef, useState } from "react";
 import { window as tauriWindow } from "@tauri-apps/api";
-import { invoke } from "@tauri-apps/api/tauri";
-import { fetch } from '@tauri-apps/api/http';
-import { PaperAirplaneIcon, Cog6ToothIcon } from "@heroicons/react/24/outline";
+import { invoke } from "@tauri-apps/api/core";
+import { fetch } from '@tauri-apps/plugin-http';
+import Database from "@tauri-apps/plugin-sql";
+import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import { json } from "@codemirror/lang-json"
-import { lineNumbers, highlightSpecialChars,  } from "@codemirror/view"
+import { lineNumbers, highlightSpecialChars, } from "@codemirror/view"
 import { EditorState, } from "@codemirror/state"
 import { basicSetup, EditorView } from "codemirror"
+import Sidebar from './components/Sidebar';
+import Titlebar from './components/Titlebar';
+import useDatabase from './hooks/useDatabase';
 
 function App() {
+  /** @type {React.MutableRefObject<Database>} */
+  const dbRef = useRef();
   /** @type {React.MutableRefObject<EditorView>} */
   const editorViewRef = useRef();
   /** @type {React.MutableRefObject<HTMLInputElement>} */
@@ -19,6 +25,7 @@ function App() {
   const responseRef = useRef();
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
+  const db = useDatabase()
 
   async function greet() {
     // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
@@ -63,6 +70,9 @@ function App() {
       changes: { from: 0, to: editorViewRef.current.state.doc.length, insert: JSON.stringify(response.data, null, 2) }
     });
     editorViewRef.current.dispatch(transaction);
+    
+    db.execute('INSERT INTO requests (url, response) VALUES (?, ?)', [urlInputRef.current.value, JSON.stringify(response.data, null, 2)])
+    console.log('Inserted')
   }
 
   return (<div className="grid w-full h-full"
@@ -72,17 +82,11 @@ function App() {
       gridTemplateAreas: `"head head head" "side drag body"`
     }}
   >
-    <div className="overflow-hidden bg-gray-100" style={{ gridArea: 'side' }}>Sidebar</div>
+    <Sidebar />
     <div className="-translate-x-3 group z-10 flex h-full w-3 cursor-col-resize justify-end right-0"
       draggable={true} onDrag={resizeSidebar}
       style={{ gridArea: 'drag' }} />
-    <div className="h-md pt-[1px] h-8 w-full border-b min-w-0 pl-20 pr-1 flex items-center justify-between bg-white" style={{ gridArea: 'head' }} data-tauri-drag-region>
-      <div>emddi</div>
-      <div>{title}</div>
-      <div>
-        <button className='text-gray-600 w-8 h-8'><Cog6ToothIcon className="p-2"/></button>
-      </div>
-    </div>
+    <Titlebar title={title} />
     <div ref={contentRef} className="p-3 gap-1.5 grid w-full h-full" style={{
       gridArea: 'body',
       gridTemplateRows: 'minmax(0px, 1fr)',
