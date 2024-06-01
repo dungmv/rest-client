@@ -13,10 +13,10 @@ import Titlebar from './components/Titlebar';
 import useDatabase from './hooks/useDatabase';
 
 function App() {
-    useRef();
-    /** @type {React.MutableRefObject<EditorView>} */
-    const editorViewRef = useRef();
-    /** @type {React.MutableRefObject<HTMLInputElement>} */
+  useRef();
+  /** @type {React.MutableRefObject<EditorView>} */
+  const editorViewRef = useRef();
+  /** @type {React.MutableRefObject<HTMLInputElement>} */
   const urlInputRef = useRef();
   /** @type {React.MutableRefObject<HTMLDivElement>} */
   const contentRef = useRef();
