@@ -3,7 +3,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { window as tauriWindow } from "@tauri-apps/api";
 import { invoke } from "@tauri-apps/api/core";
 import { fetch } from '@tauri-apps/plugin-http';
-import Database from "@tauri-apps/plugin-sql";
 import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import { json } from "@codemirror/lang-json"
 import { lineNumbers, highlightSpecialChars, } from "@codemirror/view"
@@ -14,11 +13,10 @@ import Titlebar from './components/Titlebar';
 import useDatabase from './hooks/useDatabase';
 
 function App() {
-  /** @type {React.MutableRefObject<Database>} */
-  const dbRef = useRef();
-  /** @type {React.MutableRefObject<EditorView>} */
-  const editorViewRef = useRef();
-  /** @type {React.MutableRefObject<HTMLInputElement>} */
+    useRef();
+    /** @type {React.MutableRefObject<EditorView>} */
+    const editorViewRef = useRef();
+    /** @type {React.MutableRefObject<HTMLInputElement>} */
   const urlInputRef = useRef();
   /** @type {React.MutableRefObject<HTMLDivElement>} */
   const contentRef = useRef();
@@ -66,14 +64,15 @@ function App() {
 
   const sendRequest = async () => {
     const response = await fetch(urlInputRef.current.value)
+
     const value = await response.json()
     const transaction = editorViewRef.current.state.update({
       changes: { from: 0, to: editorViewRef.current.state.doc.length, insert: JSON.stringify(value, null, 2) }
     });
     editorViewRef.current.dispatch(transaction);
 
-    // db.execute('INSERT INTO requests (url, response) VALUES (?, ?)', [urlInputRef.current.value, JSON.stringify(response.data, null, 2)])
-    // console.log('Inserted')
+     await db.execute('INSERT INTO requests (url, value) VALUES (?, ?)', [urlInputRef.current.value, JSON.stringify(value, null, 2)])
+     console.log('Inserted')
   }
 
   return (<div className="grid w-full h-full"
