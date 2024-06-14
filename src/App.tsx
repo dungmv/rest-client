@@ -3,7 +3,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { window as tauriWindow } from "@tauri-apps/api";
 import { invoke } from "@tauri-apps/api/core";
 import { fetch } from '@tauri-apps/plugin-http';
-import Database from "@tauri-apps/plugin-sql";
 import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import { json } from "@codemirror/lang-json"
 import { lineNumbers, highlightSpecialChars, } from "@codemirror/view"
@@ -14,15 +13,10 @@ import Titlebar from './components/Titlebar';
 import useDatabase from './hooks/useDatabase';
 
 function App() {
-  /** @type {React.MutableRefObject<Database>} */
-  const dbRef = useRef();
-  /** @type {React.MutableRefObject<EditorView>} */
-  const editorViewRef = useRef();
-  /** @type {React.MutableRefObject<HTMLInputElement>} */
-  const urlInputRef = useRef();
-  /** @type {React.MutableRefObject<HTMLDivElement>} */
-  const contentRef = useRef();
-  const responseRef = useRef();
+  const editorViewRef = useRef<EditorView>(null);
+  const urlInputRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const responseRef = useRef<HTMLDivElement>(null);
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
   const db = useDatabase()
@@ -53,17 +47,19 @@ function App() {
   const [requestWidth, setRequestWidth] = useState(0.5);
   const [sidebarWidth, setSidebarWidth] = useState(200);
 
-  const resizeRequest = (e) => {
+  const resizeRequest = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!contentRef.current) return;
     const { width, left } = contentRef.current.getBoundingClientRect()
     const fr = (e.clientX - left) / width;
     setRequestWidth(fr);
   }
 
-  const resizeSidebar = (e) => {
+  const resizeSidebar = (e: React.DragEvent<HTMLDivElement>) => {
     setSidebarWidth(e.clientX);
   };
 
   const sendRequest = async () => {
+    if (!urlInputRef.current || !editorViewRef.current) return;
     const response = await fetch(urlInputRef.current.value)
     const value = await response.json()
     const transaction = editorViewRef.current.state.update({

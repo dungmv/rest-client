@@ -1,7 +1,12 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { Cog6ToothIcon, PlusCircleIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 
-function Titlebar({ title }) {
+type TitlebarProps = {
+    title: string;
+};
+
+
+function Titlebar({ title }: TitlebarProps) {
     return <div className="h-md pt-[1px] h-8 w-full border-b min-w-0 pl-20 pr-1 flex items-center justify-between bg-white" style={{ gridArea: 'head' }} data-tauri-drag-region>
         <div className='flex items-center justify-center'>
             <button type="button" className='text-gray-600 w-8 h-8'><PlusCircleIcon className="p-2" /></button>
