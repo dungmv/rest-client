@@ -85,7 +85,7 @@ function App() {
   >
     <Sidebar />
     <div className="-translate-x-3 group z-10 flex h-full w-3 cursor-col-resize justify-end right-0"
-      draggable={true} onDrag={resizeSidebar}
+      draggable onDrag={resizeSidebar}
       style={{ gridArea: 'drag' }} />
     <Titlebar title={title} />
     <div ref={contentRef} className="p-3 gap-1.5 grid w-full h-full" style={{

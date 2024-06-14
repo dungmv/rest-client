@@ -30,6 +30,8 @@
         "hiddenTitle": true,
         "acceptFirstMouse": true,
         "resizable": true,
+        "shadow": true,
+        "dragDropEnabled": false,
         "title": "Rest Client",
         "width": 1000,
         "height": 600
