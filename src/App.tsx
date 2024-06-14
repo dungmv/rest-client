@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { window as tauriWindow } from "@tauri-apps/api";
 import { invoke } from "@tauri-apps/api/core";
 import { fetch } from '@tauri-apps/plugin-http';
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import { json } from "@codemirror/lang-json"
 import { lineNumbers, highlightSpecialChars, } from "@codemirror/view"
@@ -71,7 +72,7 @@ function App() {
     // console.log('Inserted')
   }
 
-  return (<div className="grid w-full h-full"
+  return (<div className="grid w-full h-full text-gray-600"
     style={{
       gridTemplateRows: 'auto minmax(0px, 1fr)',
       gridTemplateColumns: `${sidebarWidth}px 0px 1fr`,
@@ -90,20 +91,41 @@ function App() {
       gridTemplateAreas: `"left drag right"`
     }}>
       <div className="h-full grid grid-rows-[auto_minmax(0,1fr)] grid-cols-1 bg-white" style={{ gridArea: 'left' }}>
-        <div className="flex items-center border border-gray-300 rounded-lg w-full">
-          <button className="text-gray-600 w-16 h-10">
-            POST
-          </button>
+        <div className="relative rounded-md shadow-sm">
+          <div className='absolute inset-y-0 left-0 flex items-center'>
+            <Menu>
+                <MenuButton className='pl-2'>GET</MenuButton>
+                <MenuItems anchor="top start" className='pl-2 rounded-xl border border-white/5 bg-white/5 p-1 text-sm/6'>
+                    <MenuItem>
+                        <button className="block data-[focus]:bg-blue-100">
+                            GET
+                        </button>
+                    </MenuItem>
+                    <MenuItem>
+                        <button className="block data-[focus]:bg-blue-100">
+                            POST
+                        </button>
+                    </MenuItem>
+                    <MenuItem>
+                        <button className="block data-[focus]:bg-blue-100">
+                            PUT
+                        </button>
+                    </MenuItem>
+                </MenuItems>
+            </Menu>
+          </div>
           <input
             ref={urlInputRef}
             type="text"
             defaultValue={"https://api.myip.com"}
-            className="flex-auto px-0 py-2 border-none focus:outline-none h-10"
-            placeholder="url"
+            className="block w-full rounded-md border-0 py-1.5 pl-12 pr-20 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 "
+            placeholder="https://api.restclient.com"
           />
-          <button className="text-gray-600 w-10 h-10" onClick={sendRequest}>
-            <PaperAirplaneIcon className="p-2" />
-          </button>
+          <div className="absolute inset-y-0 right-0 flex items-center">
+            <button className="w-10 h-10" onClick={sendRequest}>
+              <PaperAirplaneIcon className="p-2" />
+            </button>
+          </div>
         </div>
       </div>
       <div draggable={true} className="-translate-x-1.5 group z-10 flex h-full w-3 cursor-col-resize justify-center left-0"

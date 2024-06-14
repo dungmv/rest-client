@@ -1,20 +1,30 @@
+import { PlusCircleIcon } from "@heroicons/react/24/outline";
+
 function Sidebar() {
     return <div className="overflow-hidden bg-gray-100" style={{ gridArea: 'side' }}>
-        <ul className="ml-0 flex-col flex">
-            <li>
-                <div className="block relative group/item px-1.5 pb-0.5">
-                    <button className="w-full flex gap-1.5 items-center text-sm h-xs px-1.5 rounded-md transition-colors text-gray-600 group-hover/item:text-gray-800 active:bg-highlightSecondary">
-                        <div className="flex items-end gap-2 min-w-0">
-                            <span className="text-2xs font-mono opacity-50">GET</span>
-                            <span className="truncate">https://api.myip.com</span>
-                        </div>
-                        <div className="ml-auto">
-                            <span className="text-2xs dark:opacity-80 font-mono text-green-600">200</span>
-                        </div>
-                    </button>
-                </div>
-            </li>
-        </ul>
+        <div className="flex items-center p-1.5">
+            <input type="text" className="h-8 w-full border-gray-300 rounded-md" name="search" placeholder="Search" />
+            <button type="button" className='rounded-md border-gray-300 p-1.5 border flex items-center justify-center w-8 h-8'>
+                <PlusCircleIcon className="p-2" />
+            </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+            <ul className="ml-0 flex-col flex">
+                <li>
+                    <div className="block relative group/item px-1.5 pb-0.5">
+                        <button className="w-full flex gap-1.5 items-center text-sm h-xs px-1.5 rounded-md transition-colors group-hover/item:text-gray-800 active:bg-highlightSecondary">
+                            <div className="flex items-end gap-2 min-w-0">
+                                <span className="text-2xs font-mono opacity-50">GET</span>
+                                <span className="truncate">https://api.myip.com</span>
+                            </div>
+                            <div className="ml-auto">
+                                <span className="text-2xs dark:opacity-80 font-mono text-green-600">200</span>
+                            </div>
+                        </button>
+                    </div>
+                </li>
+            </ul>
+        </div>
     </div>
 }
 
