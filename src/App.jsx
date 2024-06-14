@@ -60,7 +60,6 @@ function App() {
   }
 
   const resizeSidebar = (e) => {
-    console.log(e.clientX)
     setSidebarWidth(e.clientX);
   };
 
