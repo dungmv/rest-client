@@ -105,7 +105,7 @@ function App() {
             ref={urlInputRef}
             type="text"
             defaultValue={"https://api.myip.com"}
-            className="block w-full rounded-md border-0 py-1.5 pl-12 pr-20 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 "
+            className="block w-full rounded-md border-0 pl-12 pr-10 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 "
             placeholder="https://api.restclient.com"
           />
           <div className="absolute inset-y-0 right-0 flex items-center">
