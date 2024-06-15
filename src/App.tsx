@@ -1,7 +1,6 @@
 import './App.css';
 import React, { useEffect, useRef, useState } from "react";
 import { window as tauriWindow } from "@tauri-apps/api";
-import { invoke } from "@tauri-apps/api/core";
 import { fetch } from '@tauri-apps/plugin-http';
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
@@ -11,21 +10,12 @@ import { EditorState, } from "@codemirror/state"
 import { basicSetup, EditorView } from "codemirror"
 import Sidebar from './components/Sidebar';
 import Titlebar from './components/Titlebar';
-import useDatabase from './hooks/useDatabase';
 
 function App() {
   const editorViewRef = useRef<EditorView>(null);
   const urlInputRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const responseRef = useRef<HTMLDivElement>(null);
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-  const db = useDatabase()
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-    setGreetMsg(await invoke("greet", { name }));
-  }
 
   const [title, setTitle] = useState("");
   const win = tauriWindow.getCurrent();
@@ -67,9 +57,6 @@ function App() {
       changes: { from: 0, to: editorViewRef.current.state.doc.length, insert: JSON.stringify(value, null, 2) }
     });
     editorViewRef.current.dispatch(transaction);
-
-    // db.execute('INSERT INTO requests (url, response) VALUES (?, ?)', [urlInputRef.current.value, JSON.stringify(response.data, null, 2)])
-    // console.log('Inserted')
   }
 
   return (<div className="grid w-full h-full text-gray-600"
@@ -118,7 +105,7 @@ function App() {
             ref={urlInputRef}
             type="text"
             defaultValue={"https://api.myip.com"}
-            className="block w-full rounded-md border-0 py-1.5 pl-12 pr-20 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 "
+            className="block w-full rounded-md border-0 py-1.5 pl-12 pr-20 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 "
             placeholder="https://api.restclient.com"
           />
           <div className="absolute inset-y-0 right-0 flex items-center">
