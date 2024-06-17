@@ -4,8 +4,8 @@ function Sidebar() {
     return <div className="overflow-hidden bg-gray-100" style={{ gridArea: 'side' }}>
         <div className="flex items-center p-1.5">
             <input type="text" className="h-8 w-full border-gray-300 rounded-md placeholder:text-gray-400" name="search" placeholder="Search" />
-            <button type="button" className=' p-1  w-8 h-8'>
-                <PlusCircleIcon className="p-0" />
+            <button type="button" className='w-8 h-8 p-1'>
+                <PlusCircleIcon />
             </button>
         </div>
         <div className="flex-1 overflow-y-auto">

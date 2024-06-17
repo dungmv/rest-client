@@ -1013,7 +1013,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/api@npm:^2.0.0-beta.13":
+"@tauri-apps/api@npm:2.0.0-beta.13, @tauri-apps/api@npm:^2.0.0-beta.13":
   version: 2.0.0-beta.13
   resolution: "@tauri-apps/api@npm:2.0.0-beta.13"
   checksum: 10c0/3858675a4c7c621abc28c0f0c3bf0e7b979c84c4b814b0f9f6d27e79f499c86a95c2366e28cfe8875a7971cc0e9c790e1063b7ba760a1badcdb8e6ef428d3951
@@ -1128,6 +1128,15 @@ __metadata:
   bin:
     tauri: tauri.js
   checksum: 10c0/39eef5766228c4c40e81700984548a920e5a6617ca875bf28f539056abaeb4ffc9cb1219dfccae406adc47b5e4dd74bbc63c1c8157aca5c0a0f82906e2f387af
+  languageName: node
+  linkType: hard
+
+"@tauri-apps/plugin-fs@npm:^2.0.0-beta.5":
+  version: 2.0.0-beta.5
+  resolution: "@tauri-apps/plugin-fs@npm:2.0.0-beta.5"
+  dependencies:
+    "@tauri-apps/api": "npm:2.0.0-beta.13"
+  checksum: 10c0/3b5e5077befb39c7c3825dd79efbe5dd63ba77ead0362bb447f29d473a7b3e7bc6316ab7b97a1bc7554d98d5097f6168cea2ef708f1893dd86cc99d7d2d391a7
   languageName: node
   linkType: hard
 
@@ -2680,6 +2689,7 @@ __metadata:
     "@tailwindcss/forms": "npm:^0.5.7"
     "@tauri-apps/api": "npm:^2.0.0-beta.13"
     "@tauri-apps/cli": "npm:^2.0.0-beta.20"
+    "@tauri-apps/plugin-fs": "npm:^2.0.0-beta.5"
     "@tauri-apps/plugin-http": "npm:^2.0.0-beta.4"
     "@tauri-apps/plugin-shell": "npm:^2.0.0-beta.5"
     "@tauri-apps/plugin-sql": "npm:^2.0.0-beta.4"

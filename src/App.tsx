@@ -1,7 +1,7 @@
-import './App.css';
 import React, { useEffect, useRef, useState } from "react";
 import { window as tauriWindow } from "@tauri-apps/api";
 import { fetch } from '@tauri-apps/plugin-http';
+import { BaseDirectory, readDir } from "@tauri-apps/plugin-fs";
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import { json } from "@codemirror/lang-json"
@@ -34,6 +34,10 @@ function App() {
     }
   }, [responseRef.current]);
 
+  useEffect(() => {
+    console.log('Reading directory...')
+    readDir('nexgen', {baseDir: BaseDirectory.Document}).then(console.log).catch(console.error);
+  }, [])
 
   const [requestWidth, setRequestWidth] = useState(0.5);
   const [sidebarWidth, setSidebarWidth] = useState(200);

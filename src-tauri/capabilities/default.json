@@ -20,6 +20,7 @@
     "window:allow-minimize",
     "window:allow-close",
     "window:allow-start-dragging",
+    "fs:allow-document-read-recursive",
     "shell:allow-open",
     {
       "identifier": "http:default",
