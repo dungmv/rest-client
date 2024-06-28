@@ -52,66 +52,68 @@ function Titlebar({ title }: TitlebarProps) {
       style={{ gridArea: "head" }}
       data-tauri-drag-region
     >
-      <div className="flex items-center justify-center">
-        <Menu>
-          <MenuButton>workspace</MenuButton>
-          <MenuItems
-            anchor="bottom"
-            className="rounded border border-white bg-white shadow p-4 mt-1"
-          >
-            <MenuItem>
-              <button className="block data-[focus]:bg-blue-100">
-                Settings
-              </button>
-            </MenuItem>
-            <MenuItem>
-              <button className="block data-[focus]:bg-blue-100">
-                Support
-              </button>
-            </MenuItem>
-            <MenuItem>
-              <button className="block data-[focus]:bg-blue-100" onClick={createWorkspace}>
-                New Workspace
-              </button>
-            </MenuItem>
-            <MenuItem>
-              <button className="block data-[focus]:bg-blue-100" onClick={openWorkspace}>
-                Open Workspace
-              </button>
-            </MenuItem>
-          </MenuItems>
-        </Menu>
-        <ChevronRightIcon className="w-4 h-4" />
-        <Menu>
-          <MenuButton>env</MenuButton>
-          <MenuItems
-            anchor="bottom"
-            className="shadow-md rounded border border-white bg-white p-3 text-sm"
-          >
-            <MenuItem>
-              <button className="block data-[focus]:bg-blue-100">dev</button>
-            </MenuItem>
-            <MenuItem>
-              <button className="block data-[focus]:bg-blue-100">prod</button>
-            </MenuItem>
-            <MenuItem>
-              <button className="block data-[focus]:bg-blue-100">local</button>
-            </MenuItem>
-            <div className="my-1 h-px bg-white" />
-            <MenuItem>
-              <button className="group flex w-full items-center gap-2 rounded-lg py-1.5 data-[focus]:bg-white">
-                <PencilIcon className="size-4 fill-white" />
-                Edit
-              </button>
-            </MenuItem>
-          </MenuItems>
-        </Menu>
-      </div>
-      <div className="flex items-center justify-center text-sm">{title}</div>
-      <div className="flex items-center justify-center">
-        <button className="text-gray-600 w-8 h-8">
-          <Cog6ToothIcon className="p-2" />
-        </button>
+      <div className="pointer-events-none w-full h-full flex-row gap-2 flex items-center justify-center">
+        <div className="flex-1 pointer-events-none flex-row gap-0.5 flex items-center">
+          <Menu>
+            <MenuButton>workspace</MenuButton>
+            <MenuItems
+              anchor="bottom"
+              className="rounded border border-white bg-white shadow p-4 mt-1"
+            >
+              <MenuItem>
+                <button className="block data-[focus]:bg-blue-100">
+                  Settings
+                </button>
+              </MenuItem>
+              <MenuItem>
+                <button className="block data-[focus]:bg-blue-100">
+                  Support
+                </button>
+              </MenuItem>
+              <MenuItem>
+                <button className="block data-[focus]:bg-blue-100" onClick={createWorkspace}>
+                  New Workspace
+                </button>
+              </MenuItem>
+              <MenuItem>
+                <button className="block data-[focus]:bg-blue-100" onClick={openWorkspace}>
+                  Open Workspace
+                </button>
+              </MenuItem>
+            </MenuItems>
+          </Menu>
+          <ChevronRightIcon className="w-4 h-4" />
+          <Menu>
+            <MenuButton>env</MenuButton>
+            <MenuItems
+              anchor="bottom"
+              className="shadow-md rounded border border-white bg-white p-3 text-sm"
+            >
+              <MenuItem>
+                <button className="block data-[focus]:bg-blue-100">dev</button>
+              </MenuItem>
+              <MenuItem>
+                <button className="block data-[focus]:bg-blue-100">prod</button>
+              </MenuItem>
+              <MenuItem>
+                <button className="block data-[focus]:bg-blue-100">local</button>
+              </MenuItem>
+              <div className="my-1 h-px bg-white" />
+              <MenuItem>
+                <button className="group flex w-full items-center gap-2 rounded-lg py-1.5 data-[focus]:bg-white">
+                  <PencilIcon className="size-4 fill-white" />
+                  Edit
+                </button>
+              </MenuItem>
+            </MenuItems>
+          </Menu>
+        </div>
+        <div className="pointer-events-none">{title}</div>
+        <div className="flex-1 flex gap-1 items-center h-full justify-end pointer-events-none pr-0.5">
+          <button className="text-gray-600 w-8 h-8">
+            <Cog6ToothIcon className="p-2" />
+          </button>
+        </div>
       </div>
     </div>
   );
