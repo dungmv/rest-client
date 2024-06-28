@@ -20,6 +20,7 @@
     "window:allow-minimize",
     "window:allow-close",
     "window:allow-start-dragging",
+    "dialog:allow-open",
     "fs:allow-document-read-recursive",
     "fs:allow-document-write-recursive",
     "shell:allow-open",

@@ -21,6 +21,7 @@ serde_json = "1"
 tauri-plugin-http = "2.0.0-beta.8"
 tauri-plugin-shell = "2.0.0-beta.6"
 tauri-plugin-fs = "2.0.0-beta"
+tauri-plugin-dialog = "2.0.0-beta"
 
 [dependencies.tauri-plugin-sql]
 git = "https://github.com/tauri-apps/plugins-workspace"

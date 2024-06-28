@@ -2,6 +2,7 @@ import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { PencilIcon } from "@heroicons/react/24/outline";
 import { Cog6ToothIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 import { writeTextFile, BaseDirectory, readDir } from "@tauri-apps/plugin-fs";
+import { open } from '@tauri-apps/plugin-dialog';
 import YAML from 'yaml'
 
 type TitlebarProps = {
@@ -9,7 +10,7 @@ type TitlebarProps = {
 };
 
 function Titlebar({ title }: TitlebarProps) {
-  const onCreateNew = () => {
+  const onWorkspace = () => {
     const yml = YAML.stringify({
       version: '1',
       name: 'get ip',
@@ -28,8 +29,12 @@ function Titlebar({ title }: TitlebarProps) {
     }).catch(console.error);
   }
 
-  const onRefresh = () => {
-    readDir('nexgen/restclient', { baseDir: BaseDirectory.Document }).then(console.log).catch(console.error);
+  const openWorkspace = async () => {
+    const selected = await open({ title: 'Select workpsace', directory: true, multiple: false });
+    if (selected) {
+      const directories = await readDir('nexgen/restclient', { baseDir: BaseDirectory.Document })
+      console.log(JSON.stringify(directories))
+    }
   }
 
   return (
@@ -56,13 +61,13 @@ function Titlebar({ title }: TitlebarProps) {
               </button>
             </MenuItem>
             <MenuItem>
-              <button className="block data-[focus]:bg-blue-100" onClick={onCreateNew}>
+              <button className="block data-[focus]:bg-blue-100" onClick={onWorkspace}>
                 New Workspace
               </button>
             </MenuItem>
             <MenuItem>
-              <button className="block data-[focus]:bg-blue-100" onClick={onRefresh}>
-                Refresh
+              <button className="block data-[focus]:bg-blue-100" onClick={openWorkspace}>
+                Open Workspace
               </button>
             </MenuItem>
           </MenuItems>

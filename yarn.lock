@@ -1131,6 +1131,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@tauri-apps/plugin-dialog@npm:^2.0.0-beta.5":
+  version: 2.0.0-beta.5
+  resolution: "@tauri-apps/plugin-dialog@npm:2.0.0-beta.5"
+  dependencies:
+    "@tauri-apps/api": "npm:2.0.0-beta.13"
+  checksum: 10c0/65a7bcb7835ffc4256d25a96d9a1c7111a89f342c807dfa15eb1ed2874d85e4d11674bea5c42e798febd2b2aad49128ec86abc1e2a1368ff19111e41f5aa4c47
+  languageName: node
+  linkType: hard
+
 "@tauri-apps/plugin-fs@npm:^2.0.0-beta.5":
   version: 2.0.0-beta.5
   resolution: "@tauri-apps/plugin-fs@npm:2.0.0-beta.5"
@@ -2689,6 +2698,7 @@ __metadata:
     "@tailwindcss/forms": "npm:^0.5.7"
     "@tauri-apps/api": "npm:^2.0.0-beta.13"
     "@tauri-apps/cli": "npm:^2.0.0-beta.20"
+    "@tauri-apps/plugin-dialog": "npm:^2.0.0-beta.5"
     "@tauri-apps/plugin-fs": "npm:^2.0.0-beta.5"
     "@tauri-apps/plugin-http": "npm:^2.0.0-beta.4"
     "@tauri-apps/plugin-shell": "npm:^2.0.0-beta.5"
