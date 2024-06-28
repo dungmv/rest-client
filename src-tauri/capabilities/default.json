@@ -21,6 +21,7 @@
     "window:allow-close",
     "window:allow-start-dragging",
     "fs:allow-document-read-recursive",
+    "fs:allow-document-write-recursive",
     "shell:allow-open",
     {
       "identifier": "http:default",

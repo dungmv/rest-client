@@ -1,12 +1,37 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { PencilIcon } from "@heroicons/react/24/outline";
 import { Cog6ToothIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
+import { writeTextFile, BaseDirectory, readDir } from "@tauri-apps/plugin-fs";
+import YAML from 'yaml'
 
 type TitlebarProps = {
   title: string;
 };
 
 function Titlebar({ title }: TitlebarProps) {
+  const onCreateNew = () => {
+    const yml = YAML.stringify({
+      version: '1',
+      name: 'get ip',
+      url: 'https://api.myip.com',
+      method: 'GET',
+      headers: [
+        'Accept: application/json',
+        `Content-Type: application/json`,
+      ],
+      body: JSON.stringify({ ip: '127.0.0.1' })
+    })
+
+    console.log(yml)
+    writeTextFile('nexgen/restclient/data.yml', yml, { baseDir: BaseDirectory.Document }).then(() => {
+      console.log('write successful')
+    }).catch(console.error);
+  }
+
+  const onRefresh = () => {
+    readDir('nexgen/restclient', { baseDir: BaseDirectory.Document }).then(console.log).catch(console.error);
+  }
+
   return (
     <div
       className="h-md pt-[1px] h-8 w-full border-b min-w-0 pl-20 pr-1 flex items-center justify-between bg-white"
@@ -31,8 +56,13 @@ function Titlebar({ title }: TitlebarProps) {
               </button>
             </MenuItem>
             <MenuItem>
-              <button className="block data-[focus]:bg-blue-100">
+              <button className="block data-[focus]:bg-blue-100" onClick={onCreateNew}>
                 New Workspace
+              </button>
+            </MenuItem>
+            <MenuItem>
+              <button className="block data-[focus]:bg-blue-100" onClick={onRefresh}>
+                Refresh
               </button>
             </MenuItem>
           </MenuItems>
