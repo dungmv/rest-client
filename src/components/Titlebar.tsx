@@ -4,13 +4,16 @@ import { Cog6ToothIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 import { writeTextFile, BaseDirectory, readDir } from "@tauri-apps/plugin-fs";
 import { open } from '@tauri-apps/plugin-dialog';
 import YAML from 'yaml'
+import { useEffect, useState } from "react";
 
 type TitlebarProps = {
   title: string;
 };
 
 function Titlebar({ title }: TitlebarProps) {
-  const onWorkspace = () => {
+  const [wd, setWD] = useState('')
+
+  const createWorkspace = () => {
     const yml = YAML.stringify({
       version: '1',
       name: 'get ip',
@@ -23,7 +26,6 @@ function Titlebar({ title }: TitlebarProps) {
       body: JSON.stringify({ ip: '127.0.0.1' })
     })
 
-    console.log(yml)
     writeTextFile('nexgen/restclient/data.yml', yml, { baseDir: BaseDirectory.Document }).then(() => {
       console.log('write successful')
     }).catch(console.error);
@@ -32,10 +34,17 @@ function Titlebar({ title }: TitlebarProps) {
   const openWorkspace = async () => {
     const selected = await open({ title: 'Select workpsace', directory: true, multiple: false });
     if (selected) {
-      const directories = await readDir('nexgen/restclient', { baseDir: BaseDirectory.Document })
-      console.log(JSON.stringify(directories))
+      setWD(selected)
     }
   }
+
+  useEffect(() => {
+    if (!wd) return;
+    console.log('wd', wd);
+    readDir(wd, {  }).then(directories => {
+      console.log(JSON.stringify(directories))
+    }).catch(console.error)
+  }, [wd])
 
   return (
     <div
@@ -61,7 +70,7 @@ function Titlebar({ title }: TitlebarProps) {
               </button>
             </MenuItem>
             <MenuItem>
-              <button className="block data-[focus]:bg-blue-100" onClick={onWorkspace}>
+              <button className="block data-[focus]:bg-blue-100" onClick={createWorkspace}>
                 New Workspace
               </button>
             </MenuItem>
