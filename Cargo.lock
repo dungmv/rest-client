@@ -5475,11 +5475,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "gpui-component",
  "gpui-kit",
+ "gpui-pre",
  "restclient-core",
  "serde",
  "serde_json",
  "tokio",
+ "url",
  "uuid",
 ]
 
