@@ -1,10 +1,12 @@
 use crate::components::status_badge::MethodBadge;
 use crate::state::{EditorState, WorkspaceState};
 use crate::theme::theme;
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
+    div, px, AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
     RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
+use gpui_component::input::{Input, InputState};
 use restclient_core::interpolation::scan_variables;
 use restclient_core::models::HttpMethod;
 
@@ -12,6 +14,7 @@ use restclient_core::models::HttpMethod;
 pub struct RequestBar {
     workspace_state: Entity<WorkspaceState>,
     editor_state: Entity<EditorState>,
+    url_input: Entity<InputState>,
     on_send: std::rc::Rc<dyn Fn(&mut Window, &mut App)>,
 }
 
@@ -19,11 +22,13 @@ impl RequestBar {
     pub fn new(
         workspace_state: Entity<WorkspaceState>,
         editor_state: Entity<EditorState>,
+        url_input: Entity<InputState>,
         on_send: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         Self {
             workspace_state,
             editor_state,
+            url_input,
             on_send: std::rc::Rc::new(on_send),
         }
     }
@@ -37,13 +42,13 @@ impl RenderOnce for RequestBar {
 
         let active_req = ed.active_request.clone();
         let method = active_req.as_ref().map(|r| r.method).unwrap_or(HttpMethod::Get);
-        let url = active_req.as_ref().map(|r| r.url.clone()).unwrap_or_default();
+        let url = self.url_input.read(cx).value().to_string();
         let is_sending = ed.is_sending;
 
         let ed_clone = self.editor_state.clone();
         let on_send = self.on_send.clone();
 
-        // Scan variables in URL for highlight
+        // Scan variables in URL for badges in suffix
         let active_env = ws.active_environment();
         let var_spans = scan_variables(&url, active_env);
 
@@ -82,73 +87,52 @@ impl RenderOnce for RequestBar {
                             .child("▾"),
                     )
             })
-            // URL Input Box with syntax tokens
+            // URL Input Box with live editing and variable status badges
             .child(
                 div()
                     .flex_1()
-                    .h(px(30.))
-                    .px(px(8.))
-                    .rounded(px(6.))
-                    .bg(t.bg_input)
-                    .border_1()
-                    .border_color(t.border)
+                    .h(px(32.))
                     .flex()
                     .items_center()
-                    .gap(px(4.))
-                    .overflow_hidden()
                     .child({
-                        // Render URL with variable chips
+                        let input_el = Input::new(&self.url_input)
+                            .id("url-input-field")
+                            .cleanable(true);
+
                         if var_spans.is_empty() {
-                            div()
-                                .text_xs()
-                                .font_family(".SystemMonoFont")
-                                .text_color(t.text_primary)
-                                .child(if url.is_empty() { "Enter request URL...".to_string() } else { url })
+                            input_el.into_any_element()
                         } else {
-                            let mut chunks = Vec::new();
-                            let mut last_end = 0;
-                            for span in var_spans {
-                                if span.start > last_end {
-                                    chunks.push(
-                                        div()
-                                            .text_xs()
-                                            .font_family(".SystemMonoFont")
-                                            .text_color(t.text_primary)
-                                            .child(url[last_end..span.start].to_string()),
-                                    );
-                                }
-                                let var_color = if span.is_resolved {
-                                    t.var_resolved
-                                } else {
-                                    t.var_unresolved
-                                };
-                                chunks.push(
+                            input_el
+                                .suffix(
                                     div()
-                                        .text_xs()
-                                        .font_family(".SystemMonoFont")
-                                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                                        .text_color(var_color)
-                                        .child(format!("{{{{{}}}}}", span.name)),
-                                );
-                                last_end = span.end;
-                            }
-                            if last_end < url.len() {
-                                chunks.push(
-                                    div()
-                                        .text_xs()
-                                        .font_family(".SystemMonoFont")
-                                        .text_color(t.text_primary)
-                                        .child(url[last_end..].to_string()),
-                                );
-                            }
-                            div()
-                                .flex()
-                                .items_center()
-                                .children(chunks)
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(4.))
+                                        .px(px(4.))
+                                        .children(var_spans.into_iter().map(|span| {
+                                            let color = if span.is_resolved {
+                                                t.var_resolved
+                                            } else {
+                                                t.var_unresolved
+                                            };
+                                            div()
+                                                .px(px(4.))
+                                                .py(px(1.))
+                                                .rounded(px(3.))
+                                                .bg(t.bg_card)
+                                                .border_1()
+                                                .border_color(color)
+                                                .text_xs()
+                                                .font_family(".SystemMonoFont")
+                                                .text_color(color)
+                                                .child(format!("{{{{{}}}}}", span.name))
+                                        })),
+                                )
+                                .into_any_element()
                         }
                     }),
             )
-            // Send / Cancel Button
+            // Send / Cancel Button with keyboard shortcut tooltip
             .child({
                 let ed_s = ed_clone.clone();
                 let on_send_cb = on_send.clone();
@@ -156,7 +140,7 @@ impl RenderOnce for RequestBar {
                 div()
                     .id("btn-send-or-cancel")
                     .px(px(14.))
-                    .h(px(30.))
+                    .h(px(32.))
                     .rounded(px(6.))
                     .bg(if is_sending { t.status_5xx } else { t.primary })
                     .hover(|s| {

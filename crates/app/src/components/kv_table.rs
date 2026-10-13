@@ -53,10 +53,10 @@ impl RenderOnce for KvTable {
                     .text_color(t.text_muted)
                     .border_b_1()
                     .border_color(t.border)
-                    .child(div().w(px(28.)).child(""))
-                    .child(div().w(px(200.)).child("Key"))
+                    .child(div().w(px(24.)).child(""))
+                    .child(div().w(px(220.)).child("Key"))
                     .child(div().flex_1().child("Value"))
-                    .child(div().w(px(32.)).child("")),
+                    .child(div().w(px(28.)).child("")),
             )
             // Table Rows
             .children(self.pairs.into_iter().enumerate().map(|(idx, pair)| {
@@ -101,9 +101,9 @@ impl RenderOnce for KvTable {
                     // Key
                     .child(
                         div()
-                            .w(px(200.))
+                            .w(px(220.))
                             .h(px(28.))
-                            .px(px(6.))
+                            .px(px(8.))
                             .rounded(px(4.))
                             .bg(t.bg_input)
                             .border_1()
@@ -120,7 +120,7 @@ impl RenderOnce for KvTable {
                         div()
                             .flex_1()
                             .h(px(28.))
-                            .px(px(6.))
+                            .px(px(8.))
                             .rounded(px(4.))
                             .bg(t.bg_input)
                             .border_1()
@@ -152,33 +152,33 @@ impl RenderOnce for KvTable {
                             .child("×")
                     })
             }))
-            // Add row button
+            // Add row & common quick templates
             .child(
                 div()
-                    .pt(px(4.))
+                    .pt(px(6.))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
                     .child(
                         div()
                             .id("btn-add-kv-row")
-                            .px(px(8.))
+                            .px(px(10.))
                             .py(px(4.))
                             .rounded(px(4.))
-                            .w(px(80.))
-                            .bg(t.bg_card)
-                            .border_1()
-                            .border_color(t.border)
+                            .bg(t.primary)
                             .cursor_pointer()
-                            .hover(|s| s.bg(t.bg_hover))
+                            .hover(|s| s.bg(t.primary_hover))
                             .flex()
                             .items_center()
                             .justify_center()
-                            .gap(px(4.))
                             .text_xs()
-                            .text_color(t.text_secondary)
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(t.primary_foreground)
                             .on_click(move |_, window, cx| {
                                 on_add_cb(window, cx);
                             })
-                            .child("+ Add"),
-                    ),
+                            .child("+ Add Row"),
+                    )
             )
     }
 }

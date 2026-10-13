@@ -8,6 +8,7 @@ mod theme;
 use components::*;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
+use gpui_component::input::{InputEvent, InputState, TextareaState};
 use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
 use gpui_kit::assets::Assets;
 use platform::default_window_options;
@@ -31,17 +32,24 @@ pub struct AppView {
     editor_state: Entity<EditorState>,
     response_state: Entity<ResponseState>,
     toast_state: Entity<ToastState>,
+    url_input: Entity<InputState>,
+    json_textarea: Entity<TextareaState>,
+    raw_textarea: Entity<TextareaState>,
     executor: Arc<ReqwestExecutor>,
     tokio_rt: Arc<tokio::runtime::Runtime>,
     _subscriptions: Vec<Subscription>,
 }
 
 impl AppView {
-    pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let workspace_state = cx.new(|_| WorkspaceState::new());
         let editor_state = cx.new(|_| EditorState::new());
         let response_state = cx.new(|_| ResponseState::new());
         let toast_state = cx.new(|_| ToastState::new());
+
+        let url_input = cx.new(|cx| InputState::new(window, cx));
+        let json_textarea = cx.new(|cx| TextareaState::new(window, cx));
+        let raw_textarea = cx.new(|cx| TextareaState::new(window, cx));
 
         let executor = Arc::new(ReqwestExecutor::new());
         let tokio_rt = Arc::new(
@@ -51,12 +59,28 @@ impl AppView {
                 .expect("Failed to create tokio runtime"),
         );
 
-        // Select initial request from workspace into editor
+        // Select initial request from workspace into editor and input fields
         let initial_req = workspace_state.read(cx).requests.first().cloned();
-        if let Some(req) = initial_req {
+        if let Some(req) = &initial_req {
             editor_state.update(cx, |ed, cx| {
                 ed.set_active_request(req.clone(), true, cx);
             });
+
+            let req_url = req.url.clone();
+            url_input.update(cx, |inp, cx| {
+                inp.set_value(req_url, window, cx);
+            });
+
+            if let RequestBody::Json(json_content) = &req.body {
+                json_textarea.update(cx, |txt, cx| {
+                    txt.set_value(json_content.clone(), window, cx);
+                });
+            } else if let RequestBody::Raw { content, .. } = &req.body {
+                raw_textarea.update(cx, |txt, cx| {
+                    txt.set_value(content.clone(), window, cx);
+                });
+            }
+
             // Load initial history
             let history = workspace_state
                 .read(cx)
@@ -69,36 +93,96 @@ impl AppView {
             });
         }
 
-        // Add sample update toast matching reference screenshot
+        // Welcome / update toast
         toast_state.update(cx, |ts, cx| {
             ts.push_toast(
                 ToastItem {
-                    id: "update-banner".to_string(),
-                    kind: ToastKind::Info,
-                    title: "Yaak 2026.9.0 is available".to_string(),
-                    message: "Do you want to install the update?".to_string(),
-                    action_label: Some("Install Now".to_string()),
+                    id: "phase0-ready".to_string(),
+                    kind: ToastKind::Success,
+                    title: "RestClient Core Engine Ready".to_string(),
+                    message: "Phase 0 HTTP Foundation activated: 120 FPS GPUI decoupled from Tokio runtime.".to_string(),
+                    action_label: None,
                     action_fn: None,
                 },
                 cx,
             );
         });
 
-        // Set up subscriptions: when editor changes active request, reload response history
+        // Set up subscriptions:
         let mut _subscriptions = Vec::new();
+
+        // 1. Subscribe to URL input change
+        let ed_url = editor_state.clone();
+        _subscriptions.push(cx.subscribe(&url_input, move |this, input, event, cx| {
+            match event {
+                InputEvent::Change => {
+                    let val = input.read(cx).value().to_string();
+                    ed_url.update(cx, |ed, cx| {
+                        ed.set_url(val, cx);
+                    });
+                }
+                InputEvent::PressEnter { .. } => {
+                    this.send_current_request(cx);
+                }
+                _ => {}
+            }
+        }));
+
+        // 2. Subscribe to JSON textarea change
+        let ed_json = editor_state.clone();
+        _subscriptions.push(cx.subscribe(&json_textarea, move |_, txt, event, cx| {
+            if let InputEvent::Change = event {
+                let val = txt.read(cx).value().to_string();
+                ed_json.update(cx, |ed, cx| {
+                    ed.set_body_json(val, cx);
+                });
+            }
+        }));
+
+        // 3. Subscribe to Raw textarea change
+        let ed_raw = editor_state.clone();
+        _subscriptions.push(cx.subscribe(&raw_textarea, move |_, txt, event, cx| {
+            if let InputEvent::Change = event {
+                let val = txt.read(cx).value().to_string();
+                ed_raw.update(cx, |ed, cx| {
+                    let content_type = if let Some(req) = &ed.active_request {
+                        if let RequestBody::Raw { content_type, .. } = &req.body {
+                            content_type.clone()
+                        } else {
+                            "text/plain".to_string()
+                        }
+                    } else {
+                        "text/plain".to_string()
+                    };
+                    ed.set_raw_body(val, content_type, cx);
+                });
+            }
+        }));
+
+        // 4. Observe editor_state: reload response history when active request switches & auto-save
         let ws_clone = workspace_state.clone();
         let resp_clone = response_state.clone();
+        let mut last_req_id = initial_req.as_ref().map(|r| r.id.clone());
         _subscriptions.push(cx.observe(&editor_state, move |_, ed, cx| {
-            if let Some(req) = &ed.read(cx).active_request {
+            let active_req = ed.read(cx).active_request.clone();
+            if let Some(req) = active_req {
                 let req_id = req.id.clone();
-                let history = ws_clone
-                    .read(cx)
-                    .history_storage
-                    .get_responses(&req_id, 20)
-                    .unwrap_or_default();
-                let latest = history.first().cloned();
-                resp_clone.update(cx, |r_state, cx| {
-                    r_state.set_response(latest, history, cx);
+                if last_req_id.as_ref() != Some(&req_id) {
+                    last_req_id = Some(req_id.clone());
+                    let history = ws_clone
+                        .read(cx)
+                        .history_storage
+                        .get_responses(&req_id, 20)
+                        .unwrap_or_default();
+                    let latest = history.first().cloned();
+                    resp_clone.update(cx, |r_state, cx| {
+                        r_state.set_response(latest, history, cx);
+                    });
+                }
+
+                // Auto-save active request to workspace storage
+                ws_clone.update(cx, |ws, cx| {
+                    ws.update_request(req, cx);
                 });
             }
         }));
@@ -108,6 +192,9 @@ impl AppView {
             editor_state,
             response_state,
             toast_state,
+            url_input,
+            json_textarea,
+            raw_textarea,
             executor,
             tokio_rt,
             _subscriptions,
@@ -253,15 +340,27 @@ impl AppView {
 }
 
 impl Render for AppView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme();
-        let ws = self.workspace_state.read(cx);
-        let ed = self.editor_state.read(cx);
 
-        let sidebar_collapsed = ws.sidebar_collapsed;
-        let is_vertical_split = ws.split_layout_vertical;
-        let active_tab_kind = ed.active_tab_kind;
-        let active_req = ed.active_request.clone();
+        let sidebar_collapsed = self.workspace_state.read(cx).sidebar_collapsed;
+        let is_vertical_split = self.workspace_state.read(cx).split_layout_vertical;
+        let show_env_modal = self.workspace_state.read(cx).show_env_modal;
+        let show_cookies_modal = self.workspace_state.read(cx).show_cookies_modal;
+        let show_command_palette = self.workspace_state.read(cx).show_command_palette;
+
+        let active_tab_kind = self.editor_state.read(cx).active_tab_kind;
+        let method_dropdown_open = self.editor_state.read(cx).method_dropdown_open;
+        let active_req = self.editor_state.read(cx).active_request.clone();
+
+        // Bi-directional URL synchronization into InputState when updated via query params
+        if let Some(req) = &active_req {
+            if self.url_input.read(cx).value().as_str() != req.url {
+                self.url_input.update(cx, |inp, cx| {
+                    inp.set_value(req.url.clone(), window, cx);
+                });
+            }
+        }
 
         let ws_entity = self.workspace_state.clone();
         let ed_entity = self.editor_state.clone();
@@ -323,14 +422,19 @@ impl Render for AppView {
                                             // Top Request Bar: Method + URL + Send
                                             .child({
                                                 let view_handle = app_view_entity.clone();
-                                                RequestBar::new(ws_entity.clone(), ed_entity.clone(), move |_, cx| {
-                                                    view_handle.update(cx, |view, cx| {
-                                                        view.send_current_request(cx);
-                                                    });
-                                                })
+                                                RequestBar::new(
+                                                    ws_entity.clone(),
+                                                    ed_entity.clone(),
+                                                    self.url_input.clone(),
+                                                    move |_, cx| {
+                                                        view_handle.update(cx, |view, cx| {
+                                                            view.send_current_request(cx);
+                                                        });
+                                                    },
+                                                )
                                             })
                                             // Method dropdown if open
-                                            .when(ed.method_dropdown_open, |this| {
+                                            .when(method_dropdown_open, |this| {
                                                 let ed_c = ed_entity.clone();
                                                 this.child(
                                                     div()
@@ -357,7 +461,7 @@ impl Render for AppView {
                                                         ].into_iter().map(|m| {
                                                             let ed_set = ed_c.clone();
                                                             div()
-                                                                .id(format!("select-method-{}", m.as_str()))
+                                                                 .id(format!("select-method-{}", m.as_str()))
                                                                 .px(px(8.))
                                                                 .py(px(4.))
                                                                 .rounded(px(4.))
@@ -375,7 +479,7 @@ impl Render for AppView {
                                                         }))
                                                 )
                                             })
-                                            // Request Tabs with badges: Body v, Params [1], Headers [3], Bearer v, Settings
+                                            // Request Tabs with badges: Body v, Params [count], Headers [count], Auth, Settings
                                             .child(
                                                 div()
                                                     .h(px(34.))
@@ -398,7 +502,7 @@ impl Render for AppView {
                                                     })
                                                     .child({
                                                         let ed_c = ed_entity.clone();
-                                                        let param_count = active_req.as_ref().map(|r| r.params.len()).unwrap_or(1);
+                                                        let param_count = active_req.as_ref().map(|r| r.params.len()).unwrap_or(0);
                                                         TabItem::new("tab-params", "Params")
                                                             .active(active_tab_kind == RequestTabKind::Params)
                                                             .badge(format!("{}", param_count))
@@ -410,7 +514,7 @@ impl Render for AppView {
                                                     })
                                                     .child({
                                                         let ed_c = ed_entity.clone();
-                                                        let header_count = active_req.as_ref().map(|r| r.headers.len()).unwrap_or(3);
+                                                        let header_count = active_req.as_ref().map(|r| r.headers.len()).unwrap_or(0);
                                                         TabItem::new("tab-headers", "Headers")
                                                             .active(active_tab_kind == RequestTabKind::Headers)
                                                             .badge(format!("{}", header_count))
@@ -456,14 +560,12 @@ impl Render for AppView {
                                                     .child({
                                                         match active_tab_kind {
                                                             RequestTabKind::Body => {
-                                                                let body = active_req.as_ref().map(|r| r.body.clone()).unwrap_or(RequestBody::None);
-                                                                let ed_c = ed_entity.clone();
                                                                 div().size_full().child(
-                                                                    BodyEditor::new(body, move |json_str, _, cx| {
-                                                                        ed_c.update(cx, |state, cx| {
-                                                                            state.set_body_json(json_str, cx);
-                                                                        });
-                                                                    })
+                                                                    BodyEditor::new(
+                                                                        ed_entity.clone(),
+                                                                        self.json_textarea.clone(),
+                                                                        self.raw_textarea.clone(),
+                                                                    )
                                                                 )
                                                             }
                                                             RequestTabKind::Params => {
@@ -476,20 +578,21 @@ impl Render for AppView {
                                                                         params,
                                                                         move |idx, k, v, enabled, _, cx| {
                                                                             ed_up.update(cx, |state, cx| {
-                                                                            state.update_param(idx, k, v, enabled, cx);
-                                                                        });
-                                                                    },
-                                                                    move |_, cx| {
-                                                                        ed_add.update(cx, |state, cx| {
-                                                                            state.add_param(cx);
-                                                                        });
-                                                                    },
-                                                                    move |idx, _, cx| {
-                                                                        ed_del.update(cx, |state, cx| {
-                                                                            state.remove_param(idx, cx);
-                                                                        });
-                                                                    },
-                                                                ))
+                                                                                state.update_param(idx, k, v, enabled, cx);
+                                                                            });
+                                                                        },
+                                                                        move |_, cx| {
+                                                                            ed_add.update(cx, |state, cx| {
+                                                                                state.add_param(cx);
+                                                                            });
+                                                                        },
+                                                                        move |idx, _, cx| {
+                                                                            ed_del.update(cx, |state, cx| {
+                                                                                state.remove_param(idx, cx);
+                                                                            });
+                                                                        },
+                                                                    )
+                                                                )
                                                             }
                                                             RequestTabKind::Headers => {
                                                                 let headers = active_req.as_ref().map(|r| r.headers.clone()).unwrap_or_default();
@@ -501,20 +604,21 @@ impl Render for AppView {
                                                                         headers,
                                                                         move |idx, k, v, enabled, _, cx| {
                                                                             ed_up.update(cx, |state, cx| {
-                                                                            state.update_header(idx, k, v, enabled, cx);
-                                                                        });
-                                                                    },
-                                                                    move |_, cx| {
-                                                                        ed_add.update(cx, |state, cx| {
-                                                                            state.add_header(cx);
-                                                                        });
-                                                                    },
-                                                                    move |idx, _, cx| {
-                                                                        ed_del.update(cx, |state, cx| {
-                                                                            state.remove_header(idx, cx);
-                                                                        });
-                                                                    },
-                                                                ))
+                                                                                state.update_header(idx, k, v, enabled, cx);
+                                                                            });
+                                                                        },
+                                                                        move |_, cx| {
+                                                                            ed_add.update(cx, |state, cx| {
+                                                                                state.add_header(cx);
+                                                                            });
+                                                                        },
+                                                                        move |idx, _, cx| {
+                                                                            ed_del.update(cx, |state, cx| {
+                                                                                state.remove_header(idx, cx);
+                                                                            });
+                                                                        },
+                                                                    )
+                                                                )
                                                             }
                                                             RequestTabKind::Auth => {
                                                                 let auth = active_req.as_ref().map(|r| r.auth.clone()).unwrap_or(Auth::None);
@@ -533,10 +637,11 @@ impl Render for AppView {
                                                                                 let ed_s = ed_c.clone();
                                                                                 div()
                                                                                     .id("auth-type-none")
-                                                                                    .px(px(8.))
+                                                                                    .px(px(10.))
                                                                                     .py(px(4.))
                                                                                     .rounded(px(4.))
                                                                                     .bg(if matches!(auth, Auth::None) { t.primary } else { t.bg_card })
+                                                                                    .text_color(if matches!(auth, Auth::None) { t.primary_foreground } else { t.text_secondary })
                                                                                     .text_xs()
                                                                                     .cursor_pointer()
                                                                                     .on_click(move |_, _, cx| {
@@ -550,10 +655,11 @@ impl Render for AppView {
                                                                                 let ed_s = ed_c.clone();
                                                                                 div()
                                                                                     .id("auth-type-bearer")
-                                                                                    .px(px(8.))
+                                                                                    .px(px(10.))
                                                                                     .py(px(4.))
                                                                                     .rounded(px(4.))
                                                                                     .bg(if matches!(auth, Auth::Bearer { .. }) { t.primary } else { t.bg_card })
+                                                                                    .text_color(if matches!(auth, Auth::Bearer { .. }) { t.primary_foreground } else { t.text_secondary })
                                                                                     .text_xs()
                                                                                     .cursor_pointer()
                                                                                     .on_click(move |_, _, cx| {
@@ -567,10 +673,11 @@ impl Render for AppView {
                                                                                 let ed_s = ed_c.clone();
                                                                                 div()
                                                                                     .id("auth-type-basic")
-                                                                                    .px(px(8.))
+                                                                                    .px(px(10.))
                                                                                     .py(px(4.))
                                                                                     .rounded(px(4.))
                                                                                     .bg(if matches!(auth, Auth::Basic { .. }) { t.primary } else { t.bg_card })
+                                                                                    .text_color(if matches!(auth, Auth::Basic { .. }) { t.primary_foreground } else { t.text_secondary })
                                                                                     .text_xs()
                                                                                     .cursor_pointer()
                                                                                     .on_click(move |_, _, cx| {
@@ -580,18 +687,240 @@ impl Render for AppView {
                                                                                     })
                                                                                     .child("Basic Auth")
                                                                             })
+                                                                            .child({
+                                                                                let ed_s = ed_c.clone();
+                                                                                div()
+                                                                                    .id("auth-type-apikey")
+                                                                                    .px(px(10.))
+                                                                                    .py(px(4.))
+                                                                                    .rounded(px(4.))
+                                                                                    .bg(if matches!(auth, Auth::ApiKey { .. }) { t.primary } else { t.bg_card })
+                                                                                    .text_color(if matches!(auth, Auth::ApiKey { .. }) { t.primary_foreground } else { t.text_secondary })
+                                                                                    .text_xs()
+                                                                                    .cursor_pointer()
+                                                                                    .on_click(move |_, _, cx| {
+                                                                                        ed_s.update(cx, |state, cx| {
+                                                                                            state.set_auth(Auth::ApiKey { key: "X-API-Key".to_string(), value: "".to_string(), in_header: true }, cx);
+                                                                                        });
+                                                                                    })
+                                                                                    .child("API Key")
+                                                                            })
                                                                     )
+                                                                    .child({
+                                                                        match auth {
+                                                                            Auth::None => {
+                                                                                div()
+                                                                                    .pt(px(12.))
+                                                                                    .text_xs()
+                                                                                    .italic()
+                                                                                    .text_color(t.text_muted)
+                                                                                    .child("No authentication will be added to this request.")
+                                                                            }
+                                                                            Auth::Bearer { token } => {
+                                                                                div()
+                                                                                    .pt(px(12.))
+                                                                                    .flex()
+                                                                                    .flex_col()
+                                                                                    .gap(px(8.))
+                                                                                    .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.text_muted).child("Token:"))
+                                                                                    .child(
+                                                                                        div()
+                                                                                            .h(px(32.))
+                                                                                            .px(px(8.))
+                                                                                            .rounded(px(4.))
+                                                                                            .bg(t.bg_input)
+                                                                                            .border_1()
+                                                                                            .border_color(t.border)
+                                                                                            .flex()
+                                                                                            .items_center()
+                                                                                            .font_family(".SystemMonoFont")
+                                                                                            .text_xs()
+                                                                                            .text_color(t.text_primary)
+                                                                                            .child(if token.is_empty() { "Enter Bearer token...".to_string() } else { token.clone() })
+                                                                                    )
+                                                                            }
+                                                                            Auth::Basic { username, password } => {
+                                                                                div()
+                                                                                    .pt(px(12.))
+                                                                                    .flex()
+                                                                                    .flex_col()
+                                                                                    .gap(px(8.))
+                                                                                    .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.text_muted).child("Username:"))
+                                                                                    .child(
+                                                                                        div()
+                                                                                            .h(px(32.))
+                                                                                            .px(px(8.))
+                                                                                            .rounded(px(4.))
+                                                                                            .bg(t.bg_input)
+                                                                                            .border_1()
+                                                                                            .border_color(t.border)
+                                                                                            .flex()
+                                                                                            .items_center()
+                                                                                            .font_family(".SystemMonoFont")
+                                                                                            .text_xs()
+                                                                                            .text_color(t.text_primary)
+                                                                                            .child(if username.is_empty() { "Username...".to_string() } else { username })
+                                                                                    )
+                                                                                    .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.text_muted).child("Password:"))
+                                                                                    .child(
+                                                                                        div()
+                                                                                            .h(px(32.))
+                                                                                            .px(px(8.))
+                                                                                            .rounded(px(4.))
+                                                                                            .bg(t.bg_input)
+                                                                                            .border_1()
+                                                                                            .border_color(t.border)
+                                                                                            .flex()
+                                                                                            .items_center()
+                                                                                            .font_family(".SystemMonoFont")
+                                                                                            .text_xs()
+                                                                                            .text_color(t.text_primary)
+                                                                                            .child(if password.is_empty() { "••••••••".to_string() } else { "•".repeat(password.len().min(16)) })
+                                                                                    )
+                                                                            }
+                                                                            Auth::ApiKey { key, value, in_header } => {
+                                                                                div()
+                                                                                    .pt(px(12.))
+                                                                                    .flex()
+                                                                                    .flex_col()
+                                                                                    .gap(px(8.))
+                                                                                    .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.text_muted).child("Header / Param Key:"))
+                                                                                    .child(
+                                                                                        div()
+                                                                                            .h(px(32.))
+                                                                                            .px(px(8.))
+                                                                                            .rounded(px(4.))
+                                                                                            .bg(t.bg_input)
+                                                                                            .border_1()
+                                                                                            .border_color(t.border)
+                                                                                            .flex()
+                                                                                            .items_center()
+                                                                                            .font_family(".SystemMonoFont")
+                                                                                            .text_color(t.text_primary)
+                                                                                            .child(key)
+                                                                                    )
+                                                                                    .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.text_muted).child("Value:"))
+                                                                                    .child(
+                                                                                        div()
+                                                                                            .h(px(32.))
+                                                                                            .px(px(8.))
+                                                                                            .rounded(px(4.))
+                                                                                            .bg(t.bg_input)
+                                                                                            .border_1()
+                                                                                            .border_color(t.border)
+                                                                                            .flex()
+                                                                                            .items_center()
+                                                                                            .font_family(".SystemMonoFont")
+                                                                                            .text_xs()
+                                                                                            .text_color(t.text_primary)
+                                                                                            .child(if value.is_empty() { "API key value...".to_string() } else { value })
+                                                                                    )
+                                                                                    .child(
+                                                                                        div()
+                                                                                            .flex()
+                                                                                            .gap(px(8.))
+                                                                                            .text_xs()
+                                                                                            .text_color(t.text_secondary)
+                                                                                            .child(format!("Location: {}", if in_header { "Header" } else { "Query Parameter" }))
+                                                                                    )
+                                                                            }
+                                                                        }
+                                                                    })
                                                             }
                                                             RequestTabKind::Settings => {
+                                                                let ed_s = ed_entity.clone();
+                                                                let settings = active_req.as_ref().map(|r| r.settings.clone()).unwrap_or_default();
+
                                                                 div()
                                                                     .p(px(16.))
                                                                     .flex()
                                                                     .flex_col()
-                                                                    .gap(px(8.))
-                                                                    .child(div().text_sm().font_weight(gpui::FontWeight::SEMIBOLD).child("Request Settings"))
-                                                                    .child(div().text_xs().text_color(t.text_secondary).child("• Timeout: 30s"))
-                                                                    .child(div().text_xs().text_color(t.text_secondary).child("• Follow Redirects: Enabled"))
-                                                                    .child(div().text_xs().text_color(t.text_secondary).child("• Validate TLS: Enabled"))
+                                                                    .gap(px(14.))
+                                                                    .child(div().text_sm().font_weight(gpui::FontWeight::SEMIBOLD).child("Request Configuration & Network Settings"))
+                                                                    // Timeout presets
+                                                                    .child(
+                                                                        div()
+                                                                            .flex()
+                                                                            .flex_col()
+                                                                            .gap(px(6.))
+                                                                            .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.text_muted).child("Request Timeout:"))
+                                                                            .child(
+                                                                                div()
+                                                                                    .flex()
+                                                                                    .gap(px(6.))
+                                                                                    .children([10, 30, 60, 120].into_iter().map(|s| {
+                                                                                        let is_cur = settings.timeout_secs == s;
+                                                                                        let ed_set = ed_s.clone();
+                                                                                        div()
+                                                                                            .id(format!("timeout-{}s", s))
+                                                                                            .px(px(8.))
+                                                                                            .py(px(4.))
+                                                                                            .rounded(px(4.))
+                                                                                            .bg(if is_cur { t.primary } else { t.bg_card })
+                                                                                            .text_color(if is_cur { t.primary_foreground } else { t.text_secondary })
+                                                                                            .cursor_pointer()
+                                                                                            .text_xs()
+                                                                                            .on_click(move |_, _, cx| {
+                                                                                                ed_set.update(cx, |st, cx| {
+                                                                                                    st.set_timeout_secs(s, cx);
+                                                                                                });
+                                                                                            })
+                                                                                            .child(format!("{}s", s))
+                                                                                    }))
+                                                                            )
+                                                                    )
+                                                                    // Follow Redirects toggle
+                                                                    .child({
+                                                                        let ed_set = ed_s.clone();
+                                                                        let cur_follow = settings.follow_redirects;
+                                                                        div()
+                                                                            .flex()
+                                                                            .items_center()
+                                                                            .gap(px(8.))
+                                                                            .child(
+                                                                                div()
+                                                                                    .id("toggle-follow-redirects")
+                                                                                    .px(px(8.))
+                                                                                    .py(px(4.))
+                                                                                    .rounded(px(4.))
+                                                                                    .bg(if cur_follow { t.primary } else { t.bg_card })
+                                                                                    .text_color(if cur_follow { t.primary_foreground } else { t.text_secondary })
+                                                                                    .cursor_pointer()
+                                                                                    .text_xs()
+                                                                                    .on_click(move |_, _, cx| {
+                                                                                        ed_set.update(cx, |st, cx| {
+                                                                                            st.set_follow_redirects(!cur_follow, cx);
+                                                                                        });
+                                                                                    })
+                                                                                    .child(if cur_follow { "✓ Follow Redirects Enabled" } else { "Follow Redirects Disabled" })
+                                                                            )
+                                                                    })
+                                                                    // Validate TLS Certificates toggle
+                                                                    .child({
+                                                                        let ed_set = ed_s.clone();
+                                                                        let cur_tls = settings.validate_tls;
+                                                                        div()
+                                                                            .flex()
+                                                                            .items_center()
+                                                                            .gap(px(8.))
+                                                                            .child(
+                                                                                div()
+                                                                                    .id("toggle-validate-tls")
+                                                                                    .px(px(8.))
+                                                                                    .py(px(4.))
+                                                                                    .rounded(px(4.))
+                                                                                    .bg(if cur_tls { t.primary } else { t.bg_card })
+                                                                                    .text_color(if cur_tls { t.primary_foreground } else { t.text_secondary })
+                                                                                    .cursor_pointer()
+                                                                                    .text_xs()
+                                                                                    .on_click(move |_, _, cx| {
+                                                                                        ed_set.update(cx, |st, cx| {
+                                                                                            st.set_validate_tls(!cur_tls, cx);
+                                                                                        });
+                                                                                    })
+                                                                                    .child(if cur_tls { "✓ Validate TLS Certificates Enabled" } else { "Validate TLS Certificates Disabled" })
+                                                                            )
+                                                                    })
                                                             }
                                                         }
                                                     }),
@@ -618,13 +947,13 @@ impl Render for AppView {
                     ),
             )
             // Modals & Overlays
-            .when(ws.show_env_modal, |this| {
+            .when(show_env_modal, |this| {
                 this.child(EnvironmentModal::new(ws_entity.clone()))
             })
-            .when(ws.show_cookies_modal, |this| {
+            .when(show_cookies_modal, |this| {
                 this.child(CookiesModal::new(ws_entity.clone()))
             })
-            .when(ws.show_command_palette, |this| {
+            .when(show_command_palette, |this| {
                 let view_handle = app_view_entity.clone();
                 this.child(CommandPalette::new(ws_entity.clone(), ed_entity.clone(), move |_, cx| {
                     view_handle.update(cx, |view, cx| {

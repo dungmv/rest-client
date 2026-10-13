@@ -1,9 +1,9 @@
 use crate::components::tabs_with_badge::TabItem;
-use crate::state::{EditorState, ResponseState, ResponseTabKind};
+use crate::state::{EditorState, ResponseState, ResponseTabKind, ResponseViewMode};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
+    div, px, AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
     RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::scroll::ScrollableElement as _;
@@ -34,7 +34,9 @@ impl RenderOnce for ResponseViewer {
 
         let current_resp = resp_s.current_response.clone();
         let active_tab = resp_s.active_tab;
+        let view_mode = resp_s.view_mode;
         let show_timing = resp_s.show_timing_popover;
+        let show_history = resp_s.show_history_dropdown;
 
         let resp_state_clone = self.response_state.clone();
 
@@ -43,6 +45,7 @@ impl RenderOnce for ResponseViewer {
             .bg(t.bg_response)
             .flex()
             .flex_col()
+            .relative()
             // Top Status Bar: "200 OK • 18 ms • 2 B" + history icon
             .child(
                 div()
@@ -80,15 +83,19 @@ impl RenderOnce for ResponseViewer {
                                     div()
                                         .id("btn-timing-breakdown")
                                         .cursor_pointer()
+                                        .px(px(4.))
+                                        .py(px(1.))
+                                        .rounded(px(4.))
+                                        .bg(if show_timing { t.bg_hover } else { t.transparent })
                                         .text_xs()
                                         .text_color(t.text_secondary)
-                                        .hover(|s| s.text_color(t.primary))
+                                        .hover(|s| s.text_color(t.primary).bg(t.bg_hover))
                                         .on_click(move |_, _, cx| {
                                             rs_clone.update(cx, |state, cx| {
                                                 state.toggle_timing_popover(cx);
                                             });
                                         })
-                                        .child(resp.formatted_duration())
+                                        .child(format!("🕒 {}", resp.formatted_duration()))
                                 })
                                 .child(
                                     div()
@@ -108,7 +115,6 @@ impl RenderOnce for ResponseViewer {
                                 .text_color(t.primary)
                                 .child(ed_s.send_progress.clone().unwrap_or_else(|| "Sending...".to_string()))
                         } else {
-                            // Reference screenshot style: placeholder status bar
                             div()
                                 .flex()
                                 .items_center()
@@ -116,14 +122,10 @@ impl RenderOnce for ResponseViewer {
                                 .child(
                                     div()
                                         .text_xs()
-                                        .font_weight(gpui::FontWeight::BOLD)
-                                        .text_color(t.status_2xx)
-                                        .child("200 OK"),
+                                        .italic()
+                                        .text_color(t.text_muted)
+                                        .child("No response yet. Send a request to inspect response."),
                                 )
-                                .child(div().text_xs().text_color(t.text_muted).child("•"))
-                                .child(div().text_xs().text_color(t.text_secondary).child("18 ms"))
-                                .child(div().text_xs().text_color(t.text_muted).child("•"))
-                                .child(div().text_xs().text_color(t.text_secondary).child("2 B"))
                         }
                     })
                     // History button (clock icon)
@@ -131,30 +133,164 @@ impl RenderOnce for ResponseViewer {
                         let rs_clone = resp_state_clone.clone();
                         div()
                             .id("btn-response-history")
-                            .w(px(28.))
+                            .px(px(6.))
                             .h(px(28.))
                             .rounded(px(4.))
                             .cursor_pointer()
+                            .bg(if show_history { t.bg_hover } else { t.transparent })
                             .hover(|s| s.bg(t.bg_hover))
                             .flex()
                             .items_center()
-                            .justify_center()
+                            .gap(px(4.))
                             .text_color(t.text_secondary)
                             .on_click(move |_, _, cx| {
                                 rs_clone.update(cx, |state, cx| {
                                     state.toggle_history_dropdown(cx);
                                 });
                             })
-                            .child("🕒")
+                            .child("🕒 History")
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(t.text_muted)
+                                    .child(format!("({})", resp_s.history.len())),
+                            )
                     }),
             )
-            // Timing Popover
+            // History Dropdown Menu
+            .when(show_history, |this| {
+                let history = resp_s.history.clone();
+                let rs_c = resp_state_clone.clone();
+
+                this.child(
+                    div()
+                        .absolute()
+                        .top(px(42.))
+                        .right(px(12.))
+                        .w(px(320.))
+                        .max_h(px(340.))
+                        .overflow_y_scrollbar()
+                        .bg(t.bg_card)
+                        .border_1()
+                        .border_color(t.border)
+                        .rounded(px(6.))
+                        .shadow_xl()
+                        .p(px(6.))
+                        .flex()
+                        .flex_col()
+                        .gap(px(4.))
+                        .child(
+                            div()
+                                .px(px(6.))
+                                .py(px(4.))
+                                .border_b_1()
+                                .border_color(t.border)
+                                .flex()
+                                .items_center()
+                                .justify_between()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .text_color(t.text_primary)
+                                        .child(format!("Past Responses (Max 20)")),
+                                )
+                                .child({
+                                    let rs_close = rs_c.clone();
+                                    div()
+                                        .id("btn-close-hist-dropdown")
+                                        .cursor_pointer()
+                                        .text_xs()
+                                        .text_color(t.text_muted)
+                                        .hover(|s| s.text_color(t.text_primary))
+                                        .on_click(move |_, _, cx| {
+                                            rs_close.update(cx, |state, cx| {
+                                                state.toggle_history_dropdown(cx);
+                                            });
+                                        })
+                                        .child("✕")
+                                }),
+                        )
+                        .child(if history.is_empty() {
+                            div()
+                                .p(px(12.))
+                                .text_xs()
+                                .italic()
+                                .text_color(t.text_muted)
+                                .child("No previous runs recorded in SQLite history.")
+                                .into_any_element()
+                        } else {
+                            div()
+                                .flex()
+                                .flex_col()
+                                .children(history.into_iter().map(|item| {
+                                let rec_id = item.id.clone();
+                                let rs_set = rs_c.clone();
+                                let status_color = t.status_color(item.status_code);
+                                div()
+                                    .id(format!("hist-item-{}", rec_id))
+                                    .px(px(8.))
+                                    .py(px(6.))
+                                    .rounded(px(4.))
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(t.bg_hover))
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .text_xs()
+                                    .on_click(move |_, _, cx| {
+                                        rs_set.update(cx, |state, cx| {
+                                            state.select_history_record(&rec_id, cx);
+                                        });
+                                    })
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(6.))
+                                            .child(
+                                                div()
+                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                    .text_color(status_color)
+                                                    .child(format!("{}", item.status_code)),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_color(t.text_secondary)
+                                                    .child(item.formatted_duration()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_color(t.text_muted)
+                                                    .child(item.formatted_size()),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_color(t.text_muted)
+                                            .child(item.created_at.format("%H:%M:%S").to_string()),
+                                    )
+                                }))
+                                .into_any_element()
+                        }),
+                )
+            })
+            // High-Precision Timing Popover
             .when(show_timing, |this| {
                 if let Some(resp) = &current_resp {
                     let timing = &resp.timing;
+                    let total_ms = timing.total_ms.max(1);
+
+                    // Proportions for visual bar
+                    let dns_pct = (timing.dns_ms.unwrap_or(0) as f32 / total_ms as f32 * 100.0).clamp(0.0, 100.0);
+                    let tcp_pct = (timing.connect_ms.unwrap_or(0) as f32 / total_ms as f32 * 100.0).clamp(0.0, 100.0);
+                    let tls_pct = (timing.tls_ms.unwrap_or(0) as f32 / total_ms as f32 * 100.0).clamp(0.0, 100.0);
+                    let ttfb_pct = (timing.ttfb_ms.unwrap_or(0) as f32 / total_ms as f32 * 100.0).clamp(0.0, 100.0);
+                    let dl_pct = (timing.download_ms.unwrap_or(0) as f32 / total_ms as f32 * 100.0).clamp(0.0, 100.0);
+
                     this.child(
                         div()
-                            .p(px(8.))
+                            .p(px(10.))
                             .mx(px(12.))
                             .mt(px(4.))
                             .rounded(px(6.))
@@ -163,20 +299,99 @@ impl RenderOnce for ResponseViewer {
                             .border_color(t.border)
                             .flex()
                             .flex_col()
-                            .gap(px(4.))
+                            .gap(px(6.))
                             .text_xs()
-                            .child(div().font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.text_primary).child("Timing Breakdown"))
-                            .child(div().flex().justify_between().text_color(t.text_secondary).child("DNS Lookup:").child(format!("{} ms", timing.dns_ms.unwrap_or(0))))
-                            .child(div().flex().justify_between().text_color(t.text_secondary).child("TCP Connect:").child(format!("{} ms", timing.connect_ms.unwrap_or(0))))
-                            .child(div().flex().justify_between().text_color(t.text_secondary).child("TTFB:").child(format!("{} ms", timing.ttfb_ms.unwrap_or(0))))
-                            .child(div().flex().justify_between().text_color(t.text_secondary).child("Download:").child(format!("{} ms", timing.download_ms.unwrap_or(0))))
-                            .child(div().flex().justify_between().font_weight(gpui::FontWeight::BOLD).text_color(t.text_primary).child("Total:").child(format!("{} ms", timing.total_ms)))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                                            .text_color(t.text_primary)
+                                            .child("High-Precision Timing Breakdown"),
+                                    )
+                                    .child(
+                                        div()
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .text_color(t.primary)
+                                            .child(format!("Total: {} ms", timing.total_ms)),
+                                    ),
+                            )
+                            // Visual Waterfall bar
+                            .child(
+                                div()
+                                    .h(px(8.))
+                                    .w_full()
+                                    .rounded(px(4.))
+                                    .bg(t.bg_input)
+                                    .overflow_hidden()
+                                    .flex()
+                                    .child(div().w(px(dns_pct * 2.5)).bg(gpui::rgb(0x06b6d4))) // Cyan for DNS
+                                    .child(div().w(px(tcp_pct * 2.5)).bg(gpui::rgb(0x3b82f6))) // Blue for TCP
+                                    .child(div().w(px(tls_pct * 2.5)).bg(gpui::rgb(0xa855f7))) // Purple for TLS
+                                    .child(div().w(px(ttfb_pct * 2.5)).bg(gpui::rgb(0xeab308))) // Yellow for TTFB
+                                    .child(div().w(px(dl_pct * 2.5)).bg(gpui::rgb(0x22c55e))), // Green for Download
+                            )
+                            // Detail rows
+                            .child(
+                                div()
+                                    .flex()
+                                    .justify_between()
+                                    .text_color(t.text_secondary)
+                                    .child(div().flex().gap(px(4.)).child("● DNS Lookup:").text_color(gpui::rgb(0x06b6d4)))
+                                    .child(format!("{} ms", timing.dns_ms.unwrap_or(0))),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .justify_between()
+                                    .text_color(t.text_secondary)
+                                    .child(div().flex().gap(px(4.)).child("● TCP Connect:").text_color(gpui::rgb(0x3b82f6)))
+                                    .child(format!("{} ms", timing.connect_ms.unwrap_or(0))),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .justify_between()
+                                    .text_color(t.text_secondary)
+                                    .child(div().flex().gap(px(4.)).child("● TLS Handshake:").text_color(gpui::rgb(0xa855f7)))
+                                    .child(format!("{} ms", timing.tls_ms.unwrap_or(0))),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .justify_between()
+                                    .text_color(t.text_secondary)
+                                    .child(div().flex().gap(px(4.)).child("● TTFB (Wait):").text_color(gpui::rgb(0xeab308)))
+                                    .child(format!("{} ms", timing.ttfb_ms.unwrap_or(0))),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .justify_between()
+                                    .text_color(t.text_secondary)
+                                    .child(div().flex().gap(px(4.)).child("● Content Download:").text_color(gpui::rgb(0x22c55e)))
+                                    .child(format!("{} ms", timing.download_ms.unwrap_or(0))),
+                            )
+                            .when(timing.connection_reused, |this| {
+                                this.child(
+                                    div()
+                                        .px(px(4.))
+                                        .py(px(2.))
+                                        .rounded(px(3.))
+                                        .bg(t.primary.opacity(0.15))
+                                        .text_color(t.primary)
+                                        .child("⚡ Connection Reused (HTTP Keep-Alive)"),
+                                )
+                            }),
                     )
                 } else {
                     this
                 }
             })
-            // Response Tabs Bar: Response v, Request, Headers [4/12], Cookies [2/0]
+            // Response Tabs Bar: Response, Request Sent, Headers [N], Cookies [N]
             .child(
                 div()
                     .h(px(34.))
@@ -190,7 +405,6 @@ impl RenderOnce for ResponseViewer {
                         let rs_c = resp_state_clone.clone();
                         TabItem::new("tab-resp-response", "Response")
                             .active(active_tab == ResponseTabKind::Response)
-                            .with_dropdown(true)
                             .on_click(move |_, _, cx| {
                                 rs_c.update(cx, |state, cx| {
                                     state.set_active_tab(ResponseTabKind::Response, cx);
@@ -199,7 +413,7 @@ impl RenderOnce for ResponseViewer {
                     })
                     .child({
                         let rs_c = resp_state_clone.clone();
-                        TabItem::new("tab-resp-request", "Request")
+                        TabItem::new("tab-resp-request", "Request Sent")
                             .active(active_tab == ResponseTabKind::Request)
                             .on_click(move |_, _, cx| {
                                 rs_c.update(cx, |state, cx| {
@@ -209,7 +423,7 @@ impl RenderOnce for ResponseViewer {
                     })
                     .child({
                         let rs_c = resp_state_clone.clone();
-                        let count_str = current_resp.as_ref().map(|r| format!("{}", r.headers.len())).unwrap_or_else(|| "4/12".to_string());
+                        let count_str = current_resp.as_ref().map(|r| format!("{}", r.headers.len())).unwrap_or_else(|| "0".to_string());
                         TabItem::new("tab-resp-headers", "Headers")
                             .active(active_tab == ResponseTabKind::Headers)
                             .badge(count_str)
@@ -221,7 +435,7 @@ impl RenderOnce for ResponseViewer {
                     })
                     .child({
                         let rs_c = resp_state_clone.clone();
-                        let count_str = current_resp.as_ref().map(|r| format!("{}", r.cookies.len())).unwrap_or_else(|| "2/0".to_string());
+                        let count_str = current_resp.as_ref().map(|r| format!("{}", r.cookies.len())).unwrap_or_else(|| "0".to_string());
                         TabItem::new("tab-resp-cookies", "Cookies")
                             .active(active_tab == ResponseTabKind::Cookies)
                             .badge(count_str)
@@ -236,98 +450,392 @@ impl RenderOnce for ResponseViewer {
             .child(
                 div()
                     .flex_1()
-                    .overflow_y_scrollbar()
-                    .p(px(8.))
+                    .overflow_hidden()
                     .child({
                         match active_tab {
                             ResponseTabKind::Response => {
-                                let body_str = if let Some(resp) = &current_resp {
-                                    resp.body_as_str().unwrap_or("[]").to_string()
+                                let body_bytes = current_resp.as_ref().map(|r| r.body.clone()).unwrap_or_default();
+                                let raw_str = String::from_utf8_lossy(&body_bytes).to_string();
+
+                                // Format if Pretty mode and valid JSON
+                                let display_text = if matches!(view_mode, ResponseViewMode::Pretty) {
+                                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw_str) {
+                                        serde_json::to_string_pretty(&parsed).unwrap_or(raw_str.clone())
+                                    } else {
+                                        raw_str.clone()
+                                    }
                                 } else {
-                                    "[]".to_string() // Matching reference screenshot: 1  []
+                                    raw_str.clone()
                                 };
 
-                                let lines: Vec<String> = body_str.lines().map(|s| s.to_string()).collect();
+                                let lines: Vec<&str> = display_text.lines().collect();
+                                let total_lines = lines.len();
+                                let is_large_payload = body_bytes.len() > 2 * 1024 * 1024 || total_lines > 5000;
+                                let lines_to_render = if is_large_payload {
+                                    &lines[..lines.len().min(3000)]
+                                } else {
+                                    &lines[..]
+                                };
+
+                                let rs_toggle = resp_state_clone.clone();
+                                let raw_for_copy = raw_str.clone();
+                                let bytes_for_save = body_bytes.clone();
 
                                 div()
+                                    .size_full()
                                     .flex()
-                                    .gap(px(12.))
+                                    .flex_col()
+                                    // Response sub-toolbar
                                     .child(
-                                        // Line numbers
                                         div()
-                                            .w(px(24.))
+                                            .h(px(30.))
+                                            .px(px(8.))
+                                            .border_b_1()
+                                            .border_color(t.border)
                                             .flex()
-                                            .flex_col()
-                                            .items_end()
-                                            .text_xs()
-                                            .font_family(".SystemMonoFont")
-                                            .text_color(t.text_muted)
-                                            .children((1..=lines.len()).map(|num| {
-                                                div().h(px(20.)).child(format!("{}", num))
-                                            })),
+                                            .items_center()
+                                            .justify_between()
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap(px(6.))
+                                                    // Pretty Button
+                                                    .child({
+                                                        let rs_c = rs_toggle.clone();
+                                                        div()
+                                                            .id("btn-view-pretty")
+                                                            .px(px(6.))
+                                                            .py(px(2.))
+                                                            .rounded(px(4.))
+                                                            .bg(if matches!(view_mode, ResponseViewMode::Pretty) { t.primary } else { t.bg_card })
+                                                            .text_color(if matches!(view_mode, ResponseViewMode::Pretty) { t.primary_foreground } else { t.text_secondary })
+                                                            .text_xs()
+                                                            .cursor_pointer()
+                                                            .on_click(move |_, _, cx| {
+                                                                rs_c.update(cx, |state, cx| {
+                                                                    state.set_view_mode(ResponseViewMode::Pretty, cx);
+                                                                });
+                                                            })
+                                                            .child("Pretty")
+                                                    })
+                                                    // Raw Button
+                                                    .child({
+                                                        let rs_c = rs_toggle.clone();
+                                                        div()
+                                                            .id("btn-view-raw")
+                                                            .px(px(6.))
+                                                            .py(px(2.))
+                                                            .rounded(px(4.))
+                                                            .bg(if matches!(view_mode, ResponseViewMode::Raw) { t.primary } else { t.bg_card })
+                                                            .text_color(if matches!(view_mode, ResponseViewMode::Raw) { t.primary_foreground } else { t.text_secondary })
+                                                            .text_xs()
+                                                            .cursor_pointer()
+                                                            .on_click(move |_, _, cx| {
+                                                                rs_c.update(cx, |state, cx| {
+                                                                    state.set_view_mode(ResponseViewMode::Raw, cx);
+                                                                });
+                                                            })
+                                                            .child("Raw")
+                                                    })
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap(px(6.))
+                                                    // Copy Button
+                                                    .child({
+                                                        let copy_text = raw_for_copy.clone();
+                                                        div()
+                                                            .id("btn-copy-response")
+                                                            .px(px(6.))
+                                                            .py(px(2.))
+                                                            .rounded(px(4.))
+                                                            .bg(t.bg_card)
+                                                            .border_1()
+                                                            .border_color(t.border)
+                                                            .hover(|s| s.bg(t.bg_hover))
+                                                            .text_xs()
+                                                            .text_color(t.text_secondary)
+                                                            .cursor_pointer()
+                                                            .on_click(move |_, _, cx| {
+                                                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(copy_text.clone()));
+                                                            })
+                                                            .child("📋 Copy")
+                                                    })
+                                                    // Save to File Button
+                                                    .child({
+                                                        let save_bytes = bytes_for_save.clone();
+                                                        div()
+                                                            .id("btn-save-response")
+                                                            .px(px(6.))
+                                                            .py(px(2.))
+                                                            .rounded(px(4.))
+                                                            .bg(t.bg_card)
+                                                            .border_1()
+                                                            .border_color(t.border)
+                                                            .hover(|s| s.bg(t.bg_hover))
+                                                            .text_xs()
+                                                            .text_color(t.text_secondary)
+                                                            .cursor_pointer()
+                                                            .on_click(move |_, _, _| {
+                                                                if let Some(path) = rfd::FileDialog::new()
+                                                                    .set_file_name("response.json")
+                                                                    .save_file()
+                                                                {
+                                                                    let _ = std::fs::write(path, &save_bytes);
+                                                                }
+                                                            })
+                                                            .child("💾 Save to File")
+                                                    }),
+                                            ),
                                     )
+                                    // Large payload protection banner
+                                    .when(is_large_payload, |this| {
+                                        this.child(
+                                            div()
+                                                .px(px(12.))
+                                                .py(px(6.))
+                                                .bg(t.var_unresolved.opacity(0.12))
+                                                .border_b_1()
+                                                .border_color(t.var_unresolved.opacity(0.3))
+                                                .flex()
+                                                .items_center()
+                                                .justify_between()
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .text_color(t.var_unresolved)
+                                                        .child(format!("⚠ Large payload detected ({} lines). Showing first 3,000 lines to ensure 120 FPS performance.", total_lines)),
+                                                )
+                                        )
+                                    })
+                                    // Response lines scrollable area
                                     .child(
-                                        // Response body lines
                                         div()
                                             .flex_1()
+                                            .overflow_y_scrollbar()
+                                            .p(px(8.))
                                             .flex()
-                                            .flex_col()
-                                            .text_xs()
-                                            .font_family(".SystemMonoFont")
-                                            .text_color(t.text_primary)
-                                            .children(lines.into_iter().map(|line| {
-                                                div().h(px(20.)).child(if line.is_empty() { " ".to_string() } else { line })
-                                            })),
+                                            .gap(px(12.))
+                                            .child(
+                                                // Line numbers
+                                                div()
+                                                    .w(px(32.))
+                                                    .flex()
+                                                    .flex_col()
+                                                    .items_end()
+                                                    .text_xs()
+                                                    .font_family(".SystemMonoFont")
+                                                    .text_color(t.text_muted)
+                                                    .children((1..=lines_to_render.len()).map(|num| {
+                                                        div().h(px(20.)).child(format!("{}", num))
+                                                    })),
+                                            )
+                                            .child(
+                                                // Response text lines
+                                                div()
+                                                    .flex_1()
+                                                    .flex()
+                                                    .flex_col()
+                                                    .text_xs()
+                                                    .font_family(".SystemMonoFont")
+                                                    .text_color(t.text_primary)
+                                                    .children(lines_to_render.iter().map(|line| {
+                                                        div().h(px(20.)).child(if line.is_empty() { " ".to_string() } else { line.to_string() })
+                                                    })),
+                                            ),
                                     )
+                                    .into_any_element()
                             }
                             ResponseTabKind::Request => {
-                                let ed = self.editor_state.read(cx);
-                                let req_info = if let Some(req) = &ed.active_request {
-                                    format!("{} {}\nHeaders: {}\nBody: {:?}", req.method, req.url, req.headers.len(), req.body)
+                                if let Some(resp) = &current_resp {
+                                    if let Some(sent) = &resp.request_sent {
+                                        div()
+                                            .size_full()
+                                            .overflow_y_scrollbar()
+                                            .p(px(12.))
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(12.))
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap(px(8.))
+                                                    .child(
+                                                        div()
+                                                            .font_weight(gpui::FontWeight::BOLD)
+                                                            .text_color(t.method_color(sent.method))
+                                                            .child(sent.method.as_str()),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .font_family(".SystemMonoFont")
+                                                            .text_xs()
+                                                            .text_color(t.text_primary)
+                                                            .child(sent.url.clone()),
+                                                    ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                    .text_color(t.text_muted)
+                                                    .child("Headers Sent:"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .flex_col()
+                                                    .gap(px(4.))
+                                                    .children(sent.headers.iter().map(|(k, v)| {
+                                                        div()
+                                                            .flex()
+                                                            .gap(px(8.))
+                                                            .text_xs()
+                                                            .font_family(".SystemMonoFont")
+                                                            .child(div().w(px(160.)).text_color(t.primary).child(k.clone()))
+                                                            .child(div().flex_1().text_color(t.text_primary).child(v.clone()))
+                                                    })),
+                                            )
+                                            .when_some(sent.body_preview.clone(), |this, preview| {
+                                                this.child(
+                                                    div()
+                                                        .text_xs()
+                                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                        .text_color(t.text_muted)
+                                                        .child(format!("Body Sent ({} bytes):", sent.body_size_bytes)),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .p(px(8.))
+                                                        .bg(t.bg_card)
+                                                        .rounded(px(6.))
+                                                        .border_1()
+                                                        .border_color(t.border)
+                                                        .font_family(".SystemMonoFont")
+                                                        .text_xs()
+                                                        .text_color(t.text_secondary)
+                                                        .child(preview),
+                                                )
+                                            })
+                                            .into_any_element()
+                                    } else {
+                                        div().p(px(12.)).text_xs().text_color(t.text_muted).child("No request sent info available.").into_any_element()
+                                    }
                                 } else {
-                                    "No request sent".to_string()
-                                };
-                                div()
-                                    .p(px(8.))
-                                    .text_xs()
-                                    .font_family(".SystemMonoFont")
-                                    .text_color(t.text_secondary)
-                                    .child(req_info)
+                                    div().p(px(12.)).text_xs().text_color(t.text_muted).child("No request sent yet.").into_any_element()
+                                }
                             }
                             ResponseTabKind::Headers => {
                                 if let Some(resp) = &current_resp {
                                     div()
+                                        .size_full()
+                                        .overflow_y_scrollbar()
+                                        .p(px(12.))
                                         .flex()
                                         .flex_col()
-                                        .gap(px(4.))
-                                        .children(resp.headers.iter().map(|(k, v)| {
+                                        .gap(px(6.))
+                                        .children(resp.headers.iter().enumerate().map(|(idx, (k, v))| {
+                                            let val_copy = v.clone();
                                             div()
                                                 .flex()
+                                                .items_center()
                                                 .gap(px(12.))
+                                                .py(px(4.))
+                                                .border_b_1()
+                                                .border_color(t.border_subtle)
                                                 .text_xs()
                                                 .font_family(".SystemMonoFont")
-                                                .child(div().w(px(160.)).text_color(t.primary).child(k.clone()))
+                                                .child(div().w(px(200.)).font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.primary).child(k.clone()))
                                                 .child(div().flex_1().text_color(t.text_primary).child(v.clone()))
+                                                .child(
+                                                    div()
+                                                        .id(format!("copy-hdr-{}", idx))
+                                                        .cursor_pointer()
+                                                        .text_color(t.text_muted)
+                                                        .hover(|s| s.text_color(t.text_primary))
+                                                        .on_click(move |_, _, cx| {
+                                                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(val_copy.clone()));
+                                                        })
+                                                        .child("📋"),
+                                                )
                                         }))
+                                        .into_any_element()
                                 } else {
-                                    div().text_xs().text_color(t.text_muted).child("No headers")
+                                    div().p(px(12.)).text_xs().text_color(t.text_muted).child("No headers received.").into_any_element()
                                 }
                             }
                             ResponseTabKind::Cookies => {
                                 if let Some(resp) = &current_resp {
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .gap(px(4.))
-                                        .children(resp.cookies.iter().map(|c| {
-                                            div()
-                                                .text_xs()
-                                                .font_family(".SystemMonoFont")
-                                                .text_color(t.text_primary)
-                                                .child(c.clone())
-                                        }))
+                                    let parsed_cookies = resp.parsed_cookies();
+                                    if parsed_cookies.is_empty() {
+                                        div().p(px(12.)).text_xs().text_color(t.text_muted).child("No cookies received in this response.").into_any_element()
+                                    } else {
+                                        div()
+                                            .size_full()
+                                            .overflow_y_scrollbar()
+                                            .p(px(12.))
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(8.))
+                                            .children(parsed_cookies.into_iter().map(|cookie| {
+                                                div()
+                                                    .p(px(8.))
+                                                    .rounded(px(6.))
+                                                    .bg(t.bg_card)
+                                                    .border_1()
+                                                    .border_color(t.border)
+                                                    .flex()
+                                                    .flex_col()
+                                                    .gap(px(4.))
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .items_center()
+                                                            .justify_between()
+                                                            .child(
+                                                                div()
+                                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                                    .text_color(t.primary)
+                                                                    .child(cookie.name.clone()),
+                                                            )
+                                                            .child(
+                                                                div()
+                                                                    .flex()
+                                                                    .gap(px(4.))
+                                                                    .when(cookie.secure, |this| {
+                                                                        this.child(div().px(px(4.)).rounded(px(2.)).bg(gpui::rgb(0x22c55e)).text_color(gpui::rgb(0xffffff)).text_xs().child("Secure"))
+                                                                    })
+                                                                    .when(cookie.http_only, |this| {
+                                                                        this.child(div().px(px(4.)).rounded(px(2.)).bg(gpui::rgb(0x3b82f6)).text_color(gpui::rgb(0xffffff)).text_xs().child("HttpOnly"))
+                                                                    }),
+                                                            ),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .font_family(".SystemMonoFont")
+                                                            .text_xs()
+                                                            .text_color(t.text_primary)
+                                                            .child(cookie.value.clone()),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .gap(px(12.))
+                                                            .text_xs()
+                                                            .text_color(t.text_muted)
+                                                            .when_some(cookie.domain, |this, d| this.child(format!("Domain: {}", d)))
+                                                            .when_some(cookie.path, |this, p| this.child(format!("Path: {}", p)))
+                                                            .when_some(cookie.expires, |this, exp| this.child(format!("Expires: {}", exp))),
+                                                    )
+                                            }))
+                                            .into_any_element()
+                                    }
                                 } else {
-                                    div().text_xs().text_color(t.text_muted).child("No cookies")
+                                    div().p(px(12.)).text_xs().text_color(t.text_muted).child("No cookies received.").into_any_element()
                                 }
                             }
                         }

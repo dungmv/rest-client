@@ -1,7 +1,8 @@
+use crate::http::timing::probe_connection;
 use crate::interpolation::interpolate;
 use crate::models::{
-    Auth, Environment, HttpMethod, HttpRequestItem, HttpResponseRecord, RequestBody,
-    RequestSettings, TimingBreakdown,
+    Auth, Environment, HttpMethod, HttpRequestItem, HttpResponseRecord, KeyValuePair,
+    MultipartItem, RequestBody, RequestSentInfo, RequestSettings, TimingBreakdown,
 };
 use chrono::Utc;
 use cookie_store::CookieStore;
@@ -13,6 +14,59 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
+
+/// Extracts base URL and query parameters from a URL string
+pub fn parse_query_from_url(raw_url: &str) -> (String, Vec<KeyValuePair>) {
+    if let Some((base, query)) = raw_url.split_once('?') {
+        let mut pairs = Vec::new();
+        for part in query.split('&') {
+            if part.is_empty() {
+                continue;
+            }
+            if let Some((k, v)) = part.split_once('=') {
+                let k_norm = k.replace('+', " ");
+                let v_norm = v.replace('+', " ");
+                let dec_k = urlencoding::decode(&k_norm).unwrap_or(std::borrow::Cow::Borrowed(&k_norm)).to_string();
+                let dec_v = urlencoding::decode(&v_norm).unwrap_or(std::borrow::Cow::Borrowed(&v_norm)).to_string();
+                pairs.push(KeyValuePair::new(dec_k, dec_v));
+            } else {
+                let part_norm = part.replace('+', " ");
+                let dec_k = urlencoding::decode(&part_norm).unwrap_or(std::borrow::Cow::Borrowed(&part_norm)).to_string();
+                pairs.push(KeyValuePair::new(dec_k, ""));
+            }
+        }
+        (base.to_string(), pairs)
+    } else {
+        (raw_url.to_string(), Vec::new())
+    }
+}
+
+/// Rebuilds a URL with the given enabled query parameters
+pub fn build_url_with_query(base_url: &str, params: &[KeyValuePair]) -> String {
+    let base = if let Some((b, _)) = base_url.split_once('?') {
+        b
+    } else {
+        base_url
+    };
+
+    let active_params: Vec<_> = params
+        .iter()
+        .filter(|p| p.enabled && !p.key.trim().is_empty())
+        .map(|p| {
+            format!(
+                "{}={}",
+                urlencoding::encode(&p.key),
+                urlencoding::encode(&p.value)
+            )
+        })
+        .collect();
+
+    if active_params.is_empty() {
+        base.to_string()
+    } else {
+        format!("{}?{}", base, active_params.join("&"))
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum HttpError {
@@ -48,6 +102,8 @@ pub struct ResolvedRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: Option<Vec<u8>>,
+    pub multipart: Option<Vec<MultipartItem>>,
+    pub sent_info: RequestSentInfo,
     pub settings: RequestSettings,
 }
 
@@ -141,6 +197,7 @@ impl ResolvedRequest {
         }
 
         // Body handling
+        let mut multipart_data = None;
         let body_bytes = match &item.body {
             RequestBody::None => None,
             RequestBody::Json(raw_json) => {
@@ -169,8 +226,24 @@ impl ResolvedRequest {
                     .join("&");
                 Some(form_str.into_bytes())
             }
-            RequestBody::Multipart(_) => {
-                // Simplified text multipart or raw
+            RequestBody::Multipart(items) => {
+                let interpolated_items: Vec<MultipartItem> = items
+                    .iter()
+                    .filter(|p| p.enabled && !p.key.trim().is_empty())
+                    .map(|p| {
+                        let k = interpolate(&p.key, env).text;
+                        let v = interpolate(&p.value, env).text;
+                        let file_path = p.file_path.as_ref().map(|path| interpolate(path, env).text);
+                        MultipartItem {
+                            enabled: true,
+                            key: k,
+                            value: v,
+                            is_file: p.is_file,
+                            file_path,
+                        }
+                    })
+                    .collect();
+                multipart_data = Some(interpolated_items);
                 None
             }
             RequestBody::Raw { content, content_type } => {
@@ -180,7 +253,46 @@ impl ResolvedRequest {
                 let interpolated = interpolate(content, env).text;
                 Some(interpolated.into_bytes())
             }
-            RequestBody::Binary { file_path } => std::fs::read(file_path).ok(),
+            RequestBody::Binary { file_path } => {
+                if !content_type_set {
+                    headers.push(("Content-Type".to_string(), "application/octet-stream".to_string()));
+                }
+                let interpolated_path = interpolate(file_path, env).text;
+                std::fs::read(&interpolated_path).ok()
+            }
+        };
+
+        let body_preview = if let Some(b) = &body_bytes {
+            if let Ok(s) = std::str::from_utf8(b) {
+                Some(s.chars().take(2000).collect())
+            } else {
+                Some(format!("[Binary data: {} bytes]", b.len()))
+            }
+        } else if let Some(parts) = &multipart_data {
+            let desc = parts
+                .iter()
+                .map(|p| {
+                    if p.is_file {
+                        format!("{} = @{}", p.key, p.file_path.as_deref().unwrap_or("file"))
+                    } else {
+                        format!("{} = {}", p.key, p.value)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            Some(format!("[Multipart: {}]", desc))
+        } else {
+            None
+        };
+
+        let body_size_bytes = body_bytes.as_ref().map(|b| b.len()).unwrap_or(0);
+
+        let sent_info = RequestSentInfo {
+            method: item.method,
+            url: full_url.clone(),
+            headers: headers.clone(),
+            body_size_bytes,
+            body_preview,
         };
 
         Ok(ResolvedRequest {
@@ -189,6 +301,8 @@ impl ResolvedRequest {
             url: full_url,
             headers,
             body: body_bytes,
+            multipart: multipart_data,
+            sent_info,
             settings: item.settings.clone(),
         })
     }
@@ -293,13 +407,35 @@ impl HttpExecutor for ReqwestExecutor {
         }
         request_builder = request_builder.headers(header_map);
 
-        if let Some(body_data) = req.body {
+        if let Some(multipart_items) = req.multipart {
+            let mut form = reqwest::multipart::Form::new();
+            for item in multipart_items {
+                if item.is_file {
+                    if let Some(path) = &item.file_path {
+                        if let Ok(file_bytes) = std::fs::read(path) {
+                            let file_name = std::path::Path::new(path)
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("file")
+                                .to_string();
+                            let part = reqwest::multipart::Part::bytes(file_bytes).file_name(file_name);
+                            form = form.part(item.key.clone(), part);
+                        }
+                    }
+                } else {
+                    form = form.text(item.key.clone(), item.value.clone());
+                }
+            }
+            request_builder = request_builder.multipart(form);
+        } else if let Some(body_data) = req.body {
             request_builder = request_builder.body(body_data);
         }
 
         if let Some(tx) = &progress_tx {
             let _ = tx.send(HttpProgress::Sending);
         }
+
+        let probe = probe_connection(&req.url, req.settings.validate_tls).await;
 
         let ttfb_start = Instant::now();
         let response = request_builder
@@ -350,15 +486,21 @@ impl HttpExecutor for ReqwestExecutor {
 
         let total_ms = start_time.elapsed().as_millis() as u64;
 
-        // Timing breakdown approximation
-        let connect_ms = total_ms.saturating_sub(ttfb_ms + download_ms);
+        let (dns_ms, connect_ms, tls_ms) = if let Some(p) = probe {
+            (Some(p.dns_ms), Some(p.connect_ms), p.tls_ms)
+        } else {
+            let connect_approx = total_ms.saturating_sub(ttfb_ms + download_ms);
+            (Some(connect_approx / 3), Some(connect_approx * 2 / 3), None)
+        };
+        let connection_reused = dns_ms.unwrap_or(0) == 0 && connect_ms.unwrap_or(0) == 0;
         let timing = TimingBreakdown {
-            dns_ms: Some(connect_ms / 3),
-            connect_ms: Some(connect_ms * 2 / 3),
-            tls_ms: None,
+            dns_ms,
+            connect_ms,
+            tls_ms,
             ttfb_ms: Some(ttfb_ms),
             download_ms: Some(download_ms),
             total_ms,
+            connection_reused,
         };
 
         // Extract cookies
@@ -375,7 +517,66 @@ impl HttpExecutor for ReqwestExecutor {
             cookies,
             body: body_bytes,
             timing,
+            request_sent: Some(req.sent_info),
             created_at: Utc::now(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{HttpMethod, HttpRequestItem, KeyValuePair, MultipartItem, RequestBody};
+
+    #[test]
+    fn test_parse_query_from_url() {
+        let url = "https://api.example.com/search?q=rust+lang&page=1&empty=&flag";
+        let (base, params) = parse_query_from_url(url);
+        assert_eq!(base, "https://api.example.com/search");
+        assert_eq!(params.len(), 4);
+        assert_eq!(params[0].key, "q");
+        assert_eq!(params[0].value, "rust lang");
+        assert_eq!(params[1].key, "page");
+        assert_eq!(params[1].value, "1");
+        assert_eq!(params[2].key, "empty");
+        assert_eq!(params[2].value, "");
+        assert_eq!(params[3].key, "flag");
+        assert_eq!(params[3].value, "");
+    }
+
+    #[test]
+    fn test_build_url_with_query() {
+        let base = "https://api.example.com/items";
+        let params = vec![
+            KeyValuePair::new("type", "tools"),
+            KeyValuePair {
+                enabled: false,
+                key: "disabled".to_string(),
+                value: "val".to_string(),
+                description: None,
+            },
+            KeyValuePair::new("limit", "25"),
+        ];
+        let built = build_url_with_query(base, &params);
+        assert_eq!(built, "https://api.example.com/items?type=tools&limit=25");
+    }
+
+    #[test]
+    fn test_resolved_request_multipart() {
+        let mut item = HttpRequestItem::new("ws-1", "Test Multipart", HttpMethod::Post, "http://localhost:8080/upload");
+        item.body = RequestBody::Multipart(vec![
+            MultipartItem::new_text("description", "A test file upload"),
+            MultipartItem::new_file("file", "C:/dummy/path.png"),
+        ]);
+
+        let resolved = ResolvedRequest::from_item(&item, None).unwrap();
+        assert!(resolved.multipart.is_some());
+        let parts = resolved.multipart.unwrap();
+        assert_eq!(parts.len(), 2);
+        assert!(!parts[0].is_file);
+        assert_eq!(parts[0].key, "description");
+        assert!(parts[1].is_file);
+        assert_eq!(parts[1].key, "file");
+        assert!(resolved.sent_info.body_preview.is_some());
     }
 }

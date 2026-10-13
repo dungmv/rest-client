@@ -1,6 +1,7 @@
 use gpui::Context;
+use restclient_core::http::{build_url_with_query, parse_query_from_url};
 use restclient_core::models::{
-    Auth, HttpMethod, HttpRequestItem, KeyValuePair, RequestBody, RequestSettings,
+    Auth, HttpMethod, HttpRequestItem, KeyValuePair, MultipartItem, RequestBody, RequestSettings,
 };
 use std::collections::HashSet;
 use tokio::sync::oneshot;
@@ -94,9 +95,14 @@ impl EditorState {
         }
     }
 
+    /// Sets URL and synchronizes query parameters to params table (Bi-directional sync)
     pub fn set_url(&mut self, url: String, cx: &mut Context<Self>) {
         if let Some(req) = &mut self.active_request {
+            let (_, parsed_params) = parse_query_from_url(&url);
             req.url = url;
+            if !parsed_params.is_empty() {
+                req.params = parsed_params;
+            }
             self.is_dirty = true;
             cx.notify();
         }
@@ -122,13 +128,15 @@ impl EditorState {
         cx.notify();
     }
 
-    // Params
+    // Params with Bi-directional URL sync
     pub fn update_param(&mut self, index: usize, key: String, val: String, enabled: bool, cx: &mut Context<Self>) {
         if let Some(req) = &mut self.active_request {
             if index < req.params.len() {
                 req.params[index].key = key;
                 req.params[index].value = val;
                 req.params[index].enabled = enabled;
+                let (base, _) = parse_query_from_url(&req.url);
+                req.url = build_url_with_query(&base, &req.params);
                 self.is_dirty = true;
                 cx.notify();
             }
@@ -147,6 +155,8 @@ impl EditorState {
         if let Some(req) = &mut self.active_request {
             if index < req.params.len() {
                 req.params.remove(index);
+                let (base, _) = parse_query_from_url(&req.url);
+                req.url = build_url_with_query(&base, &req.params);
                 self.is_dirty = true;
                 cx.notify();
             }
@@ -202,6 +212,100 @@ impl EditorState {
         }
     }
 
+    // Form Urlencoded
+    pub fn update_form_param(&mut self, index: usize, key: String, val: String, enabled: bool, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            if let RequestBody::FormUrlEncoded(pairs) = &mut req.body {
+                if index < pairs.len() {
+                    pairs[index].key = key;
+                    pairs[index].value = val;
+                    pairs[index].enabled = enabled;
+                    self.is_dirty = true;
+                    cx.notify();
+                }
+            }
+        }
+    }
+
+    pub fn add_form_param(&mut self, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            if let RequestBody::FormUrlEncoded(pairs) = &mut req.body {
+                pairs.push(KeyValuePair::new("", ""));
+                self.is_dirty = true;
+                cx.notify();
+            }
+        }
+    }
+
+    pub fn remove_form_param(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            if let RequestBody::FormUrlEncoded(pairs) = &mut req.body {
+                if index < pairs.len() {
+                    pairs.remove(index);
+                    self.is_dirty = true;
+                    cx.notify();
+                }
+            }
+        }
+    }
+
+    // Multipart
+    pub fn update_multipart_item(&mut self, index: usize, key: String, val: String, is_file: bool, file_path: Option<String>, enabled: bool, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            if let RequestBody::Multipart(items) = &mut req.body {
+                if index < items.len() {
+                    items[index].key = key;
+                    items[index].value = val;
+                    items[index].is_file = is_file;
+                    items[index].file_path = file_path;
+                    items[index].enabled = enabled;
+                    self.is_dirty = true;
+                    cx.notify();
+                }
+            }
+        }
+    }
+
+    pub fn add_multipart_item(&mut self, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            if let RequestBody::Multipart(items) = &mut req.body {
+                items.push(MultipartItem::default());
+                self.is_dirty = true;
+                cx.notify();
+            }
+        }
+    }
+
+    pub fn remove_multipart_item(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            if let RequestBody::Multipart(items) = &mut req.body {
+                if index < items.len() {
+                    items.remove(index);
+                    self.is_dirty = true;
+                    cx.notify();
+                }
+            }
+        }
+    }
+
+    // Raw body
+    pub fn set_raw_body(&mut self, content: String, content_type: String, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            req.body = RequestBody::Raw { content, content_type };
+            self.is_dirty = true;
+            cx.notify();
+        }
+    }
+
+    // Binary body
+    pub fn set_binary_file(&mut self, file_path: String, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            req.body = RequestBody::Binary { file_path };
+            self.is_dirty = true;
+            cx.notify();
+        }
+    }
+
     // Auth
     pub fn set_auth(&mut self, auth: Auth, cx: &mut Context<Self>) {
         if let Some(req) = &mut self.active_request {
@@ -212,10 +316,58 @@ impl EditorState {
         }
     }
 
+    pub fn set_bearer_token(&mut self, token: String, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            req.auth = Auth::Bearer { token };
+            self.is_dirty = true;
+            cx.notify();
+        }
+    }
+
+    pub fn set_basic_auth(&mut self, username: String, password: String, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            req.auth = Auth::Basic { username, password };
+            self.is_dirty = true;
+            cx.notify();
+        }
+    }
+
+    pub fn set_api_key(&mut self, key: String, value: String, in_header: bool, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            req.auth = Auth::ApiKey { key, value, in_header };
+            self.is_dirty = true;
+            cx.notify();
+        }
+    }
+
     // Settings
     pub fn update_settings(&mut self, settings: RequestSettings, cx: &mut Context<Self>) {
         if let Some(req) = &mut self.active_request {
             req.settings = settings;
+            self.is_dirty = true;
+            cx.notify();
+        }
+    }
+
+    pub fn set_timeout_secs(&mut self, secs: u64, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            req.settings.timeout_secs = secs;
+            self.is_dirty = true;
+            cx.notify();
+        }
+    }
+
+    pub fn set_follow_redirects(&mut self, follow: bool, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            req.settings.follow_redirects = follow;
+            self.is_dirty = true;
+            cx.notify();
+        }
+    }
+
+    pub fn set_validate_tls(&mut self, validate: bool, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            req.settings.validate_tls = validate;
             self.is_dirty = true;
             cx.notify();
         }

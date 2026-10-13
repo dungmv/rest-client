@@ -96,6 +96,65 @@ pub enum Auth {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MultipartItem {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub key: String,
+    pub value: String,
+    #[serde(default)]
+    pub is_file: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_path: Option<String>,
+}
+
+impl Default for MultipartItem {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            key: String::new(),
+            value: String::new(),
+            is_file: false,
+            file_path: None,
+        }
+    }
+}
+
+impl MultipartItem {
+    pub fn new_text(key: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            enabled: true,
+            key: key.into(),
+            value: value.into(),
+            is_file: false,
+            file_path: None,
+        }
+    }
+
+    pub fn new_file(key: impl Into<String>, file_path: impl Into<String>) -> Self {
+        let path = file_path.into();
+        Self {
+            enabled: true,
+            key: key.into(),
+            value: path.clone(),
+            is_file: true,
+            file_path: Some(path),
+        }
+    }
+}
+
+impl From<KeyValuePair> for MultipartItem {
+    fn from(kv: KeyValuePair) -> Self {
+        Self {
+            enabled: kv.enabled,
+            key: kv.key,
+            value: kv.value,
+            is_file: false,
+            file_path: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RequestBody {
@@ -103,7 +162,7 @@ pub enum RequestBody {
     None,
     Json(String),
     FormUrlEncoded(Vec<KeyValuePair>),
-    Multipart(Vec<KeyValuePair>),
+    Multipart(Vec<MultipartItem>),
     Raw {
         content: String,
         content_type: String,
@@ -269,6 +328,84 @@ pub struct TimingBreakdown {
     pub ttfb_ms: Option<u64>,
     pub download_ms: Option<u64>,
     pub total_ms: u64,
+    #[serde(default)]
+    pub connection_reused: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct RequestSentInfo {
+    pub method: HttpMethod,
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub body_size_bytes: usize,
+    pub body_preview: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParsedCookie {
+    pub name: String,
+    pub value: String,
+    pub domain: Option<String>,
+    pub path: Option<String>,
+    pub expires: Option<String>,
+    pub max_age: Option<i64>,
+    pub secure: bool,
+    pub http_only: bool,
+    pub same_site: Option<String>,
+}
+
+impl ParsedCookie {
+    pub fn parse(raw: &str) -> Self {
+        let mut parts = raw.split(';').map(|s| s.trim());
+        let first = parts.next().unwrap_or("");
+        let (name, value) = if let Some((n, v)) = first.split_once('=') {
+            (n.trim().to_string(), v.trim().to_string())
+        } else {
+            (first.to_string(), String::new())
+        };
+
+        let mut domain = None;
+        let mut path = None;
+        let mut expires = None;
+        let mut max_age = None;
+        let mut secure = false;
+        let mut http_only = false;
+        let mut same_site = None;
+
+        for part in parts {
+            if part.eq_ignore_ascii_case("secure") {
+                secure = true;
+            } else if part.eq_ignore_ascii_case("httponly") {
+                http_only = true;
+            } else if let Some((k, v)) = part.split_once('=') {
+                let k_trim = k.trim();
+                let v_trim = v.trim();
+                if k_trim.eq_ignore_ascii_case("domain") {
+                    domain = Some(v_trim.to_string());
+                } else if k_trim.eq_ignore_ascii_case("path") {
+                    path = Some(v_trim.to_string());
+                } else if k_trim.eq_ignore_ascii_case("expires") {
+                    expires = Some(v_trim.to_string());
+                } else if k_trim.eq_ignore_ascii_case("max-age") {
+                    max_age = v_trim.parse::<i64>().ok();
+                } else if k_trim.eq_ignore_ascii_case("samesite") {
+                    same_site = Some(v_trim.to_string());
+                }
+            }
+        }
+
+        Self {
+            name,
+            value,
+            domain,
+            path,
+            expires,
+            max_age,
+            secure,
+            http_only,
+            same_site,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -283,6 +420,8 @@ pub struct HttpResponseRecord {
     pub cookies: Vec<String>,
     pub body: Vec<u8>,
     pub timing: TimingBreakdown,
+    #[serde(default)]
+    pub request_sent: Option<RequestSentInfo>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -308,5 +447,9 @@ impl HttpResponseRecord {
         } else {
             format!("{:.2} s", self.duration_ms as f64 / 1000.0)
         }
+    }
+
+    pub fn parsed_cookies(&self) -> Vec<ParsedCookie> {
+        self.cookies.iter().map(|c| ParsedCookie::parse(c)).collect()
     }
 }

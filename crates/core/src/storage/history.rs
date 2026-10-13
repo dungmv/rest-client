@@ -46,10 +46,12 @@ impl HistoryStorage {
                 cookies_json TEXT NOT NULL,
                 body BLOB NOT NULL,
                 timing_json TEXT NOT NULL,
+                request_sent_json TEXT,
                 created_at TEXT NOT NULL
             );",
             [],
         )?;
+        let _ = conn.execute("ALTER TABLE response_history ADD COLUMN request_sent_json TEXT;", []);
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_response_history_req ON response_history(request_id, created_at DESC);",
             [],
@@ -62,13 +64,14 @@ impl HistoryStorage {
         let headers_json = serde_json::to_string(&record.headers)?;
         let cookies_json = serde_json::to_string(&record.cookies)?;
         let timing_json = serde_json::to_string(&record.timing)?;
+        let request_sent_json = serde_json::to_string(&record.request_sent)?;
         let created_at_str = record.created_at.to_rfc3339();
 
         conn.execute(
             "INSERT INTO response_history (
                 id, request_id, status_code, status_text, duration_ms, size_bytes,
-                headers_json, cookies_json, body, timing_json, created_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                headers_json, cookies_json, body, timing_json, request_sent_json, created_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 record.id,
                 record.request_id,
@@ -80,6 +83,7 @@ impl HistoryStorage {
                 cookies_json,
                 record.body,
                 timing_json,
+                request_sent_json,
                 created_at_str,
             ],
         )?;
@@ -104,7 +108,7 @@ impl HistoryStorage {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, request_id, status_code, status_text, duration_ms, size_bytes,
-                    headers_json, cookies_json, body, timing_json, created_at
+                    headers_json, cookies_json, body, timing_json, created_at, request_sent_json
              FROM response_history
              WHERE request_id = ?1
              ORDER BY created_at DESC
@@ -123,10 +127,12 @@ impl HistoryStorage {
             let body: Vec<u8> = row.get(8)?;
             let timing_json: String = row.get(9)?;
             let created_at_str: String = row.get(10)?;
+            let request_sent_json: Option<String> = row.get(11).ok();
 
             let headers = serde_json::from_str(&headers_json).unwrap_or_default();
             let cookies = serde_json::from_str(&cookies_json).unwrap_or_default();
             let timing = serde_json::from_str(&timing_json).unwrap_or_default();
+            let request_sent = request_sent_json.and_then(|j| serde_json::from_str(&j).ok());
             let created_at = DateTime::parse_from_rfc3339(&created_at_str)
                 .map(|dt| dt.with_timezone(&Utc))
                 .unwrap_or_else(|_| Utc::now());
@@ -142,6 +148,7 @@ impl HistoryStorage {
                 cookies,
                 body,
                 timing,
+                request_sent,
                 created_at,
             })
         })?;
@@ -181,6 +188,7 @@ mod tests {
                 cookies: vec![],
                 body: format!("body {}", i).into_bytes(),
                 timing: TimingBreakdown::default(),
+                request_sent: None,
                 created_at: Utc::now(),
             };
             storage.save_response(&record, 3).unwrap();

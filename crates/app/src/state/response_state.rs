@@ -55,6 +55,14 @@ impl ResponseState {
         cx.notify();
     }
 
+    pub fn select_history_record(&mut self, record_id: &str, cx: &mut Context<Self>) {
+        if let Some(rec) = self.history.iter().find(|r| r.id == record_id).cloned() {
+            self.current_response = Some(rec);
+            self.show_history_dropdown = false;
+            cx.notify();
+        }
+    }
+
     pub fn set_active_tab(&mut self, tab: ResponseTabKind, cx: &mut Context<Self>) {
         self.active_tab = tab;
         cx.notify();
