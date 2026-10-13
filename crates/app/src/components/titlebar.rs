@@ -43,8 +43,9 @@ impl RenderOnce for AppTitleBar {
         let current_url = ed
             .active_request
             .as_ref()
+            .filter(|r| !r.url.is_empty())
             .map(|r| r.url.clone())
-            .unwrap_or_else(|| "localhost:8002/api/tool-logs".to_string());
+            .unwrap_or_default();
 
         let ws_clone = self.workspace_state.clone();
         let ed_clone = self.editor_state.clone();
@@ -245,6 +246,7 @@ impl RenderOnce for AppTitleBar {
             // Settings button
             .child({
                 let ws_s = ws_clone.clone();
+                let ed_s = ed_clone.clone();
                 div()
                     .id("btn-settings")
                     .px(px(6.))
@@ -254,6 +256,9 @@ impl RenderOnce for AppTitleBar {
                     .hover(|s| s.bg(t.bg_hover))
                     .text_color(t.text_secondary)
                     .on_click(move |_, _, cx| {
+                        ed_s.update(cx, |state, cx| {
+                            state.set_active_tab_kind(crate::state::RequestTabKind::Settings, cx);
+                        });
                         ws_s.update(cx, |state, cx| {
                             state.toggle_settings_modal(cx);
                         });

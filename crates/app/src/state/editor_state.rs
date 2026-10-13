@@ -33,7 +33,12 @@ pub struct EditorState {
 impl EditorState {
     pub fn new() -> Self {
         Self {
-            active_request: None,
+            active_request: Some(HttpRequestItem::new(
+                "scratch",
+                "Untitled Request",
+                HttpMethod::Get,
+                "",
+            )),
             open_tabs: Vec::new(),
             pinned_tabs: HashSet::new(),
             active_tab_kind: RequestTabKind::Body,
@@ -45,6 +50,18 @@ impl EditorState {
             body_dropdown_open: false,
             auth_dropdown_open: false,
         }
+    }
+
+    pub fn ensure_active_request(&mut self) -> &mut HttpRequestItem {
+        if self.active_request.is_none() {
+            self.active_request = Some(HttpRequestItem::new(
+                "scratch",
+                "Untitled Request",
+                HttpMethod::Get,
+                "",
+            ));
+        }
+        self.active_request.as_mut().unwrap()
     }
 
     pub fn set_active_request(&mut self, req: HttpRequestItem, pin: bool, cx: &mut Context<Self>) {
@@ -99,9 +116,20 @@ impl EditorState {
     pub fn set_url(&mut self, url: String, cx: &mut Context<Self>) {
         if let Some(req) = &mut self.active_request {
             let (_, parsed_params) = parse_query_from_url(&url);
-            req.url = url;
-            if !parsed_params.is_empty() {
+            req.url = url.clone();
+            if url.contains('?') {
                 req.params = parsed_params;
+            } else {
+                // Keep any disabled params, remove enabled ones that were in the URL
+                req.params.retain(|p| !p.enabled);
+            }
+            if req.name == "New Request" || req.name == "Untitled Request" || req.url.starts_with("http") {
+                let clean = url
+                    .trim_start_matches("https://")
+                    .trim_start_matches("http://");
+                if !clean.is_empty() {
+                    req.name = clean.split('?').next().unwrap_or(clean).to_string();
+                }
             }
             self.is_dirty = true;
             cx.notify();

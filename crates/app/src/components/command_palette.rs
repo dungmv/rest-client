@@ -2,9 +2,10 @@ use crate::components::status_badge::MethodBadge;
 use crate::state::{EditorState, WorkspaceState};
 use crate::theme::theme;
 use gpui::{
-    div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
+    div, px, App, AppContext as _, Entity, InteractiveElement as _, IntoElement, ParentElement,
     RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
+use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement as _;
 
 #[derive(IntoElement)]
@@ -29,7 +30,7 @@ impl CommandPalette {
 }
 
 impl RenderOnce for CommandPalette {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
         let ws = self.workspace_state.read(cx);
         let requests = ws.requests.clone();
@@ -38,6 +39,26 @@ impl RenderOnce for CommandPalette {
         let ws_clone = self.workspace_state.clone();
         let ed_clone = self.editor_state.clone();
         let on_send = self.on_send.clone();
+
+        let cmd_holder = window.use_keyed_state(
+            gpui::SharedString::from("cmd-palette-search-holder"),
+            cx,
+            |window, cx| {
+                let inp = cx.new(|cx| {
+                    InputState::new(window, cx)
+                        .placeholder("Type a command, request, or environment...")
+                });
+                let sub = cx.subscribe_in(&inp, window, move |_, _, event, _, cx| {
+                    if let InputEvent::Change = event {
+                        cx.refresh_windows();
+                    }
+                });
+                (inp, sub)
+            },
+        );
+
+        let search_input = cmd_holder.read(cx).0.clone();
+        let q = search_input.read(cx).value().to_lowercase();
 
         div()
             .absolute()
@@ -61,7 +82,8 @@ impl RenderOnce for CommandPalette {
                     // Search bar
                     .child(
                         div()
-                            .p(px(12.))
+                            .px(px(12.))
+                            .py(px(8.))
                             .border_b_1()
                             .border_color(t.border)
                             .flex()
@@ -71,9 +93,14 @@ impl RenderOnce for CommandPalette {
                             .child(
                                 div()
                                     .flex_1()
-                                    .text_sm()
-                                    .text_color(t.text_primary)
-                                    .child("Type a command, request, or environment..."),
+                                    .child(
+                                        Input::new(&search_input)
+                                            .id("cmd-palette-input")
+                                            .appearance(false)
+                                            .bordered(false)
+                                            .focus_bordered(false)
+                                            .cleanable(true),
+                                    ),
                             )
                             .child({
                                 let ws_s = ws_clone.clone();
@@ -146,38 +173,47 @@ impl RenderOnce for CommandPalette {
                                     .text_color(t.text_muted)
                                     .child("SWITCH REQUEST"),
                             )
-                            .children(requests.into_iter().map(|req| {
-                                let ws_s = ws_clone.clone();
-                                let ed_s = ed_clone.clone();
-                                let r = req.clone();
-
-                                div()
-                                    .id(format!("cmd-req-{}", req.id))
-                                    .px(px(8.))
-                                    .py(px(6.))
-                                    .rounded(px(4.))
-                                    .hover(|s| s.bg(t.bg_hover))
-                                    .cursor_pointer()
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(8.))
-                                    .on_click(move |_, _, cx| {
-                                        ed_s.update(cx, |state, cx| {
-                                            state.set_active_request(r.clone(), true, cx);
-                                        });
-                                        ws_s.update(cx, |state, cx| {
-                                            state.toggle_command_palette(cx);
-                                        });
+                            .children(
+                                requests
+                                    .into_iter()
+                                    .filter(|r| {
+                                        q.is_empty()
+                                            || r.name.to_lowercase().contains(&q)
+                                            || r.url.to_lowercase().contains(&q)
                                     })
-                                    .child(MethodBadge::new(req.method))
-                                    .child(
+                                    .map(|req| {
+                                        let ws_s = ws_clone.clone();
+                                        let ed_s = ed_clone.clone();
+                                        let r = req.clone();
+
                                         div()
-                                            .text_xs()
-                                            .font_family(".SystemMonoFont")
-                                            .text_color(t.text_primary)
-                                            .child(req.name.clone()),
-                                    )
-                            }))
+                                            .id(format!("cmd-req-{}", req.id))
+                                            .px(px(8.))
+                                            .py(px(6.))
+                                            .rounded(px(4.))
+                                            .hover(|s| s.bg(t.bg_hover))
+                                            .cursor_pointer()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(8.))
+                                            .on_click(move |_, _, cx| {
+                                                ed_s.update(cx, |state, cx| {
+                                                    state.set_active_request(r.clone(), true, cx);
+                                                });
+                                                ws_s.update(cx, |state, cx| {
+                                                    state.toggle_command_palette(cx);
+                                                });
+                                            })
+                                            .child(MethodBadge::new(req.method))
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .font_family(".SystemMonoFont")
+                                                    .text_color(t.text_primary)
+                                                    .child(req.name.clone()),
+                                            )
+                                    }),
+                            )
                             // Switch Environment
                             .child(
                                 div()
@@ -188,34 +224,41 @@ impl RenderOnce for CommandPalette {
                                     .text_color(t.text_muted)
                                     .child("SWITCH ENVIRONMENT"),
                             )
-                            .children(envs.into_iter().map(|env| {
-                                let ws_s = ws_clone.clone();
-                                let env_id = env.id.clone();
+                            .children(
+                                envs.into_iter()
+                                    .filter(|e| q.is_empty() || e.name.to_lowercase().contains(&q))
+                                    .map(|env| {
+                                        let ws_s = ws_clone.clone();
+                                        let env_id = env.id.clone();
 
-                                div()
-                                    .id(format!("cmd-env-{}", env.id))
-                                    .px(px(8.))
-                                    .py(px(6.))
-                                    .rounded(px(4.))
-                                    .hover(|s| s.bg(t.bg_hover))
-                                    .cursor_pointer()
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(8.))
-                                    .on_click(move |_, _, cx| {
-                                        ws_s.update(cx, |state, cx| {
-                                            state.set_active_environment(Some(env_id.clone()), cx);
-                                            state.toggle_command_palette(cx);
-                                        });
-                                    })
-                                    .child("●")
-                                    .child(
                                         div()
-                                            .text_xs()
-                                            .text_color(t.text_primary)
-                                            .child(format!("Switch to: {}", env.name)),
-                                    )
-                            })),
+                                            .id(format!("cmd-env-{}", env.id))
+                                            .px(px(8.))
+                                            .py(px(6.))
+                                            .rounded(px(4.))
+                                            .hover(|s| s.bg(t.bg_hover))
+                                            .cursor_pointer()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(8.))
+                                            .on_click(move |_, _, cx| {
+                                                ws_s.update(cx, |state, cx| {
+                                                    state.set_active_environment(
+                                                        Some(env_id.clone()),
+                                                        cx,
+                                                    );
+                                                    state.toggle_command_palette(cx);
+                                                });
+                                            })
+                                            .child("●")
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(t.text_primary)
+                                                    .child(format!("Switch to: {}", env.name)),
+                                            )
+                                    }),
+                            ),
                     ),
             )
     }

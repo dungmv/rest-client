@@ -3,7 +3,7 @@ use crate::state::{EditorState, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
+    div, px, App, AppContext as _, Entity, InteractiveElement as _, IntoElement, ParentElement,
     RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::scroll::ScrollableElement as _;
@@ -27,17 +27,51 @@ impl SidebarTree {
 }
 
 impl RenderOnce for SidebarTree {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
-        let ws = self.workspace_state.read(cx);
-        let ed = self.editor_state.read(cx);
-
-        let active_req_id = ed.active_request.as_ref().map(|r| r.id.clone());
-        let git_branch = ws.git_branch.clone().unwrap_or_else(|| "main".to_string());
-        let query = ws.filter_query.to_lowercase();
+        let (git_branch, query, filter_query_raw, folders, requests) = {
+            let ws = self.workspace_state.read(cx);
+            (
+                ws.git_branch.clone().unwrap_or_else(|| "main".to_string()),
+                ws.filter_query.to_lowercase(),
+                ws.filter_query.clone(),
+                ws.folders.clone(),
+                ws.requests.clone(),
+            )
+        };
+        let active_req_id = self.editor_state.read(cx).active_request.as_ref().map(|r| r.id.clone());
+        let has_nothing = folders.is_empty() && requests.is_empty();
 
         let ws_clone = self.workspace_state.clone();
         let ed_clone = self.editor_state.clone();
+
+        let ws_search = ws_clone.clone();
+        let search_holder = window.use_keyed_state(
+            gpui::SharedString::from("sidebar-search-input-holder"),
+            cx,
+            |window, cx| {
+                let search_input = cx.new(|cx| {
+                    gpui_component::input::InputState::new(window, cx).placeholder("Search...")
+                });
+                let s_in = search_input.clone();
+                let sub = cx.subscribe_in(&search_input, window, move |_, _, event, _, cx| {
+                    if let gpui_component::input::InputEvent::Change = event {
+                        let q = s_in.read(cx).value().to_string();
+                        ws_search.update(cx, |state, cx| {
+                            state.set_filter_query(q, cx);
+                        });
+                    }
+                });
+                (search_input, sub)
+            },
+        );
+
+        let search_input = search_holder.read(cx).0.clone();
+        if search_input.read(cx).value().as_str() != filter_query_raw {
+            search_input.update(cx, |inp, cx| {
+                inp.set_value(filter_query_raw.clone(), window, cx);
+            });
+        }
 
         div()
             .w_full()
@@ -59,14 +93,14 @@ impl RenderOnce for SidebarTree {
                         div()
                             .flex_1()
                             .h(px(28.))
-                            .px(px(8.))
+                            .px(px(6.))
                             .rounded(px(6.))
                             .bg(t.bg_input)
                             .border_1()
                             .border_color(t.border_subtle)
                             .flex()
                             .items_center()
-                            .gap(px(6.))
+                            .gap(px(4.))
                             .child(
                                 div()
                                     .text_xs()
@@ -75,20 +109,18 @@ impl RenderOnce for SidebarTree {
                             )
                             .child(
                                 div()
-                                    .text_xs()
-                                    .text_color(if ws.filter_query.is_empty() {
-                                        t.text_muted
-                                    } else {
-                                        t.text_primary
-                                    })
-                                    .child(if ws.filter_query.is_empty() {
-                                        "Search".to_string()
-                                    } else {
-                                        ws.filter_query.clone()
-                                    }),
+                                    .flex_1()
+                                    .child(
+                                        gpui_component::input::Input::new(&search_input)
+                                            .id("sidebar-search-input")
+                                            .appearance(false)
+                                            .bordered(false)
+                                            .focus_bordered(false)
+                                            .cleanable(true),
+                                    ),
                             ),
                     )
-                    // Overflow menu (⋮)
+                    // Overflow menu (⋮) - create folder
                     .child({
                         let ws_s = ws_clone.clone();
                         div()
@@ -107,7 +139,7 @@ impl RenderOnce for SidebarTree {
                                     state.create_folder("new-folder".to_string(), cx);
                                 });
                             })
-                            .child("⋮")
+                            .child("📁+")
                     }),
             )
             // Middle section: Folders & Requests tree
@@ -120,10 +152,58 @@ impl RenderOnce for SidebarTree {
                     .flex()
                     .flex_col()
                     .gap(px(2.))
-                    .children(ws.folders.iter().map(|folder| {
+                    .when(has_nothing, |this| {
+                        let ws_new = ws_clone.clone();
+                        let ed_new = ed_clone.clone();
+                        this.child(
+                            div()
+                                .py(px(32.))
+                                .px(px(12.))
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .justify_center()
+                                .gap(px(10.))
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(t.text_muted)
+                                        .child("No saved requests yet"),
+                                )
+                                .child(
+                                    div()
+                                        .id("btn-sidebar-empty-new-req")
+                                        .px(px(10.))
+                                        .py(px(5.))
+                                        .rounded(px(5.))
+                                        .bg(t.bg_card)
+                                        .border_1()
+                                        .border_color(t.border)
+                                        .cursor_pointer()
+                                        .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
+                                        .text_xs()
+                                        .font_weight(gpui::FontWeight::MEDIUM)
+                                        .text_color(t.text_secondary)
+                                        .on_click(move |_, _, cx| {
+                                            let req = ws_new.update(cx, |state, cx| {
+                                                state.create_request(None, cx)
+                                            });
+                                            ed_new.update(cx, |state, cx| {
+                                                state.set_active_request(req, true, cx);
+                                            });
+                                        })
+                                        .child("+ New Request"),
+                                ),
+                        )
+                    })
+                    .children(folders.iter().map(|folder| {
                         let f_id = folder.id.clone();
-                        let folder_requests: Vec<_> = ws
-                            .requests
+                        let f_id_add = folder.id.clone();
+                        let f_id_del = folder.id.clone();
+                        let ws_f_add = ws_clone.clone();
+                        let ed_f_add = ed_clone.clone();
+                        let ws_f_del = ws_clone.clone();
+                        let folder_requests: Vec<_> = requests
                             .iter()
                             .filter(|r| {
                                 r.folder_id.as_deref() == Some(&f_id)
@@ -143,26 +223,76 @@ impl RenderOnce for SidebarTree {
                                 div()
                                     .flex()
                                     .items_center()
-                                    .gap(px(6.))
+                                    .justify_between()
                                     .px(px(6.))
                                     .py(px(4.))
                                     .rounded(px(4.))
                                     .text_color(t.text_secondary)
                                     .text_xs()
-                                    .child(div().child("⌄"))
-                                    .child(div().child("📁"))
                                     .child(
                                         div()
-                                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                                            .text_color(t.text_primary)
-                                            .child(folder.name.clone()),
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(6.))
+                                            .child(div().child("⌄"))
+                                            .child(div().child("📁"))
+                                            .child(
+                                                div()
+                                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                    .text_color(t.text_primary)
+                                                    .child(folder.name.clone()),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(2.))
+                                            .child(
+                                                div()
+                                                    .id(format!("folder-add-{}", f_id))
+                                                    .px(px(4.))
+                                                    .py(px(1.))
+                                                    .rounded(px(3.))
+                                                    .cursor_pointer()
+                                                    .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
+                                                    .text_color(t.text_muted)
+                                                    .on_click(move |_, _, cx| {
+                                                        let req = ws_f_add.update(cx, |state, cx| {
+                                                            state.create_request(Some(f_id_add.clone()), cx)
+                                                        });
+                                                        ed_f_add.update(cx, |state, cx| {
+                                                            state.set_active_request(req, true, cx);
+                                                        });
+                                                    })
+                                                    .child("+"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .id(format!("folder-del-{}", f_id))
+                                                    .px(px(4.))
+                                                    .py(px(1.))
+                                                    .rounded(px(3.))
+                                                    .cursor_pointer()
+                                                    .hover(|s| s.bg(t.bg_hover).text_color(t.status_4xx))
+                                                    .text_color(t.text_muted)
+                                                    .on_click(move |_, _, cx| {
+                                                        ws_f_del.update(cx, |state, cx| {
+                                                            state.delete_folder(&f_id_del, cx);
+                                                        });
+                                                    })
+                                                    .child("×"),
+                                            ),
                                     ),
                             )
                             // Folder items
                             .children(folder_requests.into_iter().map(|req| {
                                 let is_selected = active_req_id.as_ref() == Some(&req.id);
                                 let req_for_click = req.clone();
+                                let req_id_del = req.id.clone();
                                 let ed_s = ed_clone.clone();
+                                let ws_del = ws_clone.clone();
+                                let ed_del = ed_clone.clone();
 
                                 div()
                                     .id(format!("req-item-{}", req.id))
@@ -215,13 +345,32 @@ impl RenderOnce for SidebarTree {
                                             .gap(px(4.))
                                             .when_some(req.last_status_code, |this, code| {
                                                 this.child(StatusCodeBadge::new(code))
-                                            }),
+                                            })
+                                            .child(
+                                                div()
+                                                    .id(format!("req-del-{}", req.id))
+                                                    .px(px(4.))
+                                                    .py(px(1.))
+                                                    .rounded(px(3.))
+                                                    .text_xs()
+                                                    .text_color(t.text_muted)
+                                                    .hover(|s| s.bg(t.bg_card).text_color(t.status_4xx))
+                                                    .on_click(move |_, _, cx| {
+                                                        ws_del.update(cx, |state, cx| {
+                                                            state.delete_request(&req_id_del, cx);
+                                                        });
+                                                        ed_del.update(cx, |state, cx| {
+                                                            state.close_tab(&req_id_del, cx);
+                                                        });
+                                                    })
+                                                    .child("×"),
+                                            ),
                                     )
                             }))
                     }))
                     // Top-level requests without folder
                     .children(
-                        ws.requests
+                        requests
                             .iter()
                             .filter(|r| {
                                 r.folder_id.is_none()
@@ -232,7 +381,10 @@ impl RenderOnce for SidebarTree {
                             .map(|req| {
                                 let is_selected = active_req_id.as_ref() == Some(&req.id);
                                 let req_for_click = req.clone();
+                                let req_id_del = req.id.clone();
                                 let ed_s = ed_clone.clone();
+                                let ws_del = ws_clone.clone();
+                                let ed_del = ed_clone.clone();
 
                                 div()
                                     .id(format!("req-top-{}", req.id))
@@ -266,6 +418,7 @@ impl RenderOnce for SidebarTree {
                                             .flex()
                                             .items_center()
                                             .gap(px(6.))
+                                            .overflow_hidden()
                                             .child(MethodBadge::new(req.method))
                                             .child(
                                                 div()
@@ -278,9 +431,31 @@ impl RenderOnce for SidebarTree {
                                     )
                                     .child(
                                         div()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(4.))
                                             .when_some(req.last_status_code, |this, code| {
                                                 this.child(StatusCodeBadge::new(code))
-                                            }),
+                                            })
+                                            .child(
+                                                div()
+                                                    .id(format!("req-top-del-{}", req.id))
+                                                    .px(px(4.))
+                                                    .py(px(1.))
+                                                    .rounded(px(3.))
+                                                    .text_xs()
+                                                    .text_color(t.text_muted)
+                                                    .hover(|s| s.bg(t.bg_card).text_color(t.status_4xx))
+                                                    .on_click(move |_, _, cx| {
+                                                        ws_del.update(cx, |state, cx| {
+                                                            state.delete_request(&req_id_del, cx);
+                                                        });
+                                                        ed_del.update(cx, |state, cx| {
+                                                            state.close_tab(&req_id_del, cx);
+                                                        });
+                                                    })
+                                                    .child("×"),
+                                            ),
                                     )
                             }),
                     ),

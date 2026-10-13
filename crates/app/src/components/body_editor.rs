@@ -3,7 +3,7 @@ use crate::state::EditorState;
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
+    div, px, App, AppContext as _, Entity, InteractiveElement as _, IntoElement, ParentElement,
     RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::input::{Textarea, TextareaState};
@@ -50,7 +50,7 @@ impl BodyEditor {
 }
 
 impl RenderOnce for BodyEditor {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
         let ed = self.editor_state.read(cx);
         let ed_entity = self.editor_state.clone();
@@ -241,12 +241,14 @@ impl RenderOnce for BodyEditor {
                                 let ed_up = ed_entity.clone();
                                 let ed_add = ed_entity.clone();
                                 let ed_del = ed_entity.clone();
+                                let req_id_str = active_req.as_ref().map(|r| r.id.clone()).unwrap_or_else(|| "scratch".to_string());
 
                                 div()
                                     .size_full()
                                     .overflow_y_scrollbar()
                                     .child(
                                         KvTable::new(
+                                            format!("form-kv-{}", req_id_str),
                                             pairs,
                                             move |idx, k, v, enabled, _, cx| {
                                                 ed_up.update(cx, |state, cx| {
@@ -269,6 +271,7 @@ impl RenderOnce for BodyEditor {
                             }
                             RequestBody::Multipart(items) => {
                                 let ed_c = ed_entity.clone();
+                                let req_id_str = active_req.as_ref().map(|r| r.id.clone()).unwrap_or_else(|| "scratch".to_string());
                                 div()
                                     .size_full()
                                     .overflow_y_scrollbar()
@@ -305,6 +308,61 @@ impl RenderOnce for BodyEditor {
                                         let is_file = item.is_file;
                                         let file_path = item.file_path.clone();
                                         let enabled = item.enabled;
+                                        let mp_prefix = format!("mp-{}-row-{}", req_id_str, idx);
+
+                                        let ed_up_k = ed_row.clone();
+                                        let ed_up_v = ed_row.clone();
+                                        let fp_k = file_path.clone();
+                                        let fp_v = file_path.clone();
+                                        let mp_holder = window.use_keyed_state(
+                                            gpui::SharedString::from(format!("{}-holder", mp_prefix)),
+                                            cx,
+                                            |window, cx| {
+                                                let key_input = cx.new(|cx| gpui_component::input::InputState::new(window, cx).placeholder("Key..."));
+                                                let val_input = cx.new(|cx| gpui_component::input::InputState::new(window, cx).placeholder("Value..."));
+
+                                                let k_in_1 = key_input.clone();
+                                                let v_in_1 = val_input.clone();
+                                                let sub1 = cx.subscribe_in(&key_input, window, move |_, _, event, _, cx| {
+                                                    if let gpui_component::input::InputEvent::Change = event {
+                                                        let k = k_in_1.read(cx).value().to_string();
+                                                        let v = v_in_1.read(cx).value().to_string();
+                                                        ed_up_k.update(cx, |state, cx| {
+                                                            state.update_multipart_item(idx, k, v, is_file, fp_k.clone(), true, cx);
+                                                        });
+                                                    }
+                                                });
+
+                                                let k_in_2 = key_input.clone();
+                                                let v_in_2 = val_input.clone();
+                                                let sub2 = cx.subscribe_in(&val_input, window, move |_, _, event, _, cx| {
+                                                    if let gpui_component::input::InputEvent::Change = event {
+                                                        let k = k_in_2.read(cx).value().to_string();
+                                                        let v = v_in_2.read(cx).value().to_string();
+                                                        ed_up_v.update(cx, |state, cx| {
+                                                            state.update_multipart_item(idx, k, v, is_file, fp_v.clone(), true, cx);
+                                                        });
+                                                    }
+                                                });
+
+                                                (key_input, val_input, vec![sub1, sub2])
+                                            },
+                                        );
+
+                                        let (key_input, val_input) = {
+                                            let h = mp_holder.read(cx);
+                                            (h.0.clone(), h.1.clone())
+                                        };
+                                        if key_input.read(cx).value().as_str() != key_str {
+                                            key_input.update(cx, |inp, cx| {
+                                                inp.set_value(key_str.clone(), window, cx);
+                                            });
+                                        }
+                                        if val_input.read(cx).value().as_str() != val_str {
+                                            val_input.update(cx, |inp, cx| {
+                                                inp.set_value(val_str.clone(), window, cx);
+                                            });
+                                        }
 
                                         div()
                                             .flex()
@@ -346,17 +404,20 @@ impl RenderOnce for BodyEditor {
                                                 div()
                                                     .w(px(160.))
                                                     .h(px(28.))
-                                                    .px(px(6.))
+                                                    .px(px(4.))
                                                     .rounded(px(4.))
                                                     .bg(t.bg_input)
                                                     .border_1()
                                                     .border_color(t.border)
                                                     .flex()
                                                     .items_center()
-                                                    .text_xs()
-                                                    .font_family(".SystemMonoFont")
-                                                    .text_color(t.text_primary)
-                                                    .child(if key_str.is_empty() { "Key...".to_string() } else { key_str.clone() })
+                                                    .child(
+                                                        gpui_component::input::Input::new(&key_input)
+                                                            .id(gpui::SharedString::from(format!("{}-key", mp_prefix)))
+                                                            .appearance(false)
+                                                            .bordered(false)
+                                                            .focus_bordered(false),
+                                                    )
                                             )
                                             // Type toggle: Text | File
                                             .child({
@@ -390,22 +451,28 @@ impl RenderOnce for BodyEditor {
                                                 div()
                                                     .flex_1()
                                                     .h(px(28.))
-                                                    .px(px(6.))
+                                                    .px(px(4.))
                                                     .rounded(px(4.))
                                                     .bg(t.bg_input)
                                                     .border_1()
                                                     .border_color(t.border)
                                                     .flex()
                                                     .items_center()
-                                                    .text_xs()
-                                                    .font_family(".SystemMonoFont")
-                                                    .text_color(t.text_primary)
                                                     .child(if is_file {
-                                                        file_path.clone().unwrap_or_else(|| "Select a file...".to_string())
-                                                    } else if val_str.is_empty() {
-                                                        "Value...".to_string()
+                                                        div()
+                                                            .px(px(4.))
+                                                            .text_xs()
+                                                            .font_family(".SystemMonoFont")
+                                                            .text_color(t.text_primary)
+                                                            .child(file_path.clone().unwrap_or_else(|| "Select a file...".to_string()))
+                                                            .into_any_element()
                                                     } else {
-                                                        val_str.clone()
+                                                        gpui_component::input::Input::new(&val_input)
+                                                            .id(gpui::SharedString::from(format!("{}-val", mp_prefix)))
+                                                            .appearance(false)
+                                                            .bordered(false)
+                                                            .focus_bordered(false)
+                                                            .into_any_element()
                                                     })
                                             )
                                             // Browse button (only enabled if is_file)

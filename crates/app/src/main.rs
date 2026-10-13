@@ -8,7 +8,7 @@ mod theme;
 use components::*;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
-use gpui_component::input::{InputEvent, InputState, TextareaState};
+use gpui_component::input::{Input, InputEvent, InputState, TextareaState};
 use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
 use gpui_kit::assets::Assets;
 use platform::default_window_options;
@@ -35,6 +35,11 @@ pub struct AppView {
     url_input: Entity<InputState>,
     json_textarea: Entity<TextareaState>,
     raw_textarea: Entity<TextareaState>,
+    bearer_token_input: Entity<InputState>,
+    basic_user_input: Entity<InputState>,
+    basic_pass_input: Entity<InputState>,
+    apikey_key_input: Entity<InputState>,
+    apikey_val_input: Entity<InputState>,
     executor: Arc<ReqwestExecutor>,
     tokio_rt: Arc<tokio::runtime::Runtime>,
     _subscriptions: Vec<Subscription>,
@@ -47,9 +52,15 @@ impl AppView {
         let response_state = cx.new(|_| ResponseState::new());
         let toast_state = cx.new(|_| ToastState::new());
 
-        let url_input = cx.new(|cx| InputState::new(window, cx));
+        let url_input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter request URL (e.g. https://httpbin.org/get)"));
         let json_textarea = cx.new(|cx| TextareaState::new(window, cx));
         let raw_textarea = cx.new(|cx| TextareaState::new(window, cx));
+
+        let bearer_token_input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter Bearer token..."));
+        let basic_user_input = cx.new(|cx| InputState::new(window, cx).placeholder("Username..."));
+        let basic_pass_input = cx.new(|cx| InputState::new(window, cx).placeholder("Password..."));
+        let apikey_key_input = cx.new(|cx| InputState::new(window, cx).placeholder("X-API-Key"));
+        let apikey_val_input = cx.new(|cx| InputState::new(window, cx).placeholder("API key value..."));
 
         let executor = Arc::new(ReqwestExecutor::new());
         let tokio_rt = Arc::new(
@@ -59,7 +70,7 @@ impl AppView {
                 .expect("Failed to create tokio runtime"),
         );
 
-        // Select initial request from workspace into editor and input fields
+        // Select initial request from workspace if the user has saved requests
         let initial_req = workspace_state.read(cx).requests.first().cloned();
         if let Some(req) = &initial_req {
             editor_state.update(cx, |ed, cx| {
@@ -92,21 +103,6 @@ impl AppView {
                 resp.set_response(latest, history, cx);
             });
         }
-
-        // Welcome / update toast
-        toast_state.update(cx, |ts, cx| {
-            ts.push_toast(
-                ToastItem {
-                    id: "phase0-ready".to_string(),
-                    kind: ToastKind::Success,
-                    title: "RestClient Core Engine Ready".to_string(),
-                    message: "Phase 0 HTTP Foundation activated: 120 FPS GPUI decoupled from Tokio runtime.".to_string(),
-                    action_label: None,
-                    action_fn: None,
-                },
-                cx,
-            );
-        });
 
         // Set up subscriptions:
         let mut _subscriptions = Vec::new();
@@ -159,6 +155,73 @@ impl AppView {
             }
         }));
 
+        // 3b. Subscribe to Auth inputs
+        let ed_bearer = editor_state.clone();
+        _subscriptions.push(cx.subscribe(&bearer_token_input, move |_, inp, event, cx| {
+            if let InputEvent::Change = event {
+                let val = inp.read(cx).value().to_string();
+                ed_bearer.update(cx, |ed, cx| {
+                    ed.set_bearer_token(val, cx);
+                });
+            }
+        }));
+
+        let ed_basic_u = editor_state.clone();
+        let pass_ref = basic_pass_input.clone();
+        _subscriptions.push(cx.subscribe(&basic_user_input, move |_, inp, event, cx| {
+            if let InputEvent::Change = event {
+                let u = inp.read(cx).value().to_string();
+                let p = pass_ref.read(cx).value().to_string();
+                ed_basic_u.update(cx, |ed, cx| {
+                    ed.set_basic_auth(u, p, cx);
+                });
+            }
+        }));
+
+        let ed_basic_p = editor_state.clone();
+        let user_ref = basic_user_input.clone();
+        _subscriptions.push(cx.subscribe(&basic_pass_input, move |_, inp, event, cx| {
+            if let InputEvent::Change = event {
+                let u = user_ref.read(cx).value().to_string();
+                let p = inp.read(cx).value().to_string();
+                ed_basic_p.update(cx, |ed, cx| {
+                    ed.set_basic_auth(u, p, cx);
+                });
+            }
+        }));
+
+        let ed_ak_k = editor_state.clone();
+        let ak_val_ref = apikey_val_input.clone();
+        _subscriptions.push(cx.subscribe(&apikey_key_input, move |_, inp, event, cx| {
+            if let InputEvent::Change = event {
+                let k = inp.read(cx).value().to_string();
+                let v = ak_val_ref.read(cx).value().to_string();
+                ed_ak_k.update(cx, |ed, cx| {
+                    let in_header = match ed.active_request.as_ref().map(|r| &r.auth) {
+                        Some(Auth::ApiKey { in_header, .. }) => *in_header,
+                        _ => true,
+                    };
+                    ed.set_api_key(k, v, in_header, cx);
+                });
+            }
+        }));
+
+        let ed_ak_v = editor_state.clone();
+        let ak_key_ref = apikey_key_input.clone();
+        _subscriptions.push(cx.subscribe(&apikey_val_input, move |_, inp, event, cx| {
+            if let InputEvent::Change = event {
+                let k = ak_key_ref.read(cx).value().to_string();
+                let v = inp.read(cx).value().to_string();
+                ed_ak_v.update(cx, |ed, cx| {
+                    let in_header = match ed.active_request.as_ref().map(|r| &r.auth) {
+                        Some(Auth::ApiKey { in_header, .. }) => *in_header,
+                        _ => true,
+                    };
+                    ed.set_api_key(k, v, in_header, cx);
+                });
+            }
+        }));
+
         // 4. Observe editor_state: reload response history when active request switches & auto-save
         let ws_clone = workspace_state.clone();
         let resp_clone = response_state.clone();
@@ -180,10 +243,12 @@ impl AppView {
                     });
                 }
 
-                // Auto-save active request to workspace storage
-                ws_clone.update(cx, |ws, cx| {
-                    ws.update_request(req, cx);
-                });
+                // Auto-save active request to workspace storage only if it belongs to a real workspace
+                if req.workspace_id != "scratch" {
+                    ws_clone.update(cx, |ws, cx| {
+                        ws.update_request(req, cx);
+                    });
+                }
             }
         }));
 
@@ -195,6 +260,11 @@ impl AppView {
             url_input,
             json_textarea,
             raw_textarea,
+            bearer_token_input,
+            basic_user_input,
+            basic_pass_input,
+            apikey_key_input,
+            apikey_val_input,
             executor,
             tokio_rt,
             _subscriptions,
@@ -353,12 +423,63 @@ impl Render for AppView {
         let method_dropdown_open = self.editor_state.read(cx).method_dropdown_open;
         let active_req = self.editor_state.read(cx).active_request.clone();
 
-        // Bi-directional URL synchronization into InputState when updated via query params
+        // Synchronize active request fields into InputState / TextareaState when switched or updated via query params
         if let Some(req) = &active_req {
             if self.url_input.read(cx).value().as_str() != req.url {
                 self.url_input.update(cx, |inp, cx| {
                     inp.set_value(req.url.clone(), window, cx);
                 });
+            }
+            match &req.body {
+                RequestBody::Json(json_str) => {
+                    if self.json_textarea.read(cx).value().as_str() != json_str {
+                        self.json_textarea.update(cx, |txt, cx| {
+                            txt.set_value(json_str.clone(), window, cx);
+                        });
+                    }
+                }
+                RequestBody::Raw { content, .. } => {
+                    if self.raw_textarea.read(cx).value().as_str() != content {
+                        self.raw_textarea.update(cx, |txt, cx| {
+                            txt.set_value(content.clone(), window, cx);
+                        });
+                    }
+                }
+                _ => {}
+            }
+            match &req.auth {
+                Auth::Bearer { token } => {
+                    if self.bearer_token_input.read(cx).value().as_str() != token {
+                        self.bearer_token_input.update(cx, |inp, cx| {
+                            inp.set_value(token.clone(), window, cx);
+                        });
+                    }
+                }
+                Auth::Basic { username, password } => {
+                    if self.basic_user_input.read(cx).value().as_str() != username {
+                        self.basic_user_input.update(cx, |inp, cx| {
+                            inp.set_value(username.clone(), window, cx);
+                        });
+                    }
+                    if self.basic_pass_input.read(cx).value().as_str() != password {
+                        self.basic_pass_input.update(cx, |inp, cx| {
+                            inp.set_value(password.clone(), window, cx);
+                        });
+                    }
+                }
+                Auth::ApiKey { key, value, .. } => {
+                    if self.apikey_key_input.read(cx).value().as_str() != key {
+                        self.apikey_key_input.update(cx, |inp, cx| {
+                            inp.set_value(key.clone(), window, cx);
+                        });
+                    }
+                    if self.apikey_val_input.read(cx).value().as_str() != value {
+                        self.apikey_val_input.update(cx, |inp, cx| {
+                            inp.set_value(value.clone(), window, cx);
+                        });
+                    }
+                }
+                Auth::None => {}
             }
         }
 
@@ -368,6 +489,7 @@ impl Render for AppView {
         let toast_entity = self.toast_state.clone();
 
         let app_view_entity = cx.entity().clone();
+        let req_id_str = active_req.as_ref().map(|r| r.id.clone()).unwrap_or_else(|| "scratch".to_string());
 
         div()
             .size_full()
@@ -417,6 +539,7 @@ impl Render for AppView {
                                         let editor_pane = div()
                                             .size_full()
                                             .bg(t.bg_editor)
+                                            .relative()
                                             .flex()
                                             .flex_col()
                                             // Top Request Bar: Method + URL + Send
@@ -431,52 +554,6 @@ impl Render for AppView {
                                                             view.send_current_request(cx);
                                                         });
                                                     },
-                                                )
-                                            })
-                                            // Method dropdown if open
-                                            .when(method_dropdown_open, |this| {
-                                                let ed_c = ed_entity.clone();
-                                                this.child(
-                                                    div()
-                                                        .absolute()
-                                                        .top(px(42.))
-                                                        .left(px(12.))
-                                                        .bg(t.bg_card)
-                                                        .border_1()
-                                                        .border_color(t.border)
-                                                        .rounded(px(6.))
-                                                        .shadow_lg()
-                                                        .p(px(4.))
-                                                        .flex()
-                                                        .flex_col()
-                                                        .gap(px(2.))
-                                                        .children([
-                                                            HttpMethod::Get,
-                                                            HttpMethod::Post,
-                                                            HttpMethod::Put,
-                                                            HttpMethod::Delete,
-                                                            HttpMethod::Patch,
-                                                            HttpMethod::Head,
-                                                            HttpMethod::Options,
-                                                        ].into_iter().map(|m| {
-                                                            let ed_set = ed_c.clone();
-                                                            div()
-                                                                 .id(format!("select-method-{}", m.as_str()))
-                                                                .px(px(8.))
-                                                                .py(px(4.))
-                                                                .rounded(px(4.))
-                                                                .cursor_pointer()
-                                                                .hover(|s| s.bg(t.bg_hover))
-                                                                .text_xs()
-                                                                .font_weight(gpui::FontWeight::BOLD)
-                                                                .text_color(t.method_color(m))
-                                                                .on_click(move |_, _, cx| {
-                                                                    ed_set.update(cx, |state, cx| {
-                                                                        state.set_method(m, cx);
-                                                                    });
-                                                                })
-                                                                .child(m.as_str())
-                                                        }))
                                                 )
                                             })
                                             // Request Tabs with badges: Body v, Params [count], Headers [count], Auth, Settings
@@ -575,6 +652,7 @@ impl Render for AppView {
                                                                 let ed_del = ed_entity.clone();
                                                                 div().size_full().child(
                                                                     KvTable::new(
+                                                                        format!("params-kv-{}", req_id_str),
                                                                         params,
                                                                         move |idx, k, v, enabled, _, cx| {
                                                                             ed_up.update(cx, |state, cx| {
@@ -601,6 +679,7 @@ impl Render for AppView {
                                                                 let ed_del = ed_entity.clone();
                                                                 div().size_full().child(
                                                                     KvTable::new(
+                                                                        format!("headers-kv-{}", req_id_str),
                                                                         headers,
                                                                         move |idx, k, v, enabled, _, cx| {
                                                                             ed_up.update(cx, |state, cx| {
@@ -716,7 +795,7 @@ impl Render for AppView {
                                                                                     .text_color(t.text_muted)
                                                                                     .child("No authentication will be added to this request.")
                                                                             }
-                                                                            Auth::Bearer { token } => {
+                                                                            Auth::Bearer { .. } => {
                                                                                 div()
                                                                                     .pt(px(12.))
                                                                                     .flex()
@@ -726,20 +805,24 @@ impl Render for AppView {
                                                                                     .child(
                                                                                         div()
                                                                                             .h(px(32.))
-                                                                                            .px(px(8.))
+                                                                                            .px(px(6.))
                                                                                             .rounded(px(4.))
                                                                                             .bg(t.bg_input)
                                                                                             .border_1()
                                                                                             .border_color(t.border)
                                                                                             .flex()
                                                                                             .items_center()
-                                                                                            .font_family(".SystemMonoFont")
-                                                                                            .text_xs()
-                                                                                            .text_color(t.text_primary)
-                                                                                            .child(if token.is_empty() { "Enter Bearer token...".to_string() } else { token.clone() })
+                                                                                            .child(
+                                                                                                Input::new(&self.bearer_token_input)
+                                                                                                    .id("auth-bearer-token-input")
+                                                                                                    .appearance(false)
+                                                                                                    .bordered(false)
+                                                                                                    .focus_bordered(false)
+                                                                                                    .cleanable(true),
+                                                                                            ),
                                                                                     )
                                                                             }
-                                                                            Auth::Basic { username, password } => {
+                                                                            Auth::Basic { .. } => {
                                                                                 div()
                                                                                     .pt(px(12.))
                                                                                     .flex()
@@ -749,36 +832,50 @@ impl Render for AppView {
                                                                                     .child(
                                                                                         div()
                                                                                             .h(px(32.))
-                                                                                            .px(px(8.))
+                                                                                            .px(px(6.))
                                                                                             .rounded(px(4.))
                                                                                             .bg(t.bg_input)
                                                                                             .border_1()
                                                                                             .border_color(t.border)
                                                                                             .flex()
                                                                                             .items_center()
-                                                                                            .font_family(".SystemMonoFont")
-                                                                                            .text_xs()
-                                                                                            .text_color(t.text_primary)
-                                                                                            .child(if username.is_empty() { "Username...".to_string() } else { username })
+                                                                                            .child(
+                                                                                                Input::new(&self.basic_user_input)
+                                                                                                    .id("auth-basic-user-input")
+                                                                                                    .appearance(false)
+                                                                                                    .bordered(false)
+                                                                                                    .focus_bordered(false)
+                                                                                                    .cleanable(true),
+                                                                                            ),
                                                                                     )
                                                                                     .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.text_muted).child("Password:"))
                                                                                     .child(
                                                                                         div()
                                                                                             .h(px(32.))
-                                                                                            .px(px(8.))
+                                                                                            .px(px(6.))
                                                                                             .rounded(px(4.))
                                                                                             .bg(t.bg_input)
                                                                                             .border_1()
                                                                                             .border_color(t.border)
                                                                                             .flex()
                                                                                             .items_center()
-                                                                                            .font_family(".SystemMonoFont")
-                                                                                            .text_xs()
-                                                                                            .text_color(t.text_primary)
-                                                                                            .child(if password.is_empty() { "••••••••".to_string() } else { "•".repeat(password.len().min(16)) })
+                                                                                            .child(
+                                                                                                Input::new(&self.basic_pass_input)
+                                                                                                    .id("auth-basic-pass-input")
+                                                                                                    .appearance(false)
+                                                                                                    .bordered(false)
+                                                                                                    .focus_bordered(false)
+                                                                                                    .cleanable(true),
+                                                                                            ),
                                                                                     )
                                                                             }
                                                                             Auth::ApiKey { key, value, in_header } => {
+                                                                                let ed_loc_h = ed_c.clone();
+                                                                                let ed_loc_q = ed_c.clone();
+                                                                                let k_h = key.clone();
+                                                                                let v_h = value.clone();
+                                                                                let k_q = key.clone();
+                                                                                let v_q = value.clone();
                                                                                 div()
                                                                                     .pt(px(12.))
                                                                                     .flex()
@@ -788,40 +885,83 @@ impl Render for AppView {
                                                                                     .child(
                                                                                         div()
                                                                                             .h(px(32.))
-                                                                                            .px(px(8.))
+                                                                                            .px(px(6.))
                                                                                             .rounded(px(4.))
                                                                                             .bg(t.bg_input)
                                                                                             .border_1()
                                                                                             .border_color(t.border)
                                                                                             .flex()
                                                                                             .items_center()
-                                                                                            .font_family(".SystemMonoFont")
-                                                                                            .text_color(t.text_primary)
-                                                                                            .child(key)
+                                                                                            .child(
+                                                                                                Input::new(&self.apikey_key_input)
+                                                                                                    .id("auth-apikey-key-input")
+                                                                                                    .appearance(false)
+                                                                                                    .bordered(false)
+                                                                                                    .focus_bordered(false)
+                                                                                                    .cleanable(true),
+                                                                                            ),
                                                                                     )
                                                                                     .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.text_muted).child("Value:"))
                                                                                     .child(
                                                                                         div()
                                                                                             .h(px(32.))
-                                                                                            .px(px(8.))
+                                                                                            .px(px(6.))
                                                                                             .rounded(px(4.))
                                                                                             .bg(t.bg_input)
                                                                                             .border_1()
                                                                                             .border_color(t.border)
                                                                                             .flex()
                                                                                             .items_center()
-                                                                                            .font_family(".SystemMonoFont")
-                                                                                            .text_xs()
-                                                                                            .text_color(t.text_primary)
-                                                                                            .child(if value.is_empty() { "API key value...".to_string() } else { value })
+                                                                                            .child(
+                                                                                                Input::new(&self.apikey_val_input)
+                                                                                                    .id("auth-apikey-val-input")
+                                                                                                    .appearance(false)
+                                                                                                    .bordered(false)
+                                                                                                    .focus_bordered(false)
+                                                                                                    .cleanable(true),
+                                                                                            ),
                                                                                     )
                                                                                     .child(
                                                                                         div()
+                                                                                            .pt(px(4.))
                                                                                             .flex()
+                                                                                            .items_center()
                                                                                             .gap(px(8.))
                                                                                             .text_xs()
-                                                                                            .text_color(t.text_secondary)
-                                                                                            .child(format!("Location: {}", if in_header { "Header" } else { "Query Parameter" }))
+                                                                                            .text_color(t.text_muted)
+                                                                                            .child("Add to:")
+                                                                                            .child(
+                                                                                                div()
+                                                                                                    .id("auth-apikey-loc-header")
+                                                                                                    .px(px(8.))
+                                                                                                    .py(px(3.))
+                                                                                                    .rounded(px(4.))
+                                                                                                    .bg(if in_header { t.primary } else { t.bg_card })
+                                                                                                    .text_color(if in_header { t.primary_foreground } else { t.text_secondary })
+                                                                                                    .cursor_pointer()
+                                                                                                    .on_click(move |_, _, cx| {
+                                                                                                        ed_loc_h.update(cx, |st, cx| {
+                                                                                                            st.set_api_key(k_h.clone(), v_h.clone(), true, cx);
+                                                                                                        });
+                                                                                                    })
+                                                                                                    .child("Header"),
+                                                                                            )
+                                                                                            .child(
+                                                                                                div()
+                                                                                                    .id("auth-apikey-loc-query")
+                                                                                                    .px(px(8.))
+                                                                                                    .py(px(3.))
+                                                                                                    .rounded(px(4.))
+                                                                                                    .bg(if !in_header { t.primary } else { t.bg_card })
+                                                                                                    .text_color(if !in_header { t.primary_foreground } else { t.text_secondary })
+                                                                                                    .cursor_pointer()
+                                                                                                    .on_click(move |_, _, cx| {
+                                                                                                        ed_loc_q.update(cx, |st, cx| {
+                                                                                                            st.set_api_key(k_q.clone(), v_q.clone(), false, cx);
+                                                                                                        });
+                                                                                                    })
+                                                                                                    .child("Query Param"),
+                                                                                            ),
                                                                                     )
                                                                             }
                                                                         }
@@ -924,7 +1064,54 @@ impl Render for AppView {
                                                             }
                                                         }
                                                     }),
-                                            );
+                                            )
+                                            // Method dropdown if open (rendered LAST inside editor_pane so it paints on top of tabs and editor content)
+                                            .when(method_dropdown_open, |this| {
+                                                let ed_c = ed_entity.clone();
+                                                this.child(
+                                                    div()
+                                                        .absolute()
+                                                        .top(px(42.))
+                                                        .left(px(12.))
+                                                        .w(px(110.))
+                                                        .bg(t.bg_card)
+                                                        .border_1()
+                                                        .border_color(t.border)
+                                                        .rounded(px(6.))
+                                                        .shadow_xl()
+                                                        .p(px(4.))
+                                                        .flex()
+                                                        .flex_col()
+                                                        .gap(px(2.))
+                                                        .children([
+                                                            HttpMethod::Get,
+                                                            HttpMethod::Post,
+                                                            HttpMethod::Put,
+                                                            HttpMethod::Delete,
+                                                            HttpMethod::Patch,
+                                                            HttpMethod::Head,
+                                                            HttpMethod::Options,
+                                                        ].into_iter().map(|m| {
+                                                            let ed_set = ed_c.clone();
+                                                            div()
+                                                                .id(format!("select-method-{}", m.as_str()))
+                                                                .px(px(8.))
+                                                                .py(px(5.))
+                                                                .rounded(px(4.))
+                                                                .cursor_pointer()
+                                                                .hover(|s| s.bg(t.bg_hover))
+                                                                .text_xs()
+                                                                .font_weight(gpui::FontWeight::BOLD)
+                                                                .text_color(t.method_color(m))
+                                                                .on_click(move |_, _, cx| {
+                                                                    ed_set.update(cx, |state, cx| {
+                                                                        state.set_method(m, cx);
+                                                                    });
+                                                                })
+                                                                .child(m.as_str())
+                                                        }))
+                                                )
+                                            });
 
                                         let response_pane = ResponseViewer::new(ed_entity.clone(), resp_entity.clone());
 

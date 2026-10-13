@@ -61,66 +61,9 @@ impl WorkspaceState {
     fn load_initial(&mut self) {
         let mut ws_list = self.fs_storage.list_workspaces().unwrap_or_default();
         if ws_list.is_empty() {
-            // Create default workspace matching reference screenshot
-            let default_ws = Workspace::new("api");
+            let default_ws = Workspace::new("My Workspace");
             let _ = self.fs_storage.init_workspace(&default_ws);
-
-            // Create default folder "afk" as in reference screenshot!
-            let afk_folder = Folder::new(&default_ws.id, "afk");
-            let folders = vec![afk_folder.clone()];
-            let _ = self.fs_storage.save_folders(&default_ws.id, &folders);
-
-            // Create default requests matching reference screenshot:
-            // 1. GET localhost:8002/api/tool-logs
-            let mut req1 = HttpRequestItem::new(
-                &default_ws.id,
-                "localhost:8002/api/tool-logs",
-                HttpMethod::Get,
-                "http://localhost:8002/api/tool-logs",
-            );
-            req1.folder_id = Some(afk_folder.id.clone());
-            req1.last_status_code = Some(200);
-
-            // 2. POST localhost:8002/api/auth/login
-            let mut req2 = HttpRequestItem::new(
-                &default_ws.id,
-                "localhost:8002/api/auth/login",
-                HttpMethod::Post,
-                "http://localhost:8002/api/auth/login",
-            );
-            req2.folder_id = Some(afk_folder.id.clone());
-            req2.last_status_code = Some(200);
-
-            // 3. GET 127.0.0.1:8002/healthz
-            let mut req3 = HttpRequestItem::new(
-                &default_ws.id,
-                "127.0.0.1:8002/healthz",
-                HttpMethod::Get,
-                "http://127.0.0.1:8002/healthz",
-            );
-            req3.folder_id = Some(afk_folder.id.clone());
-            req3.last_status_code = Some(200);
-
-            let _ = self.fs_storage.save_request(&req1);
-            let _ = self.fs_storage.save_request(&req2);
-            let _ = self.fs_storage.save_request(&req3);
-
-            // Create default environment "local"
-            let mut local_env = Environment::new(&default_ws.id, "local");
-            local_env.variables.push(restclient_core::models::EnvironmentVariable {
-                enabled: true,
-                key: "host".to_string(),
-                value: "localhost:8002".to_string(),
-                secret: false,
-            });
-            let envs = vec![local_env.clone()];
-            let _ = self.fs_storage.save_environments(&default_ws.id, &envs);
-
-            let mut ws_updated = default_ws.clone();
-            ws_updated.active_environment_id = Some(local_env.id.clone());
-            let _ = self.fs_storage.save_workspace(&ws_updated);
-
-            ws_list = vec![ws_updated];
+            ws_list = vec![default_ws];
         }
 
         self.workspaces = ws_list.clone();
@@ -160,7 +103,7 @@ impl WorkspaceState {
 
     pub fn create_request(&mut self, folder_id: Option<String>, cx: &mut Context<Self>) -> HttpRequestItem {
         let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-        let mut req = HttpRequestItem::new(ws_id, "New Request", HttpMethod::Get, "https://httpbin.org/get");
+        let mut req = HttpRequestItem::new(ws_id, "New Request", HttpMethod::Get, "");
         req.folder_id = folder_id;
         let _ = self.fs_storage.save_request(&req);
         self.requests.push(req.clone());
@@ -189,7 +132,12 @@ impl WorkspaceState {
         cx.notify();
     }
 
-    pub fn update_request(&mut self, req: HttpRequestItem, cx: &mut Context<Self>) {
+    pub fn update_request(&mut self, mut req: HttpRequestItem, cx: &mut Context<Self>) {
+        if req.workspace_id.is_empty() || req.workspace_id == "scratch" {
+            if let Some(ws) = &self.active_workspace {
+                req.workspace_id = ws.id.clone();
+            }
+        }
         let _ = self.fs_storage.save_request(&req);
         if let Some(idx) = self.requests.iter().position(|r| r.id == req.id) {
             self.requests[idx] = req;

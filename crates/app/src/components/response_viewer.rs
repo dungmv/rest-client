@@ -171,124 +171,6 @@ impl RenderOnce for ResponseViewer {
                             )
                     }),
             )
-            // History Dropdown Menu
-            .when(show_history, |this| {
-                let history = resp_s.history.clone();
-                let rs_c = resp_state_clone.clone();
-
-                this.child(
-                    div()
-                        .absolute()
-                        .top(px(42.))
-                        .right(px(12.))
-                        .w(px(320.))
-                        .max_h(px(340.))
-                        .overflow_y_scrollbar()
-                        .bg(t.bg_card)
-                        .border_1()
-                        .border_color(t.border)
-                        .rounded(px(6.))
-                        .shadow_xl()
-                        .p(px(6.))
-                        .flex()
-                        .flex_col()
-                        .gap(px(4.))
-                        .child(
-                            div()
-                                .px(px(6.))
-                                .py(px(4.))
-                                .border_b_1()
-                                .border_color(t.border)
-                                .flex()
-                                .items_center()
-                                .justify_between()
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                                        .text_color(t.text_primary)
-                                        .child(format!("Past Responses (Max 20)")),
-                                )
-                                .child({
-                                    let rs_close = rs_c.clone();
-                                    div()
-                                        .id("btn-close-hist-dropdown")
-                                        .cursor_pointer()
-                                        .text_xs()
-                                        .text_color(t.text_muted)
-                                        .hover(|s| s.text_color(t.text_primary))
-                                        .on_click(move |_, _, cx| {
-                                            rs_close.update(cx, |state, cx| {
-                                                state.toggle_history_dropdown(cx);
-                                            });
-                                        })
-                                        .child("✕")
-                                }),
-                        )
-                        .child(if history.is_empty() {
-                            div()
-                                .p(px(12.))
-                                .text_xs()
-                                .italic()
-                                .text_color(t.text_muted)
-                                .child("No previous runs recorded in SQLite history.")
-                                .into_any_element()
-                        } else {
-                            div()
-                                .flex()
-                                .flex_col()
-                                .children(history.into_iter().map(|item| {
-                                let rec_id = item.id.clone();
-                                let rs_set = rs_c.clone();
-                                let status_color = t.status_color(item.status_code);
-                                div()
-                                    .id(format!("hist-item-{}", rec_id))
-                                    .px(px(8.))
-                                    .py(px(6.))
-                                    .rounded(px(4.))
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(t.bg_hover))
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .text_xs()
-                                    .on_click(move |_, _, cx| {
-                                        rs_set.update(cx, |state, cx| {
-                                            state.select_history_record(&rec_id, cx);
-                                        });
-                                    })
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(6.))
-                                            .child(
-                                                div()
-                                                    .font_weight(gpui::FontWeight::BOLD)
-                                                    .text_color(status_color)
-                                                    .child(format!("{}", item.status_code)),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_color(t.text_secondary)
-                                                    .child(item.formatted_duration()),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_color(t.text_muted)
-                                                    .child(item.formatted_size()),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_color(t.text_muted)
-                                            .child(item.created_at.format("%H:%M:%S").to_string()),
-                                    )
-                                }))
-                                .into_any_element()
-                        }),
-                )
-            })
             // High-Precision Timing Popover
             .when(show_timing, |this| {
                 if let Some(resp) = &current_resp {
@@ -896,5 +778,123 @@ impl RenderOnce for ResponseViewer {
                         }
                     }),
             )
+            // History Dropdown Menu (rendered last so it paints above tabs and response body)
+            .when(show_history, |this| {
+                let history = resp_s.history.clone();
+                let rs_c = resp_state_clone.clone();
+
+                this.child(
+                    div()
+                        .absolute()
+                        .top(px(42.))
+                        .right(px(12.))
+                        .w(px(320.))
+                        .max_h(px(340.))
+                        .overflow_y_scrollbar()
+                        .bg(t.bg_card)
+                        .border_1()
+                        .border_color(t.border)
+                        .rounded(px(6.))
+                        .shadow_xl()
+                        .p(px(6.))
+                        .flex()
+                        .flex_col()
+                        .gap(px(4.))
+                        .child(
+                            div()
+                                .px(px(6.))
+                                .py(px(4.))
+                                .border_b_1()
+                                .border_color(t.border)
+                                .flex()
+                                .items_center()
+                                .justify_between()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .text_color(t.text_primary)
+                                        .child("Past Responses (Max 20)"),
+                                )
+                                .child({
+                                    let rs_close = rs_c.clone();
+                                    div()
+                                        .id("btn-close-hist-dropdown")
+                                        .cursor_pointer()
+                                        .text_xs()
+                                        .text_color(t.text_muted)
+                                        .hover(|s| s.text_color(t.text_primary))
+                                        .on_click(move |_, _, cx| {
+                                            rs_close.update(cx, |state, cx| {
+                                                state.toggle_history_dropdown(cx);
+                                            });
+                                        })
+                                        .child("✕")
+                                }),
+                        )
+                        .child(if history.is_empty() {
+                            div()
+                                .p(px(12.))
+                                .text_xs()
+                                .italic()
+                                .text_color(t.text_muted)
+                                .child("No previous runs recorded in SQLite history.")
+                                .into_any_element()
+                        } else {
+                            div()
+                                .flex()
+                                .flex_col()
+                                .children(history.into_iter().map(|item| {
+                                    let rec_id = item.id.clone();
+                                    let rs_set = rs_c.clone();
+                                    let status_color = t.status_color(item.status_code);
+                                    div()
+                                        .id(format!("hist-item-{}", rec_id))
+                                        .px(px(8.))
+                                        .py(px(6.))
+                                        .rounded(px(4.))
+                                        .cursor_pointer()
+                                        .hover(|s| s.bg(t.bg_hover))
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .text_xs()
+                                        .on_click(move |_, _, cx| {
+                                            rs_set.update(cx, |state, cx| {
+                                                state.select_history_record(&rec_id, cx);
+                                            });
+                                        })
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(6.))
+                                                .child(
+                                                    div()
+                                                        .font_weight(gpui::FontWeight::BOLD)
+                                                        .text_color(status_color)
+                                                        .child(format!("{}", item.status_code)),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_color(t.text_secondary)
+                                                        .child(item.formatted_duration()),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_color(t.text_muted)
+                                                        .child(item.formatted_size()),
+                                                ),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_color(t.text_muted)
+                                                .child(item.created_at.format("%H:%M:%S").to_string()),
+                                        )
+                                }))
+                                .into_any_element()
+                        }),
+                )
+            })
     }
 }
