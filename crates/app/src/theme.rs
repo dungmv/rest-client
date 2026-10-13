@@ -27,12 +27,12 @@ pub struct AppTheme {
     pub text_muted: Hsla,
     pub text_disabled: Hsla,
 
-    // Primary action (Blue #2f6bff-ish)
+    // Primary action (Vibrant Blue #2563eb matching httpeep)
     pub primary: Hsla,
     pub primary_hover: Hsla,
     pub primary_foreground: Hsla,
 
-    // Method badge colors
+    // Method badge colors (httpeep style: GET is green #10b981)
     pub method_get: Hsla,
     pub method_post: Hsla,
     pub method_put: Hsla,
@@ -72,54 +72,48 @@ pub fn hex_alpha_to_hsla(hex: u32, alpha: f32) -> Hsla {
 impl Default for AppTheme {
     fn default() -> Self {
         Self {
-            // Dark navy theme matching Yaak screenshot: ~#1b1b2a
-            bg_app: hex_to_hsla(0x1b1b2a),
-            bg_titlebar: hex_to_hsla(0x171724),
-            bg_sidebar: hex_to_hsla(0x1b1b2a),
-            bg_editor: hex_to_hsla(0x1e1e2f),
-            bg_response: hex_to_hsla(0x1c1c2c),
-            bg_panel: hex_to_hsla(0x202033),
-            bg_card: hex_to_hsla(0x232338),
-            bg_input: hex_to_hsla(0x232336),
-            bg_selected: hex_to_hsla(0x2c2c44),
-            bg_hover: hex_to_hsla(0x25253b),
-            bg_active: hex_to_hsla(0x2e2e48),
+            // Modern Charcoal / Obsidian Dark Theme matching httpeep: ~#0c0d12
+            bg_app: hex_to_hsla(0x0c0d12),
+            bg_titlebar: hex_to_hsla(0x0e0f14),
+            bg_sidebar: hex_to_hsla(0x101117),
+            bg_editor: hex_to_hsla(0x121319),
+            bg_response: hex_to_hsla(0x121319),
+            bg_panel: hex_to_hsla(0x15161e),
+            bg_card: hex_to_hsla(0x181922),
+            bg_input: hex_to_hsla(0x13141b),
+            bg_selected: hex_to_hsla(0x20222e),
+            bg_hover: hex_to_hsla(0x1a1b24),
+            bg_active: hex_to_hsla(0x242636),
 
-            // Subtle 1px borders
-            border: hex_to_hsla(0x2c2c42),
-            border_subtle: hex_to_hsla(0x242436),
-            border_focus: hex_to_hsla(0x3b82f6),
+            // Fine, subtle 1px borders
+            border: hex_to_hsla(0x20222d),
+            border_subtle: hex_to_hsla(0x181922),
+            border_focus: hex_to_hsla(0x2563eb),
 
-            // Typography
+            // Typography: crisp, high readability
             text_primary: hex_to_hsla(0xf3f4f6),
             text_secondary: hex_to_hsla(0x9ca3af),
-            text_muted: hex_to_hsla(0x6b7280),
-            text_disabled: hex_to_hsla(0x4b5563),
+            text_muted: hex_to_hsla(0x525866),
+            text_disabled: hex_to_hsla(0x383c48),
 
-            // Blue primary (#2f6bff)
-            primary: hex_to_hsla(0x2f6bff),
-            primary_hover: hex_to_hsla(0x407cff),
+            // Professional vibrant blue
+            primary: hex_to_hsla(0x2563eb),
+            primary_hover: hex_to_hsla(0x1d4ed8),
             primary_foreground: hex_to_hsla(0xffffff),
 
-            // Method colors
-            // GET is purple/violet (#a855f7) as in Yaak reference screenshot
-            method_get: hex_to_hsla(0xa855f7),
-            // POST is green (#22c55e)
-            method_post: hex_to_hsla(0x22c55e),
-            // PUT is blue (#3b82f6)
-            method_put: hex_to_hsla(0x3b82f6),
-            // DELETE is red (#ef4444)
+            // Method colors (httpeep style: GET is clean green, POST is blue, etc.)
+            method_get: hex_to_hsla(0x10b981),
+            method_post: hex_to_hsla(0x3b82f6),
+            method_put: hex_to_hsla(0xf59e0b),
             method_delete: hex_to_hsla(0xef4444),
-            // PATCH is yellow (#eab308)
-            method_patch: hex_to_hsla(0xeab308),
-            // HEAD / OPTIONS
+            method_patch: hex_to_hsla(0x8b5cf6),
             method_head: hex_to_hsla(0x06b6d4),
-            method_options: hex_to_hsla(0x8b5cf6),
+            method_options: hex_to_hsla(0x64748b),
 
             // Status colors
-            status_2xx: hex_to_hsla(0x22c55e),
+            status_2xx: hex_to_hsla(0x10b981),
             status_3xx: hex_to_hsla(0x3b82f6),
-            status_4xx: hex_to_hsla(0xf97316),
+            status_4xx: hex_to_hsla(0xf59e0b),
             status_5xx: hex_to_hsla(0xef4444),
 
             // Interpolation variable highlight

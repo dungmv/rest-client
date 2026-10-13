@@ -67,17 +67,18 @@ impl RenderOnce for TabItem {
 
         let mut el = div()
             .id(self.id)
-            .h(px(34.))
+            .h(px(32.))
             .px(px(10.))
             .flex()
             .items_center()
             .gap(px(6.))
             .cursor_pointer()
-            .text_sm()
+            .text_xs()
+            .font_weight(if active { gpui::FontWeight::SEMIBOLD } else { gpui::FontWeight::NORMAL })
             .text_color(fg)
             .border_b_2()
             .border_color(border_bottom)
-            .hover(|s| s.text_color(t.text_primary).bg(t.bg_hover))
+            .hover(|s| s.text_color(t.text_primary))
             .child(div().child(self.label));
 
         if let Some(handler) = self.on_click {
@@ -98,8 +99,10 @@ impl RenderOnce for TabItem {
                 div()
                     .px(px(5.))
                     .py(px(0.5))
-                    .rounded(px(10.))
+                    .rounded(px(8.))
                     .bg(t.bg_card)
+                    .border_1()
+                    .border_color(t.border)
                     .text_color(if active { t.text_primary } else { t.text_muted })
                     .text_xs()
                     .child(badge_text),

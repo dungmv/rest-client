@@ -439,8 +439,8 @@ impl Render for AppView {
                                                 this.child(
                                                     div()
                                                         .absolute()
-                                                        .top(px(40.))
-                                                        .left(px(8.))
+                                                        .top(px(42.))
+                                                        .left(px(12.))
                                                         .bg(t.bg_card)
                                                         .border_1()
                                                         .border_color(t.border)
@@ -971,6 +971,7 @@ fn main() {
 
     app.run(move |cx| {
         gpui_kit::init(cx);
+        gpui_component::Theme::change(gpui_component::ThemeMode::Dark, None, cx);
 
         // Register keyboard shortcuts
         cx.bind_keys([

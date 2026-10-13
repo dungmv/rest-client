@@ -53,6 +53,7 @@ impl RenderOnce for ResponseViewer {
                     .px(px(12.))
                     .border_b_1()
                     .border_color(t.border)
+                    .bg(t.bg_editor)
                     .flex()
                     .items_center()
                     .justify_between()
@@ -67,64 +68,69 @@ impl RenderOnce for ResponseViewer {
                                 .gap(px(8.))
                                 .child(
                                     div()
+                                        .px(px(6.))
+                                        .py(px(2.))
+                                        .rounded(px(4.))
+                                        .bg(gpui::Hsla { a: 0.12, ..status_color })
+                                        .border_1()
+                                        .border_color(gpui::Hsla { a: 0.3, ..status_color })
                                         .text_xs()
                                         .font_weight(gpui::FontWeight::BOLD)
                                         .text_color(status_color)
-                                        .child(format!("{} {}", resp.status_code, resp.status_text)),
-                                )
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(t.text_muted)
-                                        .child("•"),
+                                        .child(format!("● {} {}", resp.status_code, resp.status_text)),
                                 )
                                 .child({
                                     // Duration with timing popover hover/click
                                     div()
                                         .id("btn-timing-breakdown")
                                         .cursor_pointer()
-                                        .px(px(4.))
-                                        .py(px(1.))
+                                        .px(px(6.))
+                                        .py(px(2.))
                                         .rounded(px(4.))
-                                        .bg(if show_timing { t.bg_hover } else { t.transparent })
+                                        .bg(if show_timing { t.bg_hover } else { t.bg_card })
+                                        .border_1()
+                                        .border_color(t.border)
                                         .text_xs()
                                         .text_color(t.text_secondary)
-                                        .hover(|s| s.text_color(t.primary).bg(t.bg_hover))
+                                        .hover(|s| s.text_color(t.text_primary).bg(t.bg_hover))
                                         .on_click(move |_, _, cx| {
                                             rs_clone.update(cx, |state, cx| {
                                                 state.toggle_timing_popover(cx);
                                             });
                                         })
-                                        .child(format!("🕒 {}", resp.formatted_duration()))
+                                        .child(format!("⚡ {}", resp.formatted_duration()))
                                 })
                                 .child(
                                     div()
-                                        .text_xs()
-                                        .text_color(t.text_muted)
-                                        .child("•"),
-                                )
-                                .child(
-                                    div()
+                                        .px(px(6.))
+                                        .py(px(2.))
+                                        .rounded(px(4.))
+                                        .bg(t.bg_card)
+                                        .border_1()
+                                        .border_color(t.border)
                                         .text_xs()
                                         .text_color(t.text_secondary)
-                                        .child(resp.formatted_size()),
+                                        .child(format!("📦 {}", resp.formatted_size())),
                                 )
                         } else if ed_s.is_sending {
                             div()
+                                .flex()
+                                .items_center()
+                                .gap(px(6.))
                                 .text_xs()
+                                .font_weight(gpui::FontWeight::MEDIUM)
                                 .text_color(t.primary)
                                 .child(ed_s.send_progress.clone().unwrap_or_else(|| "Sending...".to_string()))
                         } else {
                             div()
                                 .flex()
                                 .items_center()
-                                .gap(px(8.))
+                                .gap(px(6.))
                                 .child(
                                     div()
                                         .text_xs()
-                                        .italic()
                                         .text_color(t.text_muted)
-                                        .child("No response yet. Send a request to inspect response."),
+                                        .child("No response yet"),
                                 )
                         }
                     })
@@ -133,11 +139,13 @@ impl RenderOnce for ResponseViewer {
                         let rs_clone = resp_state_clone.clone();
                         div()
                             .id("btn-response-history")
-                            .px(px(6.))
-                            .h(px(28.))
+                            .px(px(8.))
+                            .h(px(26.))
                             .rounded(px(4.))
                             .cursor_pointer()
-                            .bg(if show_history { t.bg_hover } else { t.transparent })
+                            .bg(if show_history { t.bg_hover } else { t.bg_card })
+                            .border_1()
+                            .border_color(t.border)
                             .hover(|s| s.bg(t.bg_hover))
                             .flex()
                             .items_center()
@@ -154,6 +162,12 @@ impl RenderOnce for ResponseViewer {
                                     .text_xs()
                                     .text_color(t.text_muted)
                                     .child(format!("({})", resp_s.history.len())),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(t.text_muted)
+                                    .child("▾"),
                             )
                     }),
             )
@@ -454,7 +468,36 @@ impl RenderOnce for ResponseViewer {
                     .child({
                         match active_tab {
                             ResponseTabKind::Response => {
-                                let body_bytes = current_resp.as_ref().map(|r| r.body.clone()).unwrap_or_default();
+                                if current_resp.is_none() {
+                                    div()
+                                        .size_full()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .justify_center()
+                                        .gap(px(10.))
+                                        .child(
+                                            div()
+                                                .text_3xl()
+                                                .text_color(t.text_muted)
+                                                .child("🌐"),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .font_weight(gpui::FontWeight::MEDIUM)
+                                                .text_color(t.text_secondary)
+                                                .child("Waiting for response..."),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(t.text_muted)
+                                                .child("Press \"Send\" or Ctrl+Enter to execute this request"),
+                                        )
+                                        .into_any_element()
+                                } else {
+                                    let body_bytes = current_resp.as_ref().map(|r| r.body.clone()).unwrap_or_default();
                                 let raw_str = String::from_utf8_lossy(&body_bytes).to_string();
 
                                 // Format if Pretty mode and valid JSON
@@ -488,10 +531,11 @@ impl RenderOnce for ResponseViewer {
                                     // Response sub-toolbar
                                     .child(
                                         div()
-                                            .h(px(30.))
+                                            .h(px(32.))
                                             .px(px(8.))
                                             .border_b_1()
                                             .border_color(t.border)
+                                            .bg(t.bg_editor)
                                             .flex()
                                             .items_center()
                                             .justify_between()
@@ -499,19 +543,24 @@ impl RenderOnce for ResponseViewer {
                                                 div()
                                                     .flex()
                                                     .items_center()
-                                                    .gap(px(6.))
+                                                    .gap(px(4.))
                                                     // Pretty Button
                                                     .child({
                                                         let rs_c = rs_toggle.clone();
+                                                        let is_pretty = matches!(view_mode, ResponseViewMode::Pretty);
                                                         div()
                                                             .id("btn-view-pretty")
-                                                            .px(px(6.))
+                                                            .px(px(8.))
                                                             .py(px(2.))
                                                             .rounded(px(4.))
-                                                            .bg(if matches!(view_mode, ResponseViewMode::Pretty) { t.primary } else { t.bg_card })
-                                                            .text_color(if matches!(view_mode, ResponseViewMode::Pretty) { t.primary_foreground } else { t.text_secondary })
+                                                            .border_1()
+                                                            .border_color(if is_pretty { t.border } else { t.transparent })
+                                                            .bg(if is_pretty { t.bg_selected } else { t.transparent })
+                                                            .text_color(if is_pretty { t.text_primary } else { t.text_secondary })
                                                             .text_xs()
+                                                            .font_weight(if is_pretty { gpui::FontWeight::SEMIBOLD } else { gpui::FontWeight::NORMAL })
                                                             .cursor_pointer()
+                                                            .hover(|s| if is_pretty { s } else { s.text_color(t.text_primary).bg(t.bg_hover) })
                                                             .on_click(move |_, _, cx| {
                                                                 rs_c.update(cx, |state, cx| {
                                                                     state.set_view_mode(ResponseViewMode::Pretty, cx);
@@ -522,15 +571,20 @@ impl RenderOnce for ResponseViewer {
                                                     // Raw Button
                                                     .child({
                                                         let rs_c = rs_toggle.clone();
+                                                        let is_raw = matches!(view_mode, ResponseViewMode::Raw);
                                                         div()
                                                             .id("btn-view-raw")
-                                                            .px(px(6.))
+                                                            .px(px(8.))
                                                             .py(px(2.))
                                                             .rounded(px(4.))
-                                                            .bg(if matches!(view_mode, ResponseViewMode::Raw) { t.primary } else { t.bg_card })
-                                                            .text_color(if matches!(view_mode, ResponseViewMode::Raw) { t.primary_foreground } else { t.text_secondary })
+                                                            .border_1()
+                                                            .border_color(if is_raw { t.border } else { t.transparent })
+                                                            .bg(if is_raw { t.bg_selected } else { t.transparent })
+                                                            .text_color(if is_raw { t.text_primary } else { t.text_secondary })
                                                             .text_xs()
+                                                            .font_weight(if is_raw { gpui::FontWeight::SEMIBOLD } else { gpui::FontWeight::NORMAL })
                                                             .cursor_pointer()
+                                                            .hover(|s| if is_raw { s } else { s.text_color(t.text_primary).bg(t.bg_hover) })
                                                             .on_click(move |_, _, cx| {
                                                                 rs_c.update(cx, |state, cx| {
                                                                     state.set_view_mode(ResponseViewMode::Raw, cx);
@@ -648,6 +702,7 @@ impl RenderOnce for ResponseViewer {
                                             ),
                                     )
                                     .into_any_element()
+                                }
                             }
                             ResponseTabKind::Request => {
                                 if let Some(resp) = &current_resp {

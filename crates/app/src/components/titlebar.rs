@@ -71,7 +71,7 @@ impl RenderOnce for AppTitleBar {
         let left_section = div()
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(px(8.))
             // Sidebar toggle button
             .child({
                 let ws_s = ws_clone.clone();
@@ -88,7 +88,80 @@ impl RenderOnce for AppTitleBar {
                             state.toggle_sidebar(cx);
                         });
                     })
-                    .child("☰")
+                    .child("◫")
+            })
+            // App badge pill: [RestClient]
+            .child(
+                div()
+                    .px(px(8.))
+                    .py(px(2.))
+                    .rounded(px(5.))
+                    .bg(t.bg_card)
+                    .border_1()
+                    .border_color(t.border)
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(t.text_primary)
+                    .child(format!("RestClient • {}", ws_name))
+            )
+            // Environment pill: [● local ▾]
+            .child({
+                let ws_s = ws_clone.clone();
+                div()
+                    .id("btn-env-breadcrumb")
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .px(px(8.))
+                    .py(px(2.))
+                    .rounded(px(5.))
+                    .bg(t.bg_card)
+                    .border_1()
+                    .border_color(t.border)
+                    .cursor_pointer()
+                    .hover(|s| s.bg(t.bg_hover))
+                    .on_click(move |_, _, cx| {
+                        ws_s.update(cx, |state, cx| {
+                            state.toggle_env_modal(cx);
+                        });
+                    })
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(t.status_2xx)
+                            .child("●"),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(t.text_primary)
+                            .child(env_name),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(t.text_muted)
+                            .child("▾"),
+                    )
+            })
+            // Cookie jar button
+            .child({
+                let ws_s = ws_clone.clone();
+                div()
+                    .id("btn-cookies")
+                    .px(px(6.))
+                    .py(px(3.))
+                    .rounded(px(4.))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(t.bg_hover))
+                    .text_color(t.text_secondary)
+                    .on_click(move |_, _, cx| {
+                        ws_s.update(cx, |state, cx| {
+                            state.toggle_cookies_modal(cx);
+                        });
+                    })
+                    .child("🍪")
             })
             // New request (+) button
             .child({
@@ -111,68 +184,6 @@ impl RenderOnce for AppTitleBar {
                         });
                     })
                     .child("+")
-            })
-            // Cookie jar button
-            .child({
-                let ws_s = ws_clone.clone();
-                div()
-                    .id("btn-cookies")
-                    .px(px(6.))
-                    .py(px(3.))
-                    .rounded(px(4.))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(t.bg_hover))
-                    .text_color(t.text_secondary)
-                    .on_click(move |_, _, cx| {
-                        ws_s.update(cx, |state, cx| {
-                            state.toggle_cookies_modal(cx);
-                        });
-                    })
-                    .child("🍪")
-            })
-            // Breadcrumb: "api > ● local"
-            .child({
-                let ws_s = ws_clone.clone();
-                div()
-                    .id("btn-env-breadcrumb")
-                    .flex()
-                    .items_center()
-                    .gap(px(4.))
-                    .px(px(6.))
-                    .py(px(2.))
-                    .rounded(px(4.))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(t.bg_hover))
-                    .on_click(move |_, _, cx| {
-                        ws_s.update(cx, |state, cx| {
-                            state.toggle_env_modal(cx);
-                        });
-                    })
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(t.text_secondary)
-                            .child(ws_name),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(t.text_muted)
-                            .child(">"),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(t.status_2xx)
-                            .child("●"),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(t.text_primary)
-                            .child(env_name),
-                    )
             });
 
         // Center section: current request URL

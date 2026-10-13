@@ -154,7 +154,7 @@ impl RenderOnce for SidebarTree {
                                     .child(
                                         div()
                                             .font_weight(gpui::FontWeight::SEMIBOLD)
-                                            .text_color(t.status_2xx)
+                                            .text_color(t.text_primary)
                                             .child(folder.name.clone()),
                                     ),
                             )
@@ -203,7 +203,7 @@ impl RenderOnce for SidebarTree {
                                                 div()
                                                     .text_xs()
                                                     .font_family(".SystemMonoFont")
-                                                    .text_color(t.status_2xx)
+                                                    .text_color(if is_selected { t.text_primary } else { t.text_secondary })
                                                     .truncate()
                                                     .child(req.name.clone()),
                                             ),
@@ -271,7 +271,8 @@ impl RenderOnce for SidebarTree {
                                                 div()
                                                     .text_xs()
                                                     .font_family(".SystemMonoFont")
-                                                    .text_color(t.text_primary)
+                                                    .text_color(if is_selected { t.text_primary } else { t.text_secondary })
+                                                    .truncate()
                                                     .child(req.name.clone()),
                                             ),
                                     )

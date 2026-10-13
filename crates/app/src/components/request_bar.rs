@@ -53,84 +53,111 @@ impl RenderOnce for RequestBar {
         let var_spans = scan_variables(&url, active_env);
 
         div()
-            .h(px(40.))
+            .h(px(44.))
             .w_full()
             .px(px(8.))
+            .py(px(4.))
             .flex()
             .items_center()
             .gap(px(8.))
+            .bg(t.bg_editor)
             .border_b_1()
             .border_color(t.border)
-            // Method dropdown trigger
-            .child({
-                let ed_s = ed_clone.clone();
-                div()
-                    .id("method-dropdown-btn")
-                    .px(px(8.))
-                    .py(px(4.))
-                    .rounded(px(4.))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(t.bg_hover))
-                    .flex()
-                    .items_center()
-                    .gap(px(4.))
-                    .on_click(move |_, _, cx| {
-                        ed_s.update(cx, |state, cx| {
-                            state.toggle_method_dropdown(cx);
-                        });
-                    })
-                    .child(MethodBadge::new(method))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(t.text_muted)
-                            .child("▾"),
-                    )
-            })
-            // URL Input Box with live editing and variable status badges
+            // Unified Request Input Bar
             .child(
                 div()
                     .flex_1()
-                    .h(px(32.))
+                    .h(px(34.))
+                    .px(px(4.))
+                    .rounded(px(6.))
+                    .bg(t.bg_input)
+                    .border_1()
+                    .border_color(t.border)
+                    .hover(|s| s.border_color(t.border_focus))
                     .flex()
                     .items_center()
+                    .gap(px(6.))
+                    // Method dropdown trigger
                     .child({
-                        let input_el = Input::new(&self.url_input)
-                            .id("url-input-field")
-                            .cleanable(true);
+                        let ed_s = ed_clone.clone();
+                        div()
+                            .id("method-dropdown-btn")
+                            .px(px(6.))
+                            .py(px(3.))
+                            .rounded(px(4.))
+                            .cursor_pointer()
+                            .hover(|s| s.bg(t.bg_hover))
+                            .flex()
+                            .items_center()
+                            .gap(px(4.))
+                            .on_click(move |_, _, cx| {
+                                ed_s.update(cx, |state, cx| {
+                                    state.toggle_method_dropdown(cx);
+                                });
+                            })
+                            .child(MethodBadge::new(method))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(t.text_muted)
+                                    .child("▾"),
+                            )
+                    })
+                    // Subtle vertical separator
+                    .child(
+                        div()
+                            .w(px(1.))
+                            .h(px(18.))
+                            .bg(t.border)
+                    )
+                    // URL Input Box with live editing and variable status badges
+                    .child(
+                        div()
+                            .flex_1()
+                            .h_full()
+                            .flex()
+                            .items_center()
+                            .child({
+                                let input_el = Input::new(&self.url_input)
+                                    .id("url-input-field")
+                                    .appearance(false)
+                                    .bordered(false)
+                                    .focus_bordered(false)
+                                    .cleanable(true);
 
-                        if var_spans.is_empty() {
-                            input_el.into_any_element()
-                        } else {
-                            input_el
-                                .suffix(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(4.))
-                                        .px(px(4.))
-                                        .children(var_spans.into_iter().map(|span| {
-                                            let color = if span.is_resolved {
-                                                t.var_resolved
-                                            } else {
-                                                t.var_unresolved
-                                            };
+                                if var_spans.is_empty() {
+                                    input_el.into_any_element()
+                                } else {
+                                    input_el
+                                        .suffix(
                                             div()
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(4.))
                                                 .px(px(4.))
-                                                .py(px(1.))
-                                                .rounded(px(3.))
-                                                .bg(t.bg_card)
-                                                .border_1()
-                                                .border_color(color)
-                                                .text_xs()
-                                                .font_family(".SystemMonoFont")
-                                                .text_color(color)
-                                                .child(format!("{{{{{}}}}}", span.name))
-                                        })),
-                                )
-                                .into_any_element()
-                        }
-                    }),
+                                                .children(var_spans.into_iter().map(|span| {
+                                                    let color = if span.is_resolved {
+                                                        t.var_resolved
+                                                    } else {
+                                                        t.var_unresolved
+                                                    };
+                                                    div()
+                                                        .px(px(4.))
+                                                        .py(px(1.))
+                                                        .rounded(px(3.))
+                                                        .bg(t.bg_card)
+                                                        .border_1()
+                                                        .border_color(color)
+                                                        .text_xs()
+                                                        .font_family(".SystemMonoFont")
+                                                        .text_color(color)
+                                                        .child(format!("{{{{{}}}}}", span.name))
+                                                })),
+                                        )
+                                        .into_any_element()
+                                }
+                            }),
+                    ),
             )
             // Send / Cancel Button with keyboard shortcut tooltip
             .child({
@@ -139,8 +166,8 @@ impl RenderOnce for RequestBar {
 
                 div()
                     .id("btn-send-or-cancel")
-                    .px(px(14.))
-                    .h(px(32.))
+                    .px(px(16.))
+                    .h(px(34.))
                     .rounded(px(6.))
                     .bg(if is_sending { t.status_5xx } else { t.primary })
                     .hover(|s| {

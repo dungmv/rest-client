@@ -78,7 +78,7 @@ impl RenderOnce for BodyEditor {
                     .px(px(8.))
                     .border_b_1()
                     .border_color(t.border)
-                    .bg(t.bg_card)
+                    .bg(t.bg_editor)
                     .flex()
                     .items_center()
                     .justify_between()
@@ -86,7 +86,7 @@ impl RenderOnce for BodyEditor {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(4.))
+                            .gap(px(3.))
                             .children([
                                 ("none", "None"),
                                 ("json", "JSON"),
@@ -102,9 +102,11 @@ impl RenderOnce for BodyEditor {
                                     .px(px(8.))
                                     .py(px(2.))
                                     .rounded(px(4.))
-                                    .bg(if is_active { t.primary } else { gpui::transparent_black() })
-                                    .text_color(if is_active { t.primary_foreground } else { t.text_secondary })
-                                    .hover(|s| if is_active { s } else { s.bg(t.bg_hover) })
+                                    .border_1()
+                                    .border_color(if is_active { t.border } else { t.transparent })
+                                    .bg(if is_active { t.bg_selected } else { t.transparent })
+                                    .text_color(if is_active { t.text_primary } else { t.text_secondary })
+                                    .hover(|s| if is_active { s } else { s.text_color(t.text_primary).bg(t.bg_hover) })
                                     .cursor_pointer()
                                     .text_xs()
                                     .font_weight(if is_active { gpui::FontWeight::SEMIBOLD } else { gpui::FontWeight::NORMAL })
@@ -203,14 +205,28 @@ impl RenderOnce for BodyEditor {
                                 div()
                                     .size_full()
                                     .flex()
+                                    .flex_col()
                                     .items_center()
                                     .justify_center()
+                                    .gap(px(8.))
                                     .child(
                                         div()
-                                            .text_sm()
-                                            .italic()
+                                            .text_2xl()
                                             .text_color(t.text_muted)
-                                            .child("No Body"),
+                                            .child("📄"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                            .text_color(t.text_secondary)
+                                            .child("This request has no body payload"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(t.text_muted)
+                                            .child("Select a format above (e.g. JSON, Form) to add request body data."),
                                     )
                                     .into_any_element()
                             }
@@ -218,7 +234,7 @@ impl RenderOnce for BodyEditor {
                                 div()
                                     .size_full()
                                     .p(px(8.))
-                                    .child(Textarea::new(&self.json_textarea))
+                                    .child(Textarea::new(&self.json_textarea).appearance(false).bordered(false))
                                     .into_any_element()
                             }
                             RequestBody::FormUrlEncoded(pairs) => {
@@ -540,7 +556,7 @@ impl RenderOnce for BodyEditor {
                                         div()
                                             .flex_1()
                                             .p(px(8.))
-                                            .child(Textarea::new(&self.raw_textarea))
+                                            .child(Textarea::new(&self.raw_textarea).appearance(false).bordered(false))
                                     )
                                     .into_any_element()
                             }
