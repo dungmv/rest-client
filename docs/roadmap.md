@@ -1,6 +1,32 @@
-# Kế hoạch phát triển tính năng (Roadmap to Full Parity — 6 Phases)
+# Kế hoạch phát triển tính năng (Roadmap to Full Parity — 7 Phases: Phase 0 to Phase 6)
 
-Tài liệu này xác định lộ trình phát triển toàn diện của **RestClient** qua 6 giai đoạn (Phases), ưu tiên đưa sức mạnh Scripting, Đa giao thức và Xác thực lên đầu, chuyển phần Import/Export sang giai đoạn 5 và bổ sung giai đoạn 6 chuyên sâu về Bộ công cụ Kiểm thử & Tự động hóa (Testing & Automation Suite).
+Tài liệu này xác định lộ trình phát triển toàn diện của **RestClient** qua 7 giai đoạn (từ Phase 0 đến Phase 6), bắt đầu từ nền tảng gửi/nhận HTTP cốt lõi, tiếp nối bằng Scripting, Đa giao thức, Xác thực, DevTools, Khả năng tương thích Import/Export và Bộ công cụ Kiểm thử & Tự động hóa toàn diện (Testing & Automation Suite).
+
+---
+
+## 🎯 Giai đoạn 0: Nền Tảng Cốt Lõi — Gửi HTTP Request & Xem Phản Hồi (Core HTTP Foundation)
+*Mục tiêu: Xây dựng nền móng vững chắc cho ứng dụng: bộ soạn thảo request đa định dạng, tầng mạng async decoupled từ luồng UI, đo lường thời gian chính xác, trình xem phản hồi đa năng và hệ thống lưu trữ file phẳng / SQLite.*
+
+1. **Bộ Soạn Thảo HTTP Request Đa Dạng (Request Builder):**
+   - Hỗ trợ đầy đủ phương thức: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`.
+   - Bảng Query Parameters & Headers động kèm checkbox bật/tắt từng dòng, tự động encode URL.
+   - Hỗ trợ các định dạng Request Body: None, JSON (đánh số dòng, format, syntax highlight), Form URL-Encoded, Multipart Form-Data, Raw Text, Binary File.
+   - Cấu hình request: Network Timeout, Follow Redirects, Validate TLS Certificates.
+2. **Tầng Mạng Tokio Decoupled & Huỷ Yêu Cầu In-Flight:**
+   - Thực thi request hoàn toàn trên luồng Tokio riêng biệt, không block UI 120 FPS của GPUI.
+   - Nút **Cancel** ngắt kết nối socket ngay lập tức khi request đang chạy.
+   - Stream thông báo trạng thái kết nối liên tục về giao diện.
+3. **Đo Lường Thời Gian Chính Xác Cao (High-Precision Timing Breakdown):**
+   - Đo lường chi tiết: DNS Lookup, TCP Connect, TLS Handshake, TTFB (Time to First Byte), Content Download, và Total Duration.
+   - Hiển thị thanh đo trực quan dạng popover khi di chuột vào thời gian phản hồi.
+4. **Trình Xem Phản Hồi Đa Năng (Response Viewer & Inspector):**
+   - Thanh trạng thái trực quan: Status Code phân màu (2xx/3xx/4xx/5xx), Thời gian ms, Dung lượng byte/KB/MB.
+   - Các tab kiểm tra: Response Body (`Pretty` / `Raw`), Request Sent (request thực tế gửi qua mạng), Headers, Cookies.
+   - Xử lý mượt mà payload lớn (10MB+) bằng cơ chế dòng ảo hóa (virtualized line rendering), không gây đơ lag giao diện.
+5. **Hệ Thống Lưu Trữ File Phẳng & Lịch Sử SQLite (Storage Foundation):**
+   - Lưu trữ collections và requests dưới dạng file JSON phẳng trong thư mục `.restclient/workspaces/` (Git-friendly, không lock-in).
+   - Biến môi trường cơ bản với cơ chế thay thế `{{var}}` trong URL, headers, params, auth, body.
+   - Lưu lịch sử phản hồi vào SQLite cục bộ (`.restclient/history.db`), tự động prune chỉ giữ $N$ bản ghi gần nhất.
 
 ---
 
