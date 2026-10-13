@@ -1,9 +1,22 @@
 use crate::state::{EditorState, WorkspaceState};
 use crate::theme::theme;
 use gpui::{
-    div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
-    RenderOnce, StatefulInteractiveElement as _, Styled, Window, WindowControlArea,
+    div, img, px, App, Entity, Image, ImageFormat, InteractiveElement as _, IntoElement,
+    ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Window, WindowControlArea,
 };
+use std::sync::{Arc, OnceLock};
+
+fn app_icon_image() -> Arc<Image> {
+    static ICON: OnceLock<Arc<Image>> = OnceLock::new();
+    ICON.get_or_init(|| {
+        Arc::new(Image {
+            format: ImageFormat::Png,
+            bytes: include_bytes!("../../resources/app_icon_64.png").to_vec(),
+            id: 1,
+        })
+    })
+    .clone()
+}
 
 #[derive(IntoElement)]
 pub struct AppTitleBar {
@@ -40,11 +53,10 @@ impl RenderOnce for AppTitleBar {
             .map(|e| e.name.clone())
             .unwrap_or_else(|| "No Environment".to_string());
 
-        let current_url = ed
+        let current_title = ed
             .active_request
             .as_ref()
-            .filter(|r| !r.url.is_empty())
-            .map(|r| r.url.clone())
+            .map(crate::state::effective_request_name)
             .unwrap_or_default();
 
         let ws_clone = self.workspace_state.clone();
@@ -64,20 +76,21 @@ impl RenderOnce for AppTitleBar {
             .flex()
             .items_center()
             .justify_between()
-            .pl(left_padding)
-            .pr(px(8.))
-            .window_control_area(WindowControlArea::Drag);
+            .overflow_hidden()
+            .pl(left_padding);
 
         // Left section
         let left_section = div()
             .flex()
             .items_center()
+            .flex_shrink_0()
             .gap(px(8.))
             // Sidebar toggle button
             .child({
                 let ws_s = ws_clone.clone();
                 div()
                     .id("btn-toggle-sidebar")
+                    .occlude()
                     .px(px(6.))
                     .py(px(3.))
                     .rounded(px(4.))
@@ -91,25 +104,38 @@ impl RenderOnce for AppTitleBar {
                     })
                     .child("◫")
             })
-            // App badge pill: [RestClient]
+            // App badge pill: [icon + RestClient]
             .child(
                 div()
-                    .px(px(8.))
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .px(px(6.))
                     .py(px(2.))
                     .rounded(px(5.))
                     .bg(t.bg_card)
                     .border_1()
                     .border_color(t.border)
-                    .text_xs()
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(t.text_primary)
-                    .child(format!("RestClient • {}", ws_name))
+                    .child(
+                        img(app_icon_image())
+                            .w(px(16.))
+                            .h(px(16.))
+                            .rounded(px(3.))
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(t.text_primary)
+                            .child(format!("RestClient • {}", ws_name))
+                    )
             )
             // Environment pill: [● local ▾]
             .child({
                 let ws_s = ws_clone.clone();
                 div()
                     .id("btn-env-breadcrumb")
+                    .occlude()
                     .flex()
                     .items_center()
                     .gap(px(6.))
@@ -151,6 +177,7 @@ impl RenderOnce for AppTitleBar {
                 let ws_s = ws_clone.clone();
                 div()
                     .id("btn-cookies")
+                    .occlude()
                     .px(px(6.))
                     .py(px(3.))
                     .rounded(px(4.))
@@ -170,6 +197,7 @@ impl RenderOnce for AppTitleBar {
                 let ed_s = ed_clone.clone();
                 div()
                     .id("btn-new-request")
+                    .occlude()
                     .px(px(6.))
                     .py(px(3.))
                     .rounded(px(4.))
@@ -187,31 +215,41 @@ impl RenderOnce for AppTitleBar {
                     .child("+")
             });
 
-        // Center section: current request URL
+        // Center section: current request title (truncated domain / custom name)
         let center_section = div()
             .flex_1()
+            .min_w(px(0.))
+            .h_full()
+            .px(px(8.))
+            .overflow_hidden()
             .flex()
             .items_center()
             .justify_center()
             .child(
                 div()
+                    .max_w(px(340.))
+                    .overflow_hidden()
+                    .truncate()
                     .text_xs()
                     .font_family(".SystemMonoFont")
                     .text_color(t.text_secondary)
-                    .child(current_url),
+                    .child(current_title),
             );
 
-        // Right section: split toggle, search, settings, and caption buttons
-        let mut right_section = div()
+        // Right toolbar buttons: split toggle, search, settings
+        let right_toolbar = div()
             .flex()
             .items_center()
+            .flex_shrink_0()
             .gap(px(4.))
+            .pr(px(8.))
             // Split layout toggle button
             .child({
                 let ws_s = ws_clone.clone();
                 let is_vert = ws.split_layout_vertical;
                 div()
                     .id("btn-split-toggle")
+                    .occlude()
                     .px(px(6.))
                     .py(px(3.))
                     .rounded(px(4.))
@@ -230,6 +268,7 @@ impl RenderOnce for AppTitleBar {
                 let ws_s = ws_clone.clone();
                 div()
                     .id("btn-cmd-palette")
+                    .occlude()
                     .px(px(6.))
                     .py(px(3.))
                     .rounded(px(4.))
@@ -249,6 +288,7 @@ impl RenderOnce for AppTitleBar {
                 let ed_s = ed_clone.clone();
                 div()
                     .id("btn-settings")
+                    .occlude()
                     .px(px(6.))
                     .py(px(3.))
                     .rounded(px(4.))
@@ -266,18 +306,36 @@ impl RenderOnce for AppTitleBar {
                     .child("⚙")
             });
 
+        let drag_region = div()
+            .flex_1()
+            .min_w(px(0.))
+            .h_full()
+            .overflow_hidden()
+            .flex()
+            .items_center()
+            .justify_between()
+            .window_control_area(WindowControlArea::Drag)
+            .child(left_section)
+            .child(center_section)
+            .child(right_toolbar);
+
+        #[allow(unused_mut)]
+        let mut bar = bar.child(drag_region);
+
         #[cfg(not(target_os = "macos"))]
         {
-            right_section = right_section.child(
+            bar = bar.child(
                 div()
+                    .h_full()
                     .flex()
                     .items_center()
-                    .ml(px(8.))
+                    .flex_shrink_0()
                     .child(
                         div()
                             .id("caption-min")
-                            .w(px(32.))
-                            .h(px(28.))
+                            .occlude()
+                            .w(px(36.))
+                            .h_full()
                             .flex()
                             .items_center()
                             .justify_center()
@@ -286,13 +344,18 @@ impl RenderOnce for AppTitleBar {
                             .hover(|s| s.bg(t.bg_hover))
                             .text_color(t.text_secondary)
                             .text_xs()
+                            .on_click(|_, window, cx| {
+                                cx.stop_propagation();
+                                window.minimize_window();
+                            })
                             .child("─"),
                     )
                     .child(
                         div()
                             .id("caption-max")
-                            .w(px(32.))
-                            .h(px(28.))
+                            .occlude()
+                            .w(px(36.))
+                            .h_full()
                             .flex()
                             .items_center()
                             .justify_center()
@@ -301,13 +364,18 @@ impl RenderOnce for AppTitleBar {
                             .hover(|s| s.bg(t.bg_hover))
                             .text_color(t.text_secondary)
                             .text_xs()
+                            .on_click(|_, window, cx| {
+                                cx.stop_propagation();
+                                window.zoom_window();
+                            })
                             .child("□"),
                     )
                     .child(
                         div()
                             .id("caption-close")
-                            .w(px(32.))
-                            .h(px(28.))
+                            .occlude()
+                            .w(px(36.))
+                            .h_full()
                             .flex()
                             .items_center()
                             .justify_center()
@@ -316,14 +384,17 @@ impl RenderOnce for AppTitleBar {
                             .hover(|s| s.bg(hex_to_hsla(0xe81123)).text_color(hex_to_hsla(0xffffff)))
                             .text_color(t.text_secondary)
                             .text_xs()
+                            .on_click(|_, window, cx| {
+                                cx.stop_propagation();
+                                window.remove_window();
+                                cx.quit();
+                            })
                             .child("✕"),
                     ),
             );
         }
 
-        bar.child(left_section)
-            .child(center_section)
-            .child(right_section)
+        bar
     }
 }
 

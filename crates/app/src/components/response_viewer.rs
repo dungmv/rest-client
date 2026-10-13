@@ -382,10 +382,16 @@ impl RenderOnce for ResponseViewer {
                                     let body_bytes = current_resp.as_ref().map(|r| r.body.clone()).unwrap_or_default();
                                 let raw_str = String::from_utf8_lossy(&body_bytes).to_string();
 
+                                let parsed_json = serde_json::from_str::<serde_json::Value>(&raw_str).ok();
+                                let is_json = parsed_json.is_some()
+                                    || current_resp.as_ref().map(|r| r.is_json()).unwrap_or(false)
+                                    || raw_str.trim_start().starts_with('{')
+                                    || raw_str.trim_start().starts_with('[');
+
                                 // Format if Pretty mode and valid JSON
                                 let display_text = if matches!(view_mode, ResponseViewMode::Pretty) {
-                                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw_str) {
-                                        serde_json::to_string_pretty(&parsed).unwrap_or(raw_str.clone())
+                                    if let Some(parsed) = &parsed_json {
+                                        serde_json::to_string_pretty(parsed).unwrap_or_else(|_| raw_str.clone())
                                     } else {
                                         raw_str.clone()
                                     }
@@ -579,7 +585,13 @@ impl RenderOnce for ResponseViewer {
                                                     .font_family(".SystemMonoFont")
                                                     .text_color(t.text_primary)
                                                     .children(lines_to_render.iter().map(|line| {
-                                                        div().h(px(20.)).child(if line.is_empty() { " ".to_string() } else { line.to_string() })
+                                                        div().h(px(20.)).child(if line.is_empty() {
+                                                            div().child(" ")
+                                                        } else if is_json {
+                                                            div().child(highlight_json_line(line, t))
+                                                        } else {
+                                                            div().child(line.to_string())
+                                                        })
                                                     })),
                                             ),
                                     )
@@ -638,6 +650,18 @@ impl RenderOnce for ResponseViewer {
                                                     })),
                                             )
                                             .when_some(sent.body_preview.clone(), |this, preview| {
+                                                let is_preview_json = preview.trim_start().starts_with('{') || preview.trim_start().starts_with('[');
+                                                let preview_display = if is_preview_json {
+                                                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&preview) {
+                                                        serde_json::to_string_pretty(&parsed).unwrap_or(preview.clone())
+                                                    } else {
+                                                        preview.clone()
+                                                    }
+                                                } else {
+                                                    preview.clone()
+                                                };
+                                                let p_lines: Vec<&str> = preview_display.lines().collect();
+
                                                 this.child(
                                                     div()
                                                         .text_xs()
@@ -654,8 +678,17 @@ impl RenderOnce for ResponseViewer {
                                                         .border_color(t.border)
                                                         .font_family(".SystemMonoFont")
                                                         .text_xs()
-                                                        .text_color(t.text_secondary)
-                                                        .child(preview),
+                                                        .flex()
+                                                        .flex_col()
+                                                        .children(p_lines.into_iter().map(|line| {
+                                                            div().h(px(20.)).child(if line.is_empty() {
+                                                                div().child(" ")
+                                                            } else if is_preview_json {
+                                                                div().child(highlight_json_line(line, t))
+                                                            } else {
+                                                                div().child(line.to_string())
+                                                            })
+                                                        })),
                                                 )
                                             })
                                             .into_any_element()
@@ -898,3 +931,117 @@ impl RenderOnce for ResponseViewer {
             })
     }
 }
+
+pub fn highlight_json_line(line: &str, t: &crate::theme::AppTheme) -> gpui::StyledText {
+    let mut highlights = Vec::new();
+    let bytes = line.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        let b = bytes[i];
+        if b == b'"' {
+            let start = i;
+            i += 1;
+            while i < len {
+                let ch = line[i..].chars().next().unwrap();
+                let ch_len = ch.len_utf8();
+                if ch == '\\' {
+                    i += ch_len;
+                    if i < len {
+                        let next_ch = line[i..].chars().next().unwrap();
+                        i += next_ch.len_utf8();
+                    }
+                } else if ch == '"' {
+                    i += ch_len;
+                    break;
+                } else {
+                    i += ch_len;
+                }
+            }
+            let end = i;
+
+            // Check if followed by colon (ignoring spaces) -> JSON object key
+            let mut j = end;
+            while j < len && (bytes[j] == b' ' || bytes[j] == b'\t') {
+                j += 1;
+            }
+            let is_key = j < len && bytes[j] == b':';
+            let color = if is_key { t.json_key } else { t.json_string };
+            highlights.push((
+                start..end,
+                gpui::HighlightStyle {
+                    color: Some(color),
+                    ..Default::default()
+                },
+            ));
+        } else if matches!(b, b'{' | b'}' | b'[' | b']' | b':' | b',') {
+            highlights.push((
+                i..i + 1,
+                gpui::HighlightStyle {
+                    color: Some(t.json_punctuation),
+                    ..Default::default()
+                },
+            ));
+            i += 1;
+        } else if b == b'-' || b.is_ascii_digit() {
+            let start = i;
+            i += 1;
+            while i < len
+                && (bytes[i].is_ascii_digit()
+                    || matches!(bytes[i], b'.' | b'e' | b'E' | b'+' | b'-'))
+            {
+                i += 1;
+            }
+            highlights.push((
+                start..i,
+                gpui::HighlightStyle {
+                    color: Some(t.json_number),
+                    ..Default::default()
+                },
+            ));
+        } else if line[i..].starts_with("true")
+            && (i + 4 == len || !bytes[i + 4].is_ascii_alphanumeric())
+        {
+            highlights.push((
+                i..i + 4,
+                gpui::HighlightStyle {
+                    color: Some(t.json_boolean),
+                    font_weight: Some(gpui::FontWeight::SEMIBOLD),
+                    ..Default::default()
+                },
+            ));
+            i += 4;
+        } else if line[i..].starts_with("false")
+            && (i + 5 == len || !bytes[i + 5].is_ascii_alphanumeric())
+        {
+            highlights.push((
+                i..i + 5,
+                gpui::HighlightStyle {
+                    color: Some(t.json_boolean),
+                    font_weight: Some(gpui::FontWeight::SEMIBOLD),
+                    ..Default::default()
+                },
+            ));
+            i += 5;
+        } else if line[i..].starts_with("null")
+            && (i + 4 == len || !bytes[i + 4].is_ascii_alphanumeric())
+        {
+            highlights.push((
+                i..i + 4,
+                gpui::HighlightStyle {
+                    color: Some(t.json_null),
+                    font_style: Some(gpui::FontStyle::Italic),
+                    ..Default::default()
+                },
+            ));
+            i += 4;
+        } else {
+            let ch = line[i..].chars().next().unwrap();
+            i += ch.len_utf8();
+        }
+    }
+
+    gpui::StyledText::new(line.to_string()).with_highlights(highlights)
+}
+

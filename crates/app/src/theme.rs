@@ -51,6 +51,14 @@ pub struct AppTheme {
     pub var_resolved: Hsla,
     pub var_unresolved: Hsla,
 
+    // JSON Syntax Highlighting
+    pub json_key: Hsla,
+    pub json_string: Hsla,
+    pub json_number: Hsla,
+    pub json_boolean: Hsla,
+    pub json_null: Hsla,
+    pub json_punctuation: Hsla,
+
     // Transparent
     pub transparent: Hsla,
 }
@@ -119,6 +127,14 @@ impl Default for AppTheme {
             // Interpolation variable highlight
             var_resolved: hex_to_hsla(0x38bdf8),
             var_unresolved: hex_to_hsla(0xef4444),
+
+            // JSON Syntax Highlighting
+            json_key: hex_to_hsla(0x38bdf8),        // Sky blue
+            json_string: hex_to_hsla(0x34d399),     // Emerald green
+            json_number: hex_to_hsla(0xfbbf24),     // Amber / Gold
+            json_boolean: hex_to_hsla(0xc084fc),    // Purple / Violet
+            json_null: hex_to_hsla(0xf87171),       // Soft coral red
+            json_punctuation: hex_to_hsla(0x9ca3af), // Slate / Muted gray
 
             transparent: gpui::transparent_black(),
         }

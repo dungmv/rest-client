@@ -452,4 +452,10 @@ impl HttpResponseRecord {
     pub fn parsed_cookies(&self) -> Vec<ParsedCookie> {
         self.cookies.iter().map(|c| ParsedCookie::parse(c)).collect()
     }
+
+    pub fn is_json(&self) -> bool {
+        self.headers
+            .iter()
+            .any(|(k, v)| k.eq_ignore_ascii_case("content-type") && v.to_lowercase().contains("json"))
+    }
 }

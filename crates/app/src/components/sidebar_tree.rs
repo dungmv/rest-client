@@ -335,7 +335,7 @@ impl RenderOnce for SidebarTree {
                                                     .font_family(".SystemMonoFont")
                                                     .text_color(if is_selected { t.text_primary } else { t.text_secondary })
                                                     .truncate()
-                                                    .child(req.name.clone()),
+                                                    .child(crate::state::effective_request_name(&req)),
                                             ),
                                     )
                                     .child(
@@ -426,7 +426,7 @@ impl RenderOnce for SidebarTree {
                                                     .font_family(".SystemMonoFont")
                                                     .text_color(if is_selected { t.text_primary } else { t.text_secondary })
                                                     .truncate()
-                                                    .child(req.name.clone()),
+                                                    .child(crate::state::effective_request_name(&req)),
                                             ),
                                     )
                                     .child(

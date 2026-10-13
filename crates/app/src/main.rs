@@ -32,6 +32,7 @@ pub struct AppView {
     editor_state: Entity<EditorState>,
     response_state: Entity<ResponseState>,
     toast_state: Entity<ToastState>,
+    name_input: Entity<InputState>,
     url_input: Entity<InputState>,
     json_textarea: Entity<TextareaState>,
     raw_textarea: Entity<TextareaState>,
@@ -52,6 +53,7 @@ impl AppView {
         let response_state = cx.new(|_| ResponseState::new());
         let toast_state = cx.new(|_| ToastState::new());
 
+        let name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Request name (default: domain)"));
         let url_input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter request URL (e.g. https://httpbin.org/get)"));
         let json_textarea = cx.new(|cx| TextareaState::new(window, cx));
         let raw_textarea = cx.new(|cx| TextareaState::new(window, cx));
@@ -75,6 +77,11 @@ impl AppView {
         if let Some(req) = &initial_req {
             editor_state.update(cx, |ed, cx| {
                 ed.set_active_request(req.clone(), true, cx);
+            });
+
+            let req_name = req.name.clone();
+            name_input.update(cx, |inp, cx| {
+                inp.set_value(req_name, window, cx);
             });
 
             let req_url = req.url.clone();
@@ -106,6 +113,17 @@ impl AppView {
 
         // Set up subscriptions:
         let mut _subscriptions = Vec::new();
+
+        // 0. Subscribe to Request Name input change
+        let ed_name = editor_state.clone();
+        _subscriptions.push(cx.subscribe(&name_input, move |_, input, event, cx| {
+            if let InputEvent::Change = event {
+                let val = input.read(cx).value().to_string();
+                ed_name.update(cx, |ed, cx| {
+                    ed.set_name(val, cx);
+                });
+            }
+        }));
 
         // 1. Subscribe to URL input change
         let ed_url = editor_state.clone();
@@ -257,6 +275,7 @@ impl AppView {
             editor_state,
             response_state,
             toast_state,
+            name_input,
             url_input,
             json_textarea,
             raw_textarea,
@@ -425,6 +444,11 @@ impl Render for AppView {
 
         // Synchronize active request fields into InputState / TextareaState when switched or updated via query params
         if let Some(req) = &active_req {
+            if self.name_input.read(cx).value().as_str() != req.name {
+                self.name_input.update(cx, |inp, cx| {
+                    inp.set_value(req.name.clone(), window, cx);
+                });
+            }
             if self.url_input.read(cx).value().as_str() != req.url {
                 self.url_input.update(cx, |inp, cx| {
                     inp.set_value(req.url.clone(), window, cx);
@@ -548,6 +572,7 @@ impl Render for AppView {
                                                 RequestBar::new(
                                                     ws_entity.clone(),
                                                     ed_entity.clone(),
+                                                    self.name_input.clone(),
                                                     self.url_input.clone(),
                                                     move |_, cx| {
                                                         view_handle.update(cx, |view, cx| {
@@ -1167,6 +1192,13 @@ fn main() {
             KeyBinding::new("ctrl-k", ToggleCommandPalette, None),
             KeyBinding::new("cmd-k", ToggleCommandPalette, None),
         ]);
+
+        cx.on_window_closed(|cx, _window_id| {
+            if cx.windows().is_empty() {
+                cx.quit();
+            }
+        })
+        .detach();
 
         let window_options = default_window_options(cx);
 

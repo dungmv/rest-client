@@ -64,7 +64,10 @@ impl EditorState {
         self.active_request.as_mut().unwrap()
     }
 
-    pub fn set_active_request(&mut self, req: HttpRequestItem, pin: bool, cx: &mut Context<Self>) {
+    pub fn set_active_request(&mut self, mut req: HttpRequestItem, pin: bool, cx: &mut Context<Self>) {
+        if is_legacy_url_name(&req.name, &req.url) {
+            req.name = default_name_from_url(&req.url);
+        }
         let req_id = req.id.clone();
         if !self.open_tabs.contains(&req_id) {
             self.open_tabs.push(req_id.clone());
@@ -112,9 +115,22 @@ impl EditorState {
         }
     }
 
+    pub fn set_name(&mut self, name: String, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            if req.name != name {
+                req.name = name;
+                self.is_dirty = true;
+                cx.notify();
+            }
+        }
+    }
+
     /// Sets URL and synchronizes query parameters to params table (Bi-directional sync)
     pub fn set_url(&mut self, url: String, cx: &mut Context<Self>) {
         if let Some(req) = &mut self.active_request {
+            let old_url = req.url.clone();
+            let should_auto_name = is_auto_name(&req.name, &old_url);
+
             let (_, parsed_params) = parse_query_from_url(&url);
             req.url = url.clone();
             if url.contains('?') {
@@ -123,13 +139,8 @@ impl EditorState {
                 // Keep any disabled params, remove enabled ones that were in the URL
                 req.params.retain(|p| !p.enabled);
             }
-            if req.name == "New Request" || req.name == "Untitled Request" || req.url.starts_with("http") {
-                let clean = url
-                    .trim_start_matches("https://")
-                    .trim_start_matches("http://");
-                if !clean.is_empty() {
-                    req.name = clean.split('?').next().unwrap_or(clean).to_string();
-                }
+            if should_auto_name {
+                req.name = default_name_from_url(&url);
             }
             self.is_dirty = true;
             cx.notify();
@@ -421,3 +432,129 @@ impl EditorState {
         cx.notify();
     }
 }
+
+pub const MAX_DEFAULT_DOMAIN_LEN: usize = 28;
+pub const MAX_DISPLAY_TITLE_LEN: usize = 36;
+
+pub fn truncate_text(s: &str, max_chars: usize) -> String {
+    let trimmed = s.trim();
+    if trimmed.chars().count() > max_chars {
+        let truncated: String = trimmed.chars().take(max_chars.saturating_sub(1)).collect();
+        format!("{}…", truncated)
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Extracts the domain (host) from a URL and limits its length.
+pub fn default_name_from_url(url: &str) -> String {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return "Untitled Request".to_string();
+    }
+
+    let domain = if let Ok(parsed) = url::Url::parse(trimmed) {
+        parsed.host_str().unwrap_or("").to_string()
+    } else {
+        let without_scheme = trimmed
+            .trim_start_matches("https://")
+            .trim_start_matches("http://");
+        without_scheme
+            .split(['/', '?', '#', ':'])
+            .next()
+            .unwrap_or("")
+            .to_string()
+    };
+
+    let domain = domain.trim();
+    if domain.is_empty() {
+        return "Untitled Request".to_string();
+    }
+
+    truncate_text(domain, MAX_DEFAULT_DOMAIN_LEN)
+}
+
+pub fn is_legacy_url_name(name: &str, url: &str) -> bool {
+    let clean = url
+        .trim()
+        .trim_start_matches("https://")
+        .trim_start_matches("http://");
+    if clean.is_empty() {
+        return false;
+    }
+    let without_query = clean.split('?').next().unwrap_or(clean);
+    let default_dom = default_name_from_url(url);
+    (name == clean || name == without_query) && name != default_dom
+}
+
+pub fn is_auto_name(name: &str, old_url: &str) -> bool {
+    let trimmed = name.trim();
+    trimmed.is_empty()
+        || trimmed == "New Request"
+        || trimmed == "Untitled Request"
+        || trimmed == default_name_from_url(old_url)
+        || is_legacy_url_name(trimmed, old_url)
+}
+
+/// Returns the display name of a request (custom name if set, otherwise truncated domain from URL),
+/// capped at `MAX_DISPLAY_TITLE_LEN` characters.
+pub fn effective_request_name(req: &HttpRequestItem) -> String {
+    let raw_name = req.name.trim();
+    if raw_name.is_empty()
+        || raw_name == "New Request"
+        || raw_name == "Untitled Request"
+        || is_legacy_url_name(raw_name, &req.url)
+    {
+        if !req.url.trim().is_empty() {
+            return default_name_from_url(&req.url);
+        }
+        return if raw_name.is_empty() {
+            "Untitled Request".to_string()
+        } else {
+            raw_name.to_string()
+        };
+    }
+    truncate_text(raw_name, MAX_DISPLAY_TITLE_LEN)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_name_from_url() {
+        assert_eq!(default_name_from_url("https://speedtest.vn/get-servers?loc=vn"), "speedtest.vn");
+        assert_eq!(default_name_from_url("http://api.github.com/users/octocat"), "api.github.com");
+        assert_eq!(default_name_from_url("https://localhost:8080/api/v1"), "localhost");
+        assert_eq!(default_name_from_url("speedtest.vn/get-servers"), "speedtest.vn");
+        assert_eq!(default_name_from_url(""), "Untitled Request");
+        assert_eq!(default_name_from_url("   "), "Untitled Request");
+    }
+
+    #[test]
+    fn test_domain_length_truncation() {
+        let long_url = "https://very-long-subdomain-name-that-exceeds-maximum-allowed-length.example.com/api";
+        let name = default_name_from_url(long_url);
+        assert!(name.chars().count() <= MAX_DEFAULT_DOMAIN_LEN);
+        assert!(name.ends_with('…'));
+    }
+
+    #[test]
+    fn test_effective_request_name() {
+        let mut req = HttpRequestItem::new("test", "New Request", HttpMethod::Get, "https://speedtest.vn/api");
+        assert_eq!(effective_request_name(&req), "speedtest.vn");
+
+        // Custom name takes precedence
+        req.name = "Get Speedtest Servers".to_string();
+        assert_eq!(effective_request_name(&req), "Get Speedtest Servers");
+
+        // Empty name falls back to domain
+        req.name = "".to_string();
+        assert_eq!(effective_request_name(&req), "speedtest.vn");
+
+        // Legacy full-path URL name is recognized and sanitized to domain
+        req.name = "speedtest.vn/api".to_string();
+        assert_eq!(effective_request_name(&req), "speedtest.vn");
+    }
+}
+
