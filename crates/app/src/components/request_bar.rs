@@ -14,7 +14,6 @@ use restclient_core::models::HttpMethod;
 pub struct RequestBar {
     workspace_state: Entity<WorkspaceState>,
     editor_state: Entity<EditorState>,
-    name_input: Entity<InputState>,
     url_input: Entity<InputState>,
     on_send: std::rc::Rc<dyn Fn(&mut Window, &mut App)>,
 }
@@ -23,14 +22,12 @@ impl RequestBar {
     pub fn new(
         workspace_state: Entity<WorkspaceState>,
         editor_state: Entity<EditorState>,
-        name_input: Entity<InputState>,
         url_input: Entity<InputState>,
         on_send: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         Self {
             workspace_state,
             editor_state,
-            name_input,
             url_input,
             on_send: std::rc::Rc::new(on_send),
         }
@@ -66,44 +63,6 @@ impl RenderOnce for RequestBar {
             .bg(t.bg_editor)
             .border_b_1()
             .border_color(t.border)
-            // Request Name Input Box
-            .child(
-                div()
-                    .w(px(165.))
-                    .flex_shrink_0()
-                    .h(px(34.))
-                    .px(px(8.))
-                    .rounded(px(6.))
-                    .bg(t.bg_input)
-                    .border_1()
-                    .border_color(t.border)
-                    .hover(|s| s.border_color(t.border_focus))
-                    .flex()
-                    .items_center()
-                    .gap(px(4.))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(t.text_muted)
-                            .child("✎"),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(0.))
-                            .h_full()
-                            .flex()
-                            .items_center()
-                            .child(
-                                Input::new(&self.name_input)
-                                    .id("req-name-input-field")
-                                    .appearance(false)
-                                    .bordered(false)
-                                    .focus_bordered(false)
-                                    .cleanable(false),
-                            ),
-                    ),
-            )
             // Unified Request Input Bar
             .child(
                 div()

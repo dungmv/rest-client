@@ -32,7 +32,6 @@ pub struct AppView {
     editor_state: Entity<EditorState>,
     response_state: Entity<ResponseState>,
     toast_state: Entity<ToastState>,
-    name_input: Entity<InputState>,
     url_input: Entity<InputState>,
     json_textarea: Entity<TextareaState>,
     raw_textarea: Entity<TextareaState>,
@@ -53,7 +52,6 @@ impl AppView {
         let response_state = cx.new(|_| ResponseState::new());
         let toast_state = cx.new(|_| ToastState::new());
 
-        let name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Request name (default: domain)"));
         let url_input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter request URL (e.g. https://httpbin.org/get)"));
         let json_textarea = cx.new(|cx| TextareaState::new(window, cx));
         let raw_textarea = cx.new(|cx| TextareaState::new(window, cx));
@@ -77,11 +75,6 @@ impl AppView {
         if let Some(req) = &initial_req {
             editor_state.update(cx, |ed, cx| {
                 ed.set_active_request(req.clone(), true, cx);
-            });
-
-            let req_name = req.name.clone();
-            name_input.update(cx, |inp, cx| {
-                inp.set_value(req_name, window, cx);
             });
 
             let req_url = req.url.clone();
@@ -113,17 +106,6 @@ impl AppView {
 
         // Set up subscriptions:
         let mut _subscriptions = Vec::new();
-
-        // 0. Subscribe to Request Name input change
-        let ed_name = editor_state.clone();
-        _subscriptions.push(cx.subscribe(&name_input, move |_, input, event, cx| {
-            if let InputEvent::Change = event {
-                let val = input.read(cx).value().to_string();
-                ed_name.update(cx, |ed, cx| {
-                    ed.set_name(val, cx);
-                });
-            }
-        }));
 
         // 1. Subscribe to URL input change
         let ed_url = editor_state.clone();
@@ -270,12 +252,27 @@ impl AppView {
             }
         }));
 
+        // 5. Observe workspace_state: synchronize renamed request to editor_state.active_request
+        let ed_sync = editor_state.clone();
+        _subscriptions.push(cx.observe(&workspace_state, move |_, ws, cx| {
+            let active_opt = ed_sync.read(cx).active_request.as_ref().map(|r| (r.id.clone(), r.name.clone()));
+            if let Some((active_id, active_name)) = active_opt {
+                let saved_name = ws.read(cx).requests.iter().find(|r| r.id == active_id).map(|r| r.name.clone());
+                if let Some(saved) = saved_name {
+                    if saved != active_name {
+                        ed_sync.update(cx, |ed, cx| {
+                            ed.set_name(saved, cx);
+                        });
+                    }
+                }
+            }
+        }));
+
         Self {
             workspace_state,
             editor_state,
             response_state,
             toast_state,
-            name_input,
             url_input,
             json_textarea,
             raw_textarea,
@@ -444,11 +441,6 @@ impl Render for AppView {
 
         // Synchronize active request fields into InputState / TextareaState when switched or updated via query params
         if let Some(req) = &active_req {
-            if self.name_input.read(cx).value().as_str() != req.name {
-                self.name_input.update(cx, |inp, cx| {
-                    inp.set_value(req.name.clone(), window, cx);
-                });
-            }
             if self.url_input.read(cx).value().as_str() != req.url {
                 self.url_input.update(cx, |inp, cx| {
                     inp.set_value(req.url.clone(), window, cx);
@@ -572,7 +564,6 @@ impl Render for AppView {
                                                 RequestBar::new(
                                                     ws_entity.clone(),
                                                     ed_entity.clone(),
-                                                    self.name_input.clone(),
                                                     self.url_input.clone(),
                                                     move |_, cx| {
                                                         view_handle.update(cx, |view, cx| {

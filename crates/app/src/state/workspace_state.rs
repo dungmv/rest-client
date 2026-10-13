@@ -1,5 +1,6 @@
 use crate::platform::detect_git_branch;
-use gpui::Context;
+use gpui::{AppContext as _, Context, Entity, Window};
+use gpui_component::input::InputState;
 use restclient_core::models::{Environment, Folder, HttpMethod, HttpRequestItem, Workspace};
 use restclient_core::storage::{FsStorage, HistoryStorage};
 use std::sync::Arc;
@@ -21,6 +22,9 @@ pub struct WorkspaceState {
     pub show_cookies_modal: bool,
     pub show_command_palette: bool,
     pub show_settings_modal: bool,
+    pub renaming_request_id: Option<String>,
+    pub rename_input: Option<Entity<InputState>>,
+    pub rename_subscription: Option<gpui::Subscription>,
 }
 
 impl WorkspaceState {
@@ -52,6 +56,9 @@ impl WorkspaceState {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            renaming_request_id: None,
+            rename_input: None,
+            rename_subscription: None,
         };
 
         state.load_initial();
@@ -126,10 +133,75 @@ impl WorkspaceState {
     }
 
     pub fn delete_request(&mut self, req_id: &str, cx: &mut Context<Self>) {
+        if self.renaming_request_id.as_deref() == Some(req_id) {
+            self.renaming_request_id = None;
+            self.rename_input = None;
+            self.rename_subscription = None;
+        }
         let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
         let _ = self.fs_storage.delete_request(ws_id, req_id);
         self.requests.retain(|r| r.id != req_id);
         cx.notify();
+    }
+
+    pub fn start_renaming_request(
+        &mut self,
+        req_id: String,
+        initial_name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let input = cx.new(|cx| {
+            let mut s = InputState::new(window, cx);
+            s.set_value(initial_name, window, cx);
+            s.select_all(window, cx);
+            s.focus(window, cx);
+            s
+        });
+
+        let sub = cx.subscribe(&input, move |this, input, event: &gpui_component::input::InputEvent, cx| {
+            match event {
+                gpui_component::input::InputEvent::PressEnter { .. } => {
+                    let val = input.read(cx).value().to_string();
+                    this.finish_renaming(val, cx);
+                }
+                gpui_component::input::InputEvent::Blur => {
+                    let val = input.read(cx).value().to_string();
+                    this.finish_renaming(val, cx);
+                }
+                _ => {}
+            }
+        });
+
+        self.renaming_request_id = Some(req_id);
+        self.rename_input = Some(input);
+        self.rename_subscription = Some(sub);
+        cx.notify();
+    }
+
+    pub fn finish_renaming(&mut self, new_name: String, cx: &mut Context<Self>) {
+        let Some(req_id) = self.renaming_request_id.take() else {
+            return;
+        };
+        self.rename_input = None;
+        self.rename_subscription = None;
+        let trimmed = new_name.trim();
+        if !trimmed.is_empty() {
+            if let Some(req) = self.requests.iter_mut().find(|r| r.id == req_id) {
+                req.name = trimmed.to_string();
+                let _ = self.fs_storage.save_request(req);
+            }
+        }
+        cx.notify();
+    }
+
+    pub fn cancel_renaming(&mut self, cx: &mut Context<Self>) {
+        if self.renaming_request_id.is_some() {
+            self.renaming_request_id = None;
+            self.rename_input = None;
+            self.rename_subscription = None;
+            cx.notify();
+        }
     }
 
     pub fn update_request(&mut self, mut req: HttpRequestItem, cx: &mut Context<Self>) {

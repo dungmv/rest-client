@@ -3,10 +3,12 @@ use crate::state::{EditorState, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, App, AppContext as _, Entity, InteractiveElement as _, IntoElement, ParentElement,
-    RenderOnce, StatefulInteractiveElement as _, Styled, Window,
+    div, px, AnyElement, App, AppContext as _, Entity, InteractiveElement as _, IntoElement,
+    MouseButton, ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
+use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::scroll::ScrollableElement as _;
+use restclient_core::models::HttpRequestItem;
 
 #[derive(IntoElement)]
 pub struct SidebarTree {
@@ -29,7 +31,7 @@ impl SidebarTree {
 impl RenderOnce for SidebarTree {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
-        let (git_branch, query, filter_query_raw, folders, requests) = {
+        let (git_branch, query, filter_query_raw, folders, requests, renaming_req_id, rename_input) = {
             let ws = self.workspace_state.read(cx);
             (
                 ws.git_branch.clone().unwrap_or_else(|| "main".to_string()),
@@ -37,6 +39,8 @@ impl RenderOnce for SidebarTree {
                 ws.filter_query.clone(),
                 ws.folders.clone(),
                 ws.requests.clone(),
+                ws.renaming_request_id.clone(),
+                ws.rename_input.clone(),
             )
         };
         let active_req_id = self.editor_state.read(cx).active_request.as_ref().map(|r| r.id.clone());
@@ -72,6 +76,220 @@ impl RenderOnce for SidebarTree {
                 inp.set_value(filter_query_raw.clone(), window, cx);
             });
         }
+
+        let render_req_item = |req: &HttpRequestItem, in_folder: bool| -> AnyElement {
+            let is_selected = active_req_id.as_ref() == Some(&req.id);
+            let is_renaming = renaming_req_id.as_deref() == Some(&req.id);
+            let req_for_click = req.clone();
+            let req_for_right = req.clone();
+            let req_for_menu = req.clone();
+            let req_id_del = req.id.clone();
+            let ed_s = ed_clone.clone();
+            let ed_right = ed_clone.clone();
+            let ws_del = ws_clone.clone();
+            let ed_del = ed_clone.clone();
+            let ws_click = ws_clone.clone();
+
+            let initial_name = {
+                let eff = crate::state::effective_request_name(req);
+                if !req.name.trim().is_empty() && req.name != "New Request" && req.name != "Untitled Request" {
+                    req.name.clone()
+                } else {
+                    eff
+                }
+            };
+            let initial_name_click = initial_name.clone();
+            let initial_name_menu = initial_name.clone();
+
+            div()
+                .id(format!("req-item-{}", req.id))
+                .when(in_folder, |s| s.ml(px(14.)))
+                .px(px(6.))
+                .py(px(4.))
+                .rounded(px(6.))
+                .border_1()
+                .border_color(if is_selected {
+                    t.border
+                } else {
+                    t.transparent
+                })
+                .bg(if is_selected {
+                    t.bg_selected
+                } else {
+                    t.transparent
+                })
+                .hover(|s| s.bg(t.bg_hover))
+                .cursor_pointer()
+                .flex()
+                .items_center()
+                .justify_between()
+                .on_mouse_down(MouseButton::Right, move |_, _, cx| {
+                    ed_right.update(cx, |state, cx| {
+                        state.set_active_request(req_for_right.clone(), false, cx);
+                    });
+                })
+                .on_click(move |ev, window, cx| {
+                    if is_renaming {
+                        return;
+                    }
+                    if ev.click_count() > 1 {
+                        let r_id = req_for_click.id.clone();
+                        let init_name = initial_name_click.clone();
+                        ws_click.update(cx, |state, cx| {
+                            state.start_renaming_request(r_id, init_name, window, cx);
+                        });
+                        ed_s.update(cx, |state, cx| {
+                            state.set_active_request(req_for_click.clone(), false, cx);
+                        });
+                    } else {
+                        ed_s.update(cx, |state, cx| {
+                            state.set_active_request(req_for_click.clone(), false, cx);
+                        });
+                    }
+                })
+                .context_menu({
+                    let ws_rename = ws_clone.clone();
+                    let r_id_rename = req_for_menu.id.clone();
+                    let init_name_rename = initial_name_menu.clone();
+
+                    let ws_dup = ws_clone.clone();
+                    let ed_dup = ed_clone.clone();
+                    let r_id_dup = req_for_menu.id.clone();
+
+                    let ws_del_ctx = ws_clone.clone();
+                    let ed_del_ctx = ed_clone.clone();
+                    let r_id_del_ctx = req_for_menu.id.clone();
+
+                    move |menu, _window, _cx| {
+                        let ws_r = ws_rename.clone();
+                        let r_id_r = r_id_rename.clone();
+                        let init_r = init_name_rename.clone();
+
+                        let ws_d = ws_dup.clone();
+                        let ed_d = ed_dup.clone();
+                        let r_id_d = r_id_dup.clone();
+
+                        let ws_del = ws_del_ctx.clone();
+                        let ed_del = ed_del_ctx.clone();
+                        let r_id_del = r_id_del_ctx.clone();
+
+                        menu
+                            .item(
+                                gpui_component::menu::PopupMenuItem::new("Rename")
+                                    .on_click(move |_, window, cx| {
+                                        ws_r.update(cx, |state, cx| {
+                                            state.start_renaming_request(r_id_r.clone(), init_r.clone(), window, cx);
+                                        });
+                                    }),
+                            )
+                            .item(
+                                gpui_component::menu::PopupMenuItem::new("Duplicate")
+                                    .on_click(move |_, _, cx| {
+                                        if let Some(dup) = ws_d.update(cx, |state, cx| {
+                                            state.duplicate_request(&r_id_d, cx)
+                                        }) {
+                                            ed_d.update(cx, |state, cx| {
+                                                state.set_active_request(dup, false, cx);
+                                            });
+                                        }
+                                    }),
+                            )
+                            .separator()
+                            .item(
+                                gpui_component::menu::PopupMenuItem::new("Delete")
+                                    .on_click(move |_, _, cx| {
+                                        ws_del.update(cx, |state, cx| {
+                                            state.delete_request(&r_id_del, cx);
+                                        });
+                                        ed_del.update(cx, |state, cx| {
+                                            state.close_tab(&r_id_del, cx);
+                                        });
+                                    }),
+                            )
+                    }
+                })
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.))
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .overflow_hidden()
+                        .child(MethodBadge::new(req.method))
+                        .child(if is_renaming && rename_input.is_some() {
+                            let inp = rename_input.as_ref().unwrap();
+                            let ws_esc = ws_clone.clone();
+                            div()
+                                .flex_1()
+                                .min_w(px(0.))
+                                .h(px(22.))
+                                .px(px(4.))
+                                .rounded(px(4.))
+                                .bg(t.bg_input)
+                                .border_1()
+                                .border_color(t.border_focus)
+                                .flex()
+                                .items_center()
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                    cx.stop_propagation();
+                                })
+                                .on_key_down(move |event, _, cx| {
+                                    if event.keystroke.key.as_str() == "escape" {
+                                        ws_esc.update(cx, |state, cx| {
+                                            state.cancel_renaming(cx);
+                                        });
+                                    }
+                                })
+                                .child(
+                                    gpui_component::input::Input::new(inp)
+                                        .id(format!("rename-input-field-{}", req.id))
+                                        .appearance(false)
+                                        .bordered(false)
+                                        .focus_bordered(false)
+                                        .cleanable(false),
+                                )
+                                .into_any_element()
+                        } else {
+                            div()
+                                .text_xs()
+                                .font_family(".SystemMonoFont")
+                                .text_color(if is_selected { t.text_primary } else { t.text_secondary })
+                                .truncate()
+                                .child(crate::state::effective_request_name(req))
+                                .into_any_element()
+                        }),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(4.))
+                        .when_some(req.last_status_code, |this, code| {
+                            this.child(StatusCodeBadge::new(code))
+                        })
+                        .child(
+                            div()
+                                .id(format!("req-del-{}", req.id))
+                                .px(px(4.))
+                                .py(px(1.))
+                                .rounded(px(3.))
+                                .text_xs()
+                                .text_color(t.text_muted)
+                                .hover(|s| s.bg(t.bg_card).text_color(t.status_4xx))
+                                .on_click(move |_, _, cx| {
+                                    ws_del.update(cx, |state, cx| {
+                                        state.delete_request(&req_id_del, cx);
+                                    });
+                                    ed_del.update(cx, |state, cx| {
+                                        state.close_tab(&req_id_del, cx);
+                                    });
+                                })
+                                .child("×"),
+                        ),
+                )
+                .into_any_element()
+        };
 
         div()
             .w_full()
@@ -286,86 +504,8 @@ impl RenderOnce for SidebarTree {
                                     ),
                             )
                             // Folder items
-                            .children(folder_requests.into_iter().map(|req| {
-                                let is_selected = active_req_id.as_ref() == Some(&req.id);
-                                let req_for_click = req.clone();
-                                let req_id_del = req.id.clone();
-                                let ed_s = ed_clone.clone();
-                                let ws_del = ws_clone.clone();
-                                let ed_del = ed_clone.clone();
-
-                                div()
-                                    .id(format!("req-item-{}", req.id))
-                                    .ml(px(14.))
-                                    .px(px(6.))
-                                    .py(px(4.))
-                                    .rounded(px(6.))
-                                    .border_1()
-                                    .border_color(if is_selected {
-                                        t.border
-                                    } else {
-                                        t.transparent
-                                    })
-                                    .bg(if is_selected {
-                                        t.bg_selected
-                                    } else {
-                                        t.transparent
-                                    })
-                                    .hover(|s| s.bg(t.bg_hover))
-                                    .cursor_pointer()
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .on_click(move |ev, _, cx| {
-                                        let pin = ev.click_count() > 1;
-                                        ed_s.update(cx, |state, cx| {
-                                            state.set_active_request(req_for_click.clone(), pin, cx);
-                                        });
-                                    })
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(6.))
-                                            .overflow_hidden()
-                                            .child(MethodBadge::new(req.method))
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .font_family(".SystemMonoFont")
-                                                    .text_color(if is_selected { t.text_primary } else { t.text_secondary })
-                                                    .truncate()
-                                                    .child(crate::state::effective_request_name(&req)),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(4.))
-                                            .when_some(req.last_status_code, |this, code| {
-                                                this.child(StatusCodeBadge::new(code))
-                                            })
-                                            .child(
-                                                div()
-                                                    .id(format!("req-del-{}", req.id))
-                                                    .px(px(4.))
-                                                    .py(px(1.))
-                                                    .rounded(px(3.))
-                                                    .text_xs()
-                                                    .text_color(t.text_muted)
-                                                    .hover(|s| s.bg(t.bg_card).text_color(t.status_4xx))
-                                                    .on_click(move |_, _, cx| {
-                                                        ws_del.update(cx, |state, cx| {
-                                                            state.delete_request(&req_id_del, cx);
-                                                        });
-                                                        ed_del.update(cx, |state, cx| {
-                                                            state.close_tab(&req_id_del, cx);
-                                                        });
-                                                    })
-                                                    .child("×"),
-                                            ),
-                                    )
+                            .children(folder_requests.iter().map(|req| {
+                                render_req_item(req, true)
                             }))
                     }))
                     // Top-level requests without folder
@@ -378,86 +518,7 @@ impl RenderOnce for SidebarTree {
                                         || r.name.to_lowercase().contains(&query)
                                         || r.url.to_lowercase().contains(&query))
                             })
-                            .map(|req| {
-                                let is_selected = active_req_id.as_ref() == Some(&req.id);
-                                let req_for_click = req.clone();
-                                let req_id_del = req.id.clone();
-                                let ed_s = ed_clone.clone();
-                                let ws_del = ws_clone.clone();
-                                let ed_del = ed_clone.clone();
-
-                                div()
-                                    .id(format!("req-top-{}", req.id))
-                                    .px(px(6.))
-                                    .py(px(4.))
-                                    .rounded(px(6.))
-                                    .border_1()
-                                    .border_color(if is_selected {
-                                        t.border
-                                    } else {
-                                        t.transparent
-                                    })
-                                    .bg(if is_selected {
-                                        t.bg_selected
-                                    } else {
-                                        t.transparent
-                                    })
-                                    .hover(|s| s.bg(t.bg_hover))
-                                    .cursor_pointer()
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .on_click(move |ev, _, cx| {
-                                        let pin = ev.click_count() > 1;
-                                        ed_s.update(cx, |state, cx| {
-                                            state.set_active_request(req_for_click.clone(), pin, cx);
-                                        });
-                                    })
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(6.))
-                                            .overflow_hidden()
-                                            .child(MethodBadge::new(req.method))
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .font_family(".SystemMonoFont")
-                                                    .text_color(if is_selected { t.text_primary } else { t.text_secondary })
-                                                    .truncate()
-                                                    .child(crate::state::effective_request_name(&req)),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(4.))
-                                            .when_some(req.last_status_code, |this, code| {
-                                                this.child(StatusCodeBadge::new(code))
-                                            })
-                                            .child(
-                                                div()
-                                                    .id(format!("req-top-del-{}", req.id))
-                                                    .px(px(4.))
-                                                    .py(px(1.))
-                                                    .rounded(px(3.))
-                                                    .text_xs()
-                                                    .text_color(t.text_muted)
-                                                    .hover(|s| s.bg(t.bg_card).text_color(t.status_4xx))
-                                                    .on_click(move |_, _, cx| {
-                                                        ws_del.update(cx, |state, cx| {
-                                                            state.delete_request(&req_id_del, cx);
-                                                        });
-                                                        ed_del.update(cx, |state, cx| {
-                                                            state.close_tab(&req_id_del, cx);
-                                                        });
-                                                    })
-                                                    .child("×"),
-                                            ),
-                                    )
-                            }),
+                            .map(|req| render_req_item(req, false)),
                     ),
             )
             // Footer: git branch chip
