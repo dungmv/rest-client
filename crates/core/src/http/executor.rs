@@ -80,6 +80,8 @@ pub enum HttpError {
     InvalidHeader(String),
     #[error("Timeout after {0} seconds")]
     Timeout(u64),
+    #[error("Pre-request script error: {0}")]
+    ScriptError(String),
     #[error("Execution error: {0}")]
     Other(String),
 }
@@ -306,6 +308,25 @@ impl ResolvedRequest {
             settings: item.settings.clone(),
         })
     }
+
+    /// Áp dụng các thay đổi từ Pre-request Script (headers, body JSON override)
+    pub fn apply_pre_script_mutations(&mut self, pre_output: &crate::scripting::PreRequestOutput) {
+        // Ghi đè hoặc thêm headers mới
+        for (k, v) in &pre_output.header_mutations {
+            self.headers.retain(|(name, _)| !name.eq_ignore_ascii_case(k));
+            self.headers.push((k.clone(), v.clone()));
+            self.sent_info.headers.retain(|(name, _)| !name.eq_ignore_ascii_case(k));
+            self.sent_info.headers.push((k.clone(), v.clone()));
+        }
+
+        // Ghi đè body nếu có
+        if let Some(new_body_str) = &pre_output.body_override {
+            let bytes = new_body_str.clone().into_bytes();
+            self.sent_info.body_size_bytes = bytes.len();
+            self.sent_info.body_preview = Some(new_body_str.chars().take(2000).collect());
+            self.body = Some(bytes);
+        }
+    }
 }
 
 pub trait HttpExecutor: Send + Sync {
@@ -518,6 +539,7 @@ impl HttpExecutor for ReqwestExecutor {
             body: body_bytes,
             timing,
             request_sent: Some(req.sent_info),
+            test_results: Vec::new(),
             created_at: Utc::now(),
         })
     }

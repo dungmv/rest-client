@@ -30,27 +30,28 @@ Tài liệu này xác định lộ trình phát triển toàn diện của **Res
 
 ---
 
-## 🎯 Giai đoạn 1: Scripting, Tự động hóa & Request Chaining (Scripting & Automation Engine)
-*Mục tiêu: Đạt được tính năng cốt lõi tạo nên sức mạnh của Postman: chạy script tiền xử lý, kiểm thử response và tự động truyền token giữa các request.*
+## 🎯 Giai đoạn 1: Scripting, Tự động hóa & Request Chaining (Scripting & Automation Engine) — ✅ Đã hoàn thành (Implemented & Tested)
+*Mục tiêu: Đạt được tính năng cốt lõi tạo nên sức mạnh của Postman: chạy script tiền xử lý, kiểm thử response và tự động truyền token giữa các request. (Xem chi tiết tại [specs/09-phase1-implementation-notes.md](./specs/09-phase1-implementation-notes.md))*
 
-1. **Embedded Scripting Runtime:**
-   - Tích hợp một engine JavaScript siêu nhẹ và an toàn viết bằng Rust (`rquickjs`).
-   - Khởi tạo sandbox độc lập cho mỗi lần request, cô lập tài nguyên, không gây crash UI.
+1. **Embedded Scripting Runtime (`rquickjs` QuickJS C bindings):**
+   - Tích hợp engine QuickJS siêu nhẹ qua `rquickjs`, khởi tạo context < 0.5ms độc lập cho mỗi request.
+   - Hỗ trợ đầy đủ cú pháp ES2023, async-safe, cô lập bộ nhớ, không crash UI.
 2. **Pre-request Scripts:**
    - Cho phép viết code JS chạy trước khi gửi request.
-   - Cung cấp API `client.environment.set(key, val)`, `client.variables.get(key)`.
-   - Tính toán dynamic signatures (HMAC-SHA256, MD5, timestamp, nonce, custom auth header).
+   - Cung cấp API `client.environment.set(key, val)`, `client.environment.get/unset`, `client.variables.get(key)`.
+   - Tính toán dynamic signatures (`client.crypto.hmacSha256`, `md5`, `base64Encode`, `base64Decode`, timestamp, nonce).
+   - Đầy đủ alias `pm = client` tương thích Postman scripts.
 3. **Test Scripts & Assertions (Request Chaining):**
    - Viết test assertions sau khi nhận response:
      ```javascript
      client.test("Status code is 200", () => {
-         client.assert(client.response.status === 200);
+         client.assert(client.response.status === 200, "Expected status 200");
      });
      // Request Chaining: Trích xuất access token từ response và lưu vào Environment
      const data = client.response.json();
      client.environment.set("access_token", data.token);
      ```
-   - Hiển thị tab "Tests" trong Response Viewer với badge kết quả (`Passed 3/3` màu xanh lá hoặc `Failed 1/3` màu đỏ).
+   - Hiển thị tab "Tests" trong Response Viewer với badge kết quả (`Passed 3/3` màu xanh lá hoặc `Failed 1/3` màu đỏ), test execution duration và console logs.
 4. **Dynamic Fake Variables (Faker built-in):**
    - Tích hợp các macro biến ngẫu nhiên trực tiếp trong URL/Headers/Body:
      - `{{$uuid}}` hoặc `{{$guid}}`: Sinh UUID v4

@@ -28,6 +28,10 @@ restclient/
 │   │   │   ├── http/          # HttpExecutor trait & ReqwestExecutor with timing breakdowns
 │   │   │   ├── interpolation.rs # Pure {{var}} interpolation & syntax scanning
 │   │   │   ├── models.rs      # Data types (HttpRequestItem, HttpMethod, Auth, etc.)
+│   │   │   ├── scripting/     # Embedded QuickJS (rquickjs) sandbox, API bridge, faker
+│   │   │   │   ├── api.rs         # Pre/Post scripting context & mutation models
+│   │   │   │   ├── fake_vars.rs   # Dynamic faker macros ({{$uuid}}, {{$timestamp}}, etc.)
+│   │   │   │   └── sandbox.rs     # rquickjs Runtime, client.* & pm.* sandbox bindings
 │   │   │   └── storage/
 │   │   │       ├── fs.rs      # Plain-file collection storage (Git-friendly, stable JSON)
 │   │   │       └── history.rs # SQLite response history with automatic pruning
@@ -42,9 +46,11 @@ restclient/
 │       │   │   ├── kv_table.rs        # Headers / Query params key-value table
 │       │   │   ├── request_bar.rs     # Method dropdown, URL bar, Send/Cancel button
 │       │   │   ├── response_viewer.rs # Status metrics, timing breakdown, headers & body
+│       │   │   ├── script_editor.rs   # Pre-request / Tests code editor with snippets
 │       │   │   ├── sidebar_tree.rs    # Folders & requests tree with search
 │       │   │   ├── status_badge.rs    # Color-coded method and status badges
 │       │   │   ├── tabs_with_badge.rs # Tabs with counter badges
+│       │   │   ├── test_results_panel.rs # Test pass/fail viewer & console logs
 │       │   │   ├── titlebar.rs        # Custom borderless titlebar with traffic lights / caption buttons
 │       │   │   └── toast.rs           # Toast notification system
 │       │   ├── platform/      # macOS traffic lights vs Windows caption buttons & git branch chip
@@ -73,6 +79,7 @@ To ensure 100% reproducible builds with GPUI, versions are strictly pinned:
 | `reqwest` | `=0.13.5` | `rustls`, `gzip`, `brotli`, `cookies`, `stream`, `multipart` |
 | `reqwest_cookie_store` | `=0.10.0` | In-memory and persistent cookie jars |
 | `cookie_store` | `=0.22.1` | RFC 6265 cookie jar |
+| `rquickjs` | `=0.8.1` | Embedded QuickJS JavaScript engine for Pre-request/Test scripting |
 | `rusqlite` | `=0.32.1` | SQLite backend for response history |
 | `tokio` | `=1.53.2` | Full async runtime for networking |
 

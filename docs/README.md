@@ -23,6 +23,7 @@ Thư mục `docs/` này bao gồm toàn bộ thiết kế chi tiết, kiến tr�
 | [**specs/06-developer-tools-codegen-diff-docs.md**](./specs/06-developer-tools-codegen-diff-docs.md) | Sinh Code (15+ ngôn ngữ), JSONPath Filter, Dynamic Fake Vars (`{{$uuid}}`), Response Diff |
 | [**specs/07-ui-ux-enhancements.md**](./specs/07-ui-ux-enhancements.md) | Tabs bar đa tác vụ, Preview ảnh/HTML, Cookie Manager nâng cao, Theme & Customization |
 | [**specs/08-collection-runner-and-testing-suite.md**](./specs/08-collection-runner-and-testing-suite.md) | Collection Runner, Data-Driven CSV/JSON, Headless CLI (Newman alt), Mock Server, Benchmark |
+| [**specs/09-phase1-implementation-notes.md**](./specs/09-phase1-implementation-notes.md) | Giai đoạn 1 (Hoàn thành): Scripting QuickJS (`rquickjs`), Pre-request/Tests, Request Chaining, Faker |
 
 ---
 
@@ -35,14 +36,14 @@ Thư mục `docs/` này bao gồm toàn bộ thiết kế chi tiết, kiến tr�
 | **Bắt buộc Cloud/Login** | Có (từ 2023) | Có (từ v8) | **Không (100% Offline)** | **Không (100% Offline)** |
 | **Lưu trữ Git-friendly** | Kém (Cloud JSON blob) | Kém | **Tuyệt vời (1 file / req)** | **Tuyệt vời (1 file / req)** |
 | **HTTP Methods & Headers** | Đầy đủ | Đầy đủ | Đầy đủ | Đầy đủ |
-| **Biến môi trường `{{var}}`** | Đầy đủ | Đầy đủ | Đầy đủ | Đầy đủ + Dynamic Fake Vars |
+| **Biến môi trường `{{var}}`** | Đầy đủ | Đầy đủ | **Đầy đủ + Dynamic Fake Vars (`{{$uuid}}`, `{{$timestamp}}`,...)** | **Đầy đủ + Dynamic Fake Vars** |
 | **Timing Breakdown** | DNS, TLS, TTFB | TTFB, Total | DNS, TCP, TLS, TTFB, Download | DNS, TCP, TLS, TTFB, Download |
 | **History (Lịch sử gửi)** | Cloud sync | Local SQLite | Local SQLite | Local SQLite + Diff view |
 | **Import Postman / Insomnia** | N/A | Postman | Đang lập kế hoạch | **1-Click Import hoàn chỉnh** |
 | **Import OpenAPI 3.0 / 3.1** | Có | Có | Đang lập kế hoạch | **Full Spec Tree Generator** |
 | **Code Generator** | 15+ languages | 12+ languages | cURL | **16+ languages & frameworks** |
-| **Pre-request & Test Scripts** | JavaScript sandbox | JavaScript sandbox | Chưa có | **Embedded JS Sandbox (Rhai/QuickJS)** |
-| **Request Chaining** | `pm.environment.set` | Tag filters | Manual copy | **Tự động qua Test Script** |
+| **Pre-request & Test Scripts** | JavaScript sandbox | JavaScript sandbox | **Embedded QuickJS (`rquickjs`) Sandbox** | **Embedded QuickJS (`rquickjs`) Sandbox** |
+| **Request Chaining** | `pm.environment.set` | Tag filters | **Tự động qua `client.environment.set` / `pm.*`** | **Tự động qua Test Script** |
 | **GraphQL Client** | Có (Schema explorer) | Có | Gửi qua POST JSON | **Dedicated GraphQL IDE** |
 | **WebSocket / SSE** | Có | Có | Chưa có | **Realtime Messages Frame Log** |
 | **OAuth 2.0 PKCE / Auto-Refresh** | Có | Có | Bearer Token thủ công | **Tự động lấy & refresh token** |

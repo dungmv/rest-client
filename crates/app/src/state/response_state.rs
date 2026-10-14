@@ -1,5 +1,5 @@
 use gpui::Context;
-use restclient_core::models::HttpResponseRecord;
+use restclient_core::models::{HttpResponseRecord, TestResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ResponseTabKind {
@@ -8,6 +8,7 @@ pub enum ResponseTabKind {
     Request,
     Headers,
     Cookies,
+    Tests,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -28,6 +29,8 @@ pub struct ResponseState {
     pub is_searching: bool,
     pub show_history_dropdown: bool,
     pub show_timing_popover: bool,
+    pub test_results: Vec<TestResult>,
+    pub console_logs: Vec<String>,
 }
 
 impl ResponseState {
@@ -41,6 +44,8 @@ impl ResponseState {
             is_searching: false,
             show_history_dropdown: false,
             show_timing_popover: false,
+            test_results: Vec::new(),
+            console_logs: Vec::new(),
         }
     }
 
@@ -95,4 +100,22 @@ impl ResponseState {
         }
         cx.notify();
     }
+
+    pub fn set_test_results(
+        &mut self,
+        results: Vec<TestResult>,
+        logs: Vec<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.test_results = results;
+        self.console_logs = logs;
+        cx.notify();
+    }
+
+    pub fn clear_test_results(&mut self, cx: &mut Context<Self>) {
+        self.test_results.clear();
+        self.console_logs.clear();
+        cx.notify();
+    }
 }
+

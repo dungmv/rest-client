@@ -149,6 +149,7 @@ impl HistoryStorage {
                 body,
                 timing,
                 request_sent,
+                test_results: Vec::new(),
                 created_at,
             })
         })?;
@@ -189,6 +190,7 @@ mod tests {
                 body: format!("body {}", i).into_bytes(),
                 timing: TimingBreakdown::default(),
                 request_sent: None,
+                test_results: Vec::new(),
                 created_at: Utc::now(),
             };
             storage.save_response(&record, 3).unwrap();

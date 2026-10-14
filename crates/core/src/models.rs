@@ -197,6 +197,35 @@ impl Default for RequestSettings {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScriptConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pre_request: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_response: Option<String>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+impl Default for ScriptConfig {
+    fn default() -> Self {
+        Self {
+            pre_request: None,
+            post_response: None,
+            enabled: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TestResult {
+    pub name: String,
+    pub passed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+    pub duration_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HttpRequestItem {
     pub id: String,
     pub workspace_id: String,
@@ -219,6 +248,8 @@ pub struct HttpRequestItem {
     pub sort_order: i32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_status_code: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script: Option<ScriptConfig>,
 }
 
 impl HttpRequestItem {
@@ -242,9 +273,11 @@ impl HttpRequestItem {
             settings: RequestSettings::default(),
             sort_order: 0,
             last_status_code: None,
+            script: None,
         }
     }
 }
+
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Folder {
@@ -422,6 +455,8 @@ pub struct HttpResponseRecord {
     pub timing: TimingBreakdown,
     #[serde(default)]
     pub request_sent: Option<RequestSentInfo>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub test_results: Vec<TestResult>,
     pub created_at: DateTime<Utc>,
 }
 

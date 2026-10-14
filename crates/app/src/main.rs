@@ -15,7 +15,13 @@ use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
 use gpui_kit::assets::Assets;
 use platform::default_window_options;
 use restclient_core::http::{HttpError, HttpExecutor, HttpProgress, ReqwestExecutor, ResolvedRequest};
-use restclient_core::models::{Auth, HttpMethod, HttpResponseRecord, RequestBody};
+use restclient_core::models::{
+    Auth, Environment, EnvironmentVariable, HttpMethod, HttpResponseRecord, RequestBody,
+};
+use restclient_core::scripting::{
+    resolve_fake_vars, PostResponseContext, PostResponseOutput, PreRequestContext, PreRequestOutput,
+    ScriptSandbox,
+};
 use state::*;
 use std::sync::Arc;
 use theme::theme;
@@ -24,7 +30,7 @@ actions!(restclient, [SendRequest, ToggleCommandPalette]);
 
 pub enum HttpSendEvent {
     Progress(String),
-    Success(Box<HttpResponseRecord>),
+    Success(Box<HttpResponseRecord>, PostResponseOutput),
     Cancelled,
     Error(String),
 }
@@ -37,6 +43,8 @@ pub struct AppView {
     url_input: Entity<InputState>,
     json_editor: Entity<CodeEditorState>,
     raw_textarea: Entity<TextareaState>,
+    pre_script_textarea: Entity<TextareaState>,
+    test_script_textarea: Entity<TextareaState>,
     bearer_token_input: Entity<InputState>,
     basic_user_input: Entity<InputState>,
     basic_pass_input: Entity<InputState>,
@@ -70,6 +78,8 @@ impl AppView {
             state.language("json").folding(false)
         });
         let raw_textarea = cx.new(|cx| TextareaState::new(window, cx));
+        let pre_script_textarea = cx.new(|cx| TextareaState::new(window, cx));
+        let test_script_textarea = cx.new(|cx| TextareaState::new(window, cx));
 
         let bearer_token_input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter Bearer token..."));
         let basic_user_input = cx.new(|cx| InputState::new(window, cx).placeholder("Username..."));
@@ -105,6 +115,19 @@ impl AppView {
                 raw_textarea.update(cx, |txt, cx| {
                     txt.set_value(content.clone(), window, cx);
                 });
+            }
+
+            if let Some(script) = &req.script {
+                if let Some(pre) = &script.pre_request {
+                    pre_script_textarea.update(cx, |txt, cx| {
+                        txt.set_value(pre.clone(), window, cx);
+                    });
+                }
+                if let Some(post) = &script.post_response {
+                    test_script_textarea.update(cx, |txt, cx| {
+                        txt.set_value(post.clone(), window, cx);
+                    });
+                }
             }
 
             // Load initial history
@@ -237,6 +260,27 @@ impl AppView {
             }
         }));
 
+        // 3c. Subscribe to Script textareas
+        let ed_pre = editor_state.clone();
+        _subscriptions.push(cx.subscribe(&pre_script_textarea, move |_, txt, event, cx| {
+            if let InputEvent::Change = event {
+                let val = txt.read(cx).value().to_string();
+                ed_pre.update(cx, |ed, cx| {
+                    ed.set_pre_script(val, cx);
+                });
+            }
+        }));
+
+        let ed_test = editor_state.clone();
+        _subscriptions.push(cx.subscribe(&test_script_textarea, move |_, txt, event, cx| {
+            if let InputEvent::Change = event {
+                let val = txt.read(cx).value().to_string();
+                ed_test.update(cx, |ed, cx| {
+                    ed.set_test_script(val, cx);
+                });
+            }
+        }));
+
         // 4. Observe editor_state: reload response history when active request switches & auto-save
         let ws_clone = workspace_state.clone();
         let resp_clone = response_state.clone();
@@ -291,6 +335,8 @@ impl AppView {
             url_input,
             json_editor,
             raw_textarea,
+            pre_script_textarea,
+            test_script_textarea,
             bearer_token_input,
             basic_user_input,
             basic_pass_input,
@@ -309,7 +355,7 @@ impl AppView {
         let rt = self.tokio_rt.clone();
 
         let ed = ed_entity.read(cx);
-        let Some(req_item) = ed.active_request.clone() else {
+        let Some(mut req_item) = ed.active_request.clone() else {
             return;
         };
 
@@ -317,10 +363,95 @@ impl AppView {
             return;
         }
 
+        // 1. Resolve Dynamic Fake Variables ({{$uuid}}, {{$timestamp}}, etc.)
+        req_item.url = resolve_fake_vars(&req_item.url);
+        for p in &mut req_item.params {
+            p.key = resolve_fake_vars(&p.key);
+            p.value = resolve_fake_vars(&p.value);
+        }
+        for h in &mut req_item.headers {
+            h.key = resolve_fake_vars(&h.key);
+            h.value = resolve_fake_vars(&h.value);
+        }
+        match &mut req_item.body {
+            RequestBody::Json(s) => *s = resolve_fake_vars(s),
+            RequestBody::Raw { content, .. } => *content = resolve_fake_vars(content),
+            RequestBody::FormUrlEncoded(pairs) => {
+                for p in pairs {
+                    p.key = resolve_fake_vars(&p.key);
+                    p.value = resolve_fake_vars(&p.value);
+                }
+            }
+            RequestBody::Multipart(items) => {
+                for item in items {
+                    item.key = resolve_fake_vars(&item.key);
+                    item.value = resolve_fake_vars(&item.value);
+                }
+            }
+            _ => {}
+        }
+
         let ws = ws_entity.read(cx);
         let env = ws.active_environment().cloned();
 
-        let resolved = match ResolvedRequest::from_item(&req_item, env.as_ref()) {
+        // 2. Pre-request Script execution
+        let pre_script_code = req_item.script.as_ref().and_then(|s| {
+            if s.enabled {
+                s.pre_request.clone()
+            } else {
+                None
+            }
+        });
+        let post_script_code = req_item.script.as_ref().and_then(|s| {
+            if s.enabled {
+                s.post_response.clone()
+            } else {
+                None
+            }
+        });
+
+        let pre_output = if let Some(code) = pre_script_code {
+            let pre_ctx = PreRequestContext::from_request_and_env(&req_item, env.as_ref());
+            ScriptSandbox::run_pre_request(&code, pre_ctx)
+        } else {
+            PreRequestOutput::default()
+        };
+
+        if let Some(err) = &pre_output.error {
+            ed_entity.update(cx, |ed, cx| {
+                ed.set_script_error(Some(err.clone()), cx);
+            });
+        } else {
+            ed_entity.update(cx, |ed, cx| {
+                ed.set_script_error(None, cx);
+            });
+        }
+
+        // 3. Merge pre-script env mutations into effective environment
+        let mut effective_env = env.clone();
+        if !pre_output.env_mutations.is_empty() {
+            let mut temp_env = effective_env.unwrap_or_else(|| Environment::new("scratch", "Temp"));
+            for (k, v_opt) in &pre_output.env_mutations {
+                if let Some(val) = v_opt {
+                    if let Some(v_item) = temp_env.variables.iter_mut().find(|v| v.key == *k) {
+                        v_item.value = val.clone();
+                    } else {
+                        temp_env.variables.push(EnvironmentVariable {
+                            enabled: true,
+                            key: k.clone(),
+                            value: val.clone(),
+                            secret: false,
+                        });
+                    }
+                } else {
+                    temp_env.variables.retain(|v| v.key != *k);
+                }
+            }
+            effective_env = Some(temp_env);
+        }
+
+        // 4. Resolve Request with effective environment & apply pre-script mutations
+        let mut resolved = match ResolvedRequest::from_item(&req_item, effective_env.as_ref()) {
             Ok(r) => r,
             Err(e) => {
                 let err_msg = e.to_string();
@@ -330,6 +461,7 @@ impl AppView {
                 return;
             }
         };
+        resolved.apply_pre_script_mutations(&pre_output);
 
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
         ed_entity.update(cx, |state, cx| {
@@ -359,6 +491,7 @@ impl AppView {
             }
         });
 
+        let eff_env_for_post = effective_env.clone();
         // Spawn background HTTP send task on tokio runtime
         rt.spawn(async move {
             tokio::select! {
@@ -367,8 +500,17 @@ impl AppView {
                 }
                 res = executor.send(resolved, Some(progress_tx)) => {
                     match res {
-                        Ok(record) => {
-                            let _ = send_event_tx.send(HttpSendEvent::Success(Box::new(record)));
+                        Ok(mut record) => {
+                            // 5. Post-response / Test Script
+                            let post_output = if let Some(code) = post_script_code {
+                                let post_ctx = PostResponseContext::from_response_and_env(&record, eff_env_for_post.as_ref());
+                                ScriptSandbox::run_post_response(&code, post_ctx)
+                            } else {
+                                PostResponseOutput::default()
+                            };
+
+                            record.test_results = post_output.test_results.clone();
+                            let _ = send_event_tx.send(HttpSendEvent::Success(Box::new(record), post_output));
                         }
                         Err(HttpError::Cancelled) => {
                             let _ = send_event_tx.send(HttpSendEvent::Cancelled);
@@ -392,14 +534,51 @@ impl AppView {
                                     ed.update_progress(text, cx);
                                 });
                             }
-                            HttpSendEvent::Success(record) => {
+                            HttpSendEvent::Success(record, post_output) => {
                                 let status = record.status_code;
                                 let req_id = record.request_id.clone();
+
+                                // Update workspace environment with mutations (Request chaining)
+                                let all_mutations: Vec<_> = pre_output.env_mutations.iter().chain(post_output.env_mutations.iter()).cloned().collect();
+                                if !all_mutations.is_empty() {
+                                    this.workspace_state.update(cx, |ws, cx| {
+                                        if let Some(act_env) = ws.active_environment_mut() {
+                                            for (k, v_opt) in &all_mutations {
+                                                if let Some(val) = v_opt {
+                                                    if let Some(var) = act_env.variables.iter_mut().find(|v| v.key == *k) {
+                                                        var.value = val.clone();
+                                                    } else {
+                                                        act_env.variables.push(EnvironmentVariable {
+                                                            enabled: true,
+                                                            key: k.clone(),
+                                                            value: val.clone(),
+                                                            secret: false,
+                                                        });
+                                                    }
+                                                } else {
+                                                    act_env.variables.retain(|v| v.key != *k);
+                                                }
+                                            }
+                                            let ws_id = ws.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
+                                            let envs = ws.environments.clone();
+                                            let _ = ws.fs_storage.save_environments(ws_id, &envs);
+                                            cx.notify();
+                                        }
+                                    });
+                                }
+
+                                if let Some(err) = &post_output.error {
+                                    this.editor_state.update(cx, |ed, cx| {
+                                        ed.set_script_error(Some(err.clone()), cx);
+                                    });
+                                }
+
                                 let history_storage = this.workspace_state.read(cx).history_storage.clone();
                                 let _ = history_storage.save_response(&record, 20);
                                 let history = history_storage.get_responses(&req_id, 20).unwrap_or_default();
 
                                 this.response_state.update(cx, |resp, cx| {
+                                    resp.set_test_results(post_output.test_results, post_output.console_logs, cx);
                                     resp.set_response(Some(*record), history, cx);
                                 });
 
@@ -511,6 +690,19 @@ impl Render for AppView {
                     }
                 }
                 Auth::None => {}
+            }
+
+            let pre_script = req.script.as_ref().and_then(|s| s.pre_request.clone()).unwrap_or_default();
+            if self.pre_script_textarea.read(cx).value().as_str() != pre_script {
+                self.pre_script_textarea.update(cx, |txt, cx| {
+                    txt.set_value(pre_script, window, cx);
+                });
+            }
+            let test_script = req.script.as_ref().and_then(|s| s.post_response.clone()).unwrap_or_default();
+            if self.test_script_textarea.read(cx).value().as_str() != test_script {
+                self.test_script_textarea.update(cx, |txt, cx| {
+                    txt.set_value(test_script, window, cx);
+                });
             }
         }
 
@@ -646,6 +838,40 @@ impl Render for AppView {
                                                             .on_click(move |_, _, cx| {
                                                                 ed_c.update(cx, |state, cx| {
                                                                     state.set_active_tab_kind(RequestTabKind::Auth, cx);
+                                                                });
+                                                            })
+                                                    })
+                                                    .child({
+                                                        let ed_c = ed_entity.clone();
+                                                        let has_pre = active_req
+                                                            .as_ref()
+                                                            .and_then(|r| r.script.as_ref())
+                                                            .and_then(|s| s.pre_request.as_ref())
+                                                            .map(|s| !s.trim().is_empty())
+                                                            .unwrap_or(false);
+                                                        TabItem::new("tab-pre-script", "Pre-request")
+                                                            .active(active_tab_kind == RequestTabKind::PreRequestScript)
+                                                            .when(has_pre, |tab| tab.badge("●"))
+                                                            .on_click(move |_, _, cx| {
+                                                                ed_c.update(cx, |state, cx| {
+                                                                    state.set_active_tab_kind(RequestTabKind::PreRequestScript, cx);
+                                                                });
+                                                            })
+                                                    })
+                                                    .child({
+                                                        let ed_c = ed_entity.clone();
+                                                        let has_test = active_req
+                                                            .as_ref()
+                                                            .and_then(|r| r.script.as_ref())
+                                                            .and_then(|s| s.post_response.as_ref())
+                                                            .map(|s| !s.trim().is_empty())
+                                                            .unwrap_or(false);
+                                                        TabItem::new("tab-tests", "Tests")
+                                                            .active(active_tab_kind == RequestTabKind::Tests)
+                                                            .when(has_test, |tab| tab.badge("●"))
+                                                            .on_click(move |_, _, cx| {
+                                                                ed_c.update(cx, |state, cx| {
+                                                                    state.set_active_tab_kind(RequestTabKind::Tests, cx);
                                                                 });
                                                             })
                                                     })
@@ -1092,6 +1318,40 @@ impl Render for AppView {
                                                                                     .child(if cur_tls { "✓ Validate TLS Certificates Enabled" } else { "Validate TLS Certificates Disabled" })
                                                                             )
                                                                     })
+                                                            }
+                                                            RequestTabKind::PreRequestScript => {
+                                                                let pre_txt = self.pre_script_textarea.clone();
+                                                                let script_err = ed_entity.read(cx).script_error.clone();
+                                                                div().size_full().child(
+                                                                    ScriptEditor::new(
+                                                                        self.pre_script_textarea.clone(),
+                                                                        ScriptEditorKind::PreRequest,
+                                                                        script_err,
+                                                                        move |snippet, window, cx| {
+                                                                            pre_txt.update(cx, |t, cx| {
+                                                                                let cur = t.value();
+                                                                                t.set_value(format!("{}{}", cur, snippet), window, cx);
+                                                                            });
+                                                                        },
+                                                                    )
+                                                                )
+                                                            }
+                                                            RequestTabKind::Tests => {
+                                                                let test_txt = self.test_script_textarea.clone();
+                                                                let script_err = ed_entity.read(cx).script_error.clone();
+                                                                div().size_full().child(
+                                                                    ScriptEditor::new(
+                                                                        self.test_script_textarea.clone(),
+                                                                        ScriptEditorKind::Tests,
+                                                                        script_err,
+                                                                        move |snippet, window, cx| {
+                                                                            test_txt.update(cx, |t, cx| {
+                                                                                let cur = t.value();
+                                                                                t.set_value(format!("{}{}", cur, snippet), window, cx);
+                                                                            });
+                                                                        },
+                                                                    )
+                                                                )
                                                             }
                                                         }
                                                     }),

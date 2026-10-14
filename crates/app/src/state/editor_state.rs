@@ -14,6 +14,8 @@ pub enum RequestTabKind {
     Headers,
     Auth,
     Settings,
+    PreRequestScript,
+    Tests,
 }
 
 pub struct EditorState {
@@ -28,6 +30,7 @@ pub struct EditorState {
     pub method_dropdown_open: bool,
     pub body_dropdown_open: bool,
     pub auth_dropdown_open: bool,
+    pub script_error: Option<String>,
 }
 
 impl EditorState {
@@ -49,6 +52,7 @@ impl EditorState {
             method_dropdown_open: false,
             body_dropdown_open: false,
             auth_dropdown_open: false,
+            script_error: None,
         }
     }
 
@@ -430,6 +434,37 @@ impl EditorState {
         self.send_progress = None;
         self.cancel_tx = None;
         cx.notify();
+    }
+
+    pub fn set_script_error(&mut self, err: Option<String>, cx: &mut Context<Self>) {
+        self.script_error = err;
+        cx.notify();
+    }
+
+    pub fn set_pre_script(&mut self, code: String, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            let script = req.script.get_or_insert_with(Default::default);
+            script.pre_request = if code.trim().is_empty() {
+                None
+            } else {
+                Some(code)
+            };
+            self.is_dirty = true;
+            cx.notify();
+        }
+    }
+
+    pub fn set_test_script(&mut self, code: String, cx: &mut Context<Self>) {
+        if let Some(req) = &mut self.active_request {
+            let script = req.script.get_or_insert_with(Default::default);
+            script.post_response = if code.trim().is_empty() {
+                None
+            } else {
+                Some(code)
+            };
+            self.is_dirty = true;
+            cx.notify();
+        }
     }
 }
 

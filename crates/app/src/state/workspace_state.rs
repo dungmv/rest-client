@@ -99,6 +99,14 @@ impl WorkspaceState {
         }
     }
 
+    pub fn active_environment_mut(&mut self) -> Option<&mut Environment> {
+        if let Some(env_id) = &self.active_environment_id {
+            self.environments.iter_mut().find(|e| &e.id == env_id)
+        } else {
+            None
+        }
+    }
+
     pub fn set_active_environment(&mut self, env_id: Option<String>, cx: &mut Context<Self>) {
         self.active_environment_id = env_id.clone();
         if let Some(ws) = &mut self.active_workspace {

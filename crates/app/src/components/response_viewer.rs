@@ -340,6 +340,24 @@ impl RenderOnce for ResponseViewer {
                                     state.set_active_tab(ResponseTabKind::Cookies, cx);
                                 });
                             })
+                    })
+                    .child({
+                        let rs_c = resp_state_clone.clone();
+                        let total_tests = resp_s.test_results.len();
+                        let passed_tests = resp_s.test_results.iter().filter(|r| r.passed).count();
+                        let badge_str = if total_tests > 0 {
+                            format!("{}/{}", passed_tests, total_tests)
+                        } else {
+                            "0".to_string()
+                        };
+                        TabItem::new("tab-resp-tests", "Tests")
+                            .active(active_tab == ResponseTabKind::Tests)
+                            .badge(badge_str)
+                            .on_click(move |_, _, cx| {
+                                rs_c.update(cx, |state, cx| {
+                                    state.set_active_tab(ResponseTabKind::Tests, cx);
+                                });
+                            })
                     }),
             )
             // Body / Content area
@@ -807,6 +825,13 @@ impl RenderOnce for ResponseViewer {
                                 } else {
                                     div().p(px(12.)).text_xs().text_color(t.text_muted).child("No cookies received.").into_any_element()
                                 }
+                            }
+                            ResponseTabKind::Tests => {
+                                crate::components::TestResultsPanel::new(
+                                    resp_s.test_results.clone(),
+                                    resp_s.console_logs.clone(),
+                                )
+                                .into_any_element()
                             }
                         }
                     }),
