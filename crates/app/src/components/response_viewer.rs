@@ -358,6 +358,19 @@ impl RenderOnce for ResponseViewer {
                                     state.set_active_tab(ResponseTabKind::Tests, cx);
                                 });
                             })
+                    })
+                    .child({
+                        let rs_c = resp_state_clone.clone();
+                        let total_logs = resp_s.console_logs.len();
+                        let badge_str = format!("{}", total_logs);
+                        TabItem::new("tab-resp-console", "Console")
+                            .active(active_tab == ResponseTabKind::Console)
+                            .badge(badge_str)
+                            .on_click(move |_, _, cx| {
+                                rs_c.update(cx, |state, cx| {
+                                    state.set_active_tab(ResponseTabKind::Console, cx);
+                                });
+                            })
                     }),
             )
             // Body / Content area
@@ -830,6 +843,12 @@ impl RenderOnce for ResponseViewer {
                                 crate::components::TestResultsPanel::new(
                                     resp_s.test_results.clone(),
                                     resp_s.console_logs.clone(),
+                                )
+                                .into_any_element()
+                            }
+                            ResponseTabKind::Console => {
+                                crate::components::ConsolePanel::new(
+                                    resp_state_clone.clone(),
                                 )
                                 .into_any_element()
                             }

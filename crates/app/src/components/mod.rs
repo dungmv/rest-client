@@ -1,6 +1,7 @@
 #![allow(unused_imports)]
 pub mod body_editor;
 pub mod command_palette;
+pub mod console_panel;
 pub mod cookies_modal;
 pub mod env_modal;
 pub mod kv_table;
@@ -16,6 +17,7 @@ pub mod toast;
 
 pub use body_editor::*;
 pub use command_palette::*;
+pub use console_panel::*;
 pub use cookies_modal::*;
 pub use env_modal::*;
 pub use kv_table::*;

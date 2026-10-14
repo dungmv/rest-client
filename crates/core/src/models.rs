@@ -441,6 +441,31 @@ impl ParsedCookie {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConsoleLogSource {
+    PreRequest,
+    PostResponse,
+    System,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConsoleLogLevel {
+    Log,
+    Info,
+    Warn,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConsoleLogEntry {
+    pub source: ConsoleLogSource,
+    pub level: ConsoleLogLevel,
+    pub message: String,
+    pub timestamp: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HttpResponseRecord {
     pub id: String,
@@ -457,6 +482,8 @@ pub struct HttpResponseRecord {
     pub request_sent: Option<RequestSentInfo>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub test_results: Vec<TestResult>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub console_logs: Vec<ConsoleLogEntry>,
     pub created_at: DateTime<Utc>,
 }
 

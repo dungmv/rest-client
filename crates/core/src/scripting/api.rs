@@ -1,4 +1,7 @@
-use crate::models::{Environment, EnvironmentVariable, HttpRequestItem, HttpResponseRecord, KeyValuePair, RequestBody, TestResult};
+use crate::models::{
+    ConsoleLogEntry, Environment, EnvironmentVariable, HttpRequestItem, HttpResponseRecord,
+    KeyValuePair, RequestBody, TestResult,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct PreRequestContext {
@@ -35,6 +38,8 @@ pub struct PreRequestOutput {
     pub error: Option<String>,
     /// Log từ console.log(...)
     pub console_logs: Vec<String>,
+    /// Danh sách console logs có cấu trúc (source, level, timestamp)
+    pub console_entries: Vec<ConsoleLogEntry>,
 }
 
 #[derive(Debug, Clone)]
@@ -77,5 +82,6 @@ pub struct PostResponseOutput {
     pub env_mutations: Vec<(String, Option<String>)>,
     pub test_results: Vec<TestResult>,
     pub console_logs: Vec<String>,
+    pub console_entries: Vec<ConsoleLogEntry>,
     pub error: Option<String>,
 }

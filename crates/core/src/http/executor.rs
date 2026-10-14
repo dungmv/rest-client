@@ -540,6 +540,7 @@ impl HttpExecutor for ReqwestExecutor {
             timing,
             request_sent: Some(req.sent_info),
             test_results: Vec::new(),
+            console_logs: Vec::new(),
             created_at: Utc::now(),
         })
     }

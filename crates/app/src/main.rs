@@ -499,6 +499,10 @@ impl AppView {
         ed_entity.update(cx, |state, cx| {
             state.start_sending(cancel_tx, cx);
         });
+        let initial_logs = pre_output.console_entries.clone();
+        self.response_state.update(cx, |resp, cx| {
+            resp.set_pre_request_logs(initial_logs, cx);
+        });
 
         let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
         let (send_event_tx, mut send_event_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -605,13 +609,18 @@ impl AppView {
                                     });
                                 }
 
+                                let mut combined_console_logs = pre_output.console_entries.clone();
+                                combined_console_logs.extend(post_output.console_entries.clone());
+                                let mut final_record = *record;
+                                final_record.console_logs = combined_console_logs.clone();
+
                                 let history_storage = this.workspace_state.read(cx).history_storage.clone();
-                                let _ = history_storage.save_response(&record, 20);
+                                let _ = history_storage.save_response(&final_record, 20);
                                 let history = history_storage.get_responses(&req_id, 20).unwrap_or_default();
 
                                 this.response_state.update(cx, |resp, cx| {
-                                    resp.set_test_results(post_output.test_results, post_output.console_logs, cx);
-                                    resp.set_response(Some(*record), history, cx);
+                                    resp.set_test_results(post_output.test_results, combined_console_logs, cx);
+                                    resp.set_response(Some(final_record), history, cx);
                                 });
 
                                 this.workspace_state.update(cx, |ws, _cx| {

@@ -6,7 +6,9 @@ use std::time::Instant;
 use rquickjs::function::{Opt, Rest};
 use rquickjs::{Context, Function, Object, Runtime, Value};
 
-use crate::models::{EnvironmentVariable, TestResult};
+use crate::models::{
+    ConsoleLogEntry, ConsoleLogLevel, ConsoleLogSource, EnvironmentVariable, TestResult,
+};
 use crate::scripting::api::{
     PostResponseContext, PostResponseOutput, PreRequestContext, PreRequestOutput,
 };
@@ -39,7 +41,7 @@ impl ScriptSandbox {
         let env_mutations: Rc<RefCell<Vec<(String, Option<String>)>>> = Default::default();
         let header_mutations: Rc<RefCell<Vec<(String, String)>>> = Default::default();
         let body_override: Rc<RefCell<Option<String>>> = Default::default();
-        let console_logs: Rc<RefCell<Vec<String>>> = Default::default();
+        let console_entries: Rc<RefCell<Vec<ConsoleLogEntry>>> = Default::default();
 
         let eval_res = ctx.with(|ctx| -> Result<(), String> {
             let env_obj = build_environment_object(&ctx, &ctx_data.env_vars, env_mutations.clone())
@@ -101,7 +103,8 @@ impl ScriptSandbox {
                 .set("pm", client)
                 .map_err(|e| format!("{:?}", e))?;
 
-            inject_console(&ctx, console_logs.clone()).map_err(|e| format!("{:?}", e))?;
+            inject_console(&ctx, console_entries.clone(), ConsoleLogSource::PreRequest)
+                .map_err(|e| format!("{:?}", e))?;
 
             let eval_result: Result<Value, _> = ctx.eval(code.as_bytes());
             if let Err(e) = eval_result {
@@ -115,13 +118,23 @@ impl ScriptSandbox {
         let env_mutations = env_mutations.borrow().clone();
         let header_mutations = header_mutations.borrow().clone();
         let body_override = body_override.borrow().clone();
-        let console_logs = console_logs.borrow().clone();
+        let mut console_entries = console_entries.borrow().clone();
+        if let Some(err) = &error {
+            console_entries.push(ConsoleLogEntry {
+                source: ConsoleLogSource::PreRequest,
+                level: ConsoleLogLevel::Error,
+                message: err.clone(),
+                timestamp: chrono::Local::now().format("%H:%M:%S%.3f").to_string(),
+            });
+        }
+        let console_logs = console_entries.iter().map(|e| e.message.clone()).collect();
 
         PreRequestOutput {
             env_mutations,
             header_mutations,
             body_override,
             console_logs,
+            console_entries,
             error,
         }
     }
@@ -150,7 +163,7 @@ impl ScriptSandbox {
 
         let env_mutations: Rc<RefCell<Vec<(String, Option<String>)>>> = Default::default();
         let test_results: Rc<RefCell<Vec<TestResult>>> = Default::default();
-        let console_logs: Rc<RefCell<Vec<String>>> = Default::default();
+        let console_entries: Rc<RefCell<Vec<ConsoleLogEntry>>> = Default::default();
 
         let eval_res = ctx.with(|ctx| -> Result<(), String> {
             let env_obj = build_environment_object(&ctx, &ctx_data.env_vars, env_mutations.clone())
@@ -231,7 +244,8 @@ impl ScriptSandbox {
                 .set("pm", client)
                 .map_err(|e| format!("{:?}", e))?;
 
-            inject_console(&ctx, console_logs.clone()).map_err(|e| format!("{:?}", e))?;
+            inject_console(&ctx, console_entries.clone(), ConsoleLogSource::PostResponse)
+                .map_err(|e| format!("{:?}", e))?;
 
             let eval_result: Result<Value, _> = ctx.eval(code.as_bytes());
             if let Err(e) = eval_result {
@@ -244,12 +258,22 @@ impl ScriptSandbox {
         let error = eval_res.err();
         let env_mutations = env_mutations.borrow().clone();
         let test_results = test_results.borrow().clone();
-        let console_logs = console_logs.borrow().clone();
+        let mut console_entries = console_entries.borrow().clone();
+        if let Some(err) = &error {
+            console_entries.push(ConsoleLogEntry {
+                source: ConsoleLogSource::PostResponse,
+                level: ConsoleLogLevel::Error,
+                message: err.clone(),
+                timestamp: chrono::Local::now().format("%H:%M:%S%.3f").to_string(),
+            });
+        }
+        let console_logs = console_entries.iter().map(|e| e.message.clone()).collect();
 
         PostResponseOutput {
             env_mutations,
             test_results,
             console_logs,
+            console_entries,
             error,
         }
     }
@@ -506,21 +530,39 @@ fn build_crypto_object<'js>(ctx: &rquickjs::Ctx<'js>) -> rquickjs::Result<Object
 
 fn inject_console<'js>(
     ctx: &rquickjs::Ctx<'js>,
-    logs: Rc<RefCell<Vec<String>>>,
+    entries: Rc<RefCell<Vec<ConsoleLogEntry>>>,
+    source: ConsoleLogSource,
 ) -> rquickjs::Result<()> {
     let console = Object::new(ctx.clone())?;
-    let log_fn = Function::new(
-        ctx.clone(),
-        move |ctx: rquickjs::Ctx<'js>, args: Rest<Value<'js>>| -> rquickjs::Result<()> {
-            let mut parts = Vec::new();
-            for arg in args.0 {
-                parts.push(js_val_to_string(&ctx, &arg)?);
-            }
-            logs.borrow_mut().push(parts.join(" "));
-            Ok(())
-        },
-    )?;
-    console.set("log", log_fn)?;
+
+    let make_log_fn = |level: ConsoleLogLevel| {
+        let entries_c = entries.clone();
+        Function::new(
+            ctx.clone(),
+            move |ctx: rquickjs::Ctx<'js>, args: Rest<Value<'js>>| -> rquickjs::Result<()> {
+                let mut parts = Vec::new();
+                for arg in args.0 {
+                    parts.push(js_val_to_string(&ctx, &arg)?);
+                }
+                let msg = parts.join(" ");
+                let timestamp = chrono::Local::now().format("%H:%M:%S%.3f").to_string();
+                entries_c.borrow_mut().push(ConsoleLogEntry {
+                    source,
+                    level,
+                    message: msg,
+                    timestamp,
+                });
+                Ok(())
+            },
+        )
+    };
+
+    console.set("log", make_log_fn(ConsoleLogLevel::Log)?)?;
+    console.set("info", make_log_fn(ConsoleLogLevel::Info)?)?;
+    console.set("warn", make_log_fn(ConsoleLogLevel::Warn)?)?;
+    console.set("error", make_log_fn(ConsoleLogLevel::Error)?)?;
+    console.set("debug", make_log_fn(ConsoleLogLevel::Log)?)?;
+
     ctx.globals().set("console", console)?;
     Ok(())
 }
@@ -739,5 +781,32 @@ mod tests {
         let output = ScriptSandbox::run_pre_request(script, ctx_data);
         assert!(output.error.is_none());
         assert_eq!(output.env_mutations[0], ("from_pm".to_string(), Some("success".to_string())));
+    }
+
+    #[test]
+    fn test_console_logging_levels() {
+        let ctx_data = PreRequestContext::default();
+        let script = r#"
+            console.log("standard log", 123);
+            console.info("info log");
+            console.warn("warning log");
+            console.error("error log");
+        "#;
+
+        let output = ScriptSandbox::run_pre_request(script, ctx_data);
+        assert!(output.error.is_none());
+        assert_eq!(output.console_entries.len(), 4);
+        assert_eq!(output.console_entries[0].level, ConsoleLogLevel::Log);
+        assert_eq!(output.console_entries[0].message, "standard log 123");
+        assert_eq!(output.console_entries[0].source, ConsoleLogSource::PreRequest);
+
+        assert_eq!(output.console_entries[1].level, ConsoleLogLevel::Info);
+        assert_eq!(output.console_entries[1].message, "info log");
+
+        assert_eq!(output.console_entries[2].level, ConsoleLogLevel::Warn);
+        assert_eq!(output.console_entries[2].message, "warning log");
+
+        assert_eq!(output.console_entries[3].level, ConsoleLogLevel::Error);
+        assert_eq!(output.console_entries[3].message, "error log");
     }
 }

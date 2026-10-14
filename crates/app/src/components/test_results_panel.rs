@@ -4,16 +4,16 @@ use gpui::{
     div, px, App, InteractiveElement as _, IntoElement, ParentElement, RenderOnce, Styled, Window,
 };
 use gpui_component::scroll::ScrollableElement as _;
-use restclient_core::models::TestResult;
+use restclient_core::models::{ConsoleLogEntry, ConsoleLogSource, TestResult};
 
 #[derive(IntoElement)]
 pub struct TestResultsPanel {
     results: Vec<TestResult>,
-    console_logs: Vec<String>,
+    console_logs: Vec<ConsoleLogEntry>,
 }
 
 impl TestResultsPanel {
-    pub fn new(results: Vec<TestResult>, console_logs: Vec<String>) -> Self {
+    pub fn new(results: Vec<TestResult>, console_logs: Vec<ConsoleLogEntry>) -> Self {
         Self {
             results,
             console_logs,
@@ -220,9 +220,14 @@ impl RenderOnce for TestResultsPanel {
                                         .flex_col()
                                         .gap(px(2.))
                                         .children(self.console_logs.into_iter().map(|log| {
+                                            let prefix = match log.source {
+                                                ConsoleLogSource::PreRequest => "[Pre-request]",
+                                                ConsoleLogSource::PostResponse => "[Post-response]",
+                                                ConsoleLogSource::System => "[System]",
+                                            };
                                             div()
                                                 .text_color(t.text_primary)
-                                                .child(format!("> {}", log))
+                                                .child(format!("> {} {}", prefix, log.message))
                                         })),
                                 ),
                         )
