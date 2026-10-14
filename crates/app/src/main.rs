@@ -43,8 +43,8 @@ pub struct AppView {
     url_input: Entity<InputState>,
     json_editor: Entity<CodeEditorState>,
     raw_textarea: Entity<TextareaState>,
-    pre_script_textarea: Entity<TextareaState>,
-    test_script_textarea: Entity<TextareaState>,
+    pre_script_editor: Entity<CodeEditorState>,
+    test_script_editor: Entity<CodeEditorState>,
     bearer_token_input: Entity<InputState>,
     basic_user_input: Entity<InputState>,
     basic_pass_input: Entity<InputState>,
@@ -78,8 +78,40 @@ impl AppView {
             state.language("json").folding(false)
         });
         let raw_textarea = cx.new(|cx| TextareaState::new(window, cx));
-        let pre_script_textarea = cx.new(|cx| TextareaState::new(window, cx));
-        let test_script_textarea = cx.new(|cx| TextareaState::new(window, cx));
+        let pre_script_editor = cx.new(|cx| {
+            let mut state = CodeEditorState::new(window, cx);
+            state.set_highlighter_factory(
+                std::rc::Rc::new(|lang: &str| {
+                    if lang == "javascript" || lang == "js" {
+                        Some(Box::new(JavaScriptHighlighter::new()))
+                    } else {
+                        None
+                    }
+                }),
+                cx,
+            );
+            state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
+                ScriptCompletionProvider::new(ScriptEditorKind::PreRequest),
+            ));
+            state.language("javascript").line_number(true).folding(false)
+        });
+        let test_script_editor = cx.new(|cx| {
+            let mut state = CodeEditorState::new(window, cx);
+            state.set_highlighter_factory(
+                std::rc::Rc::new(|lang: &str| {
+                    if lang == "javascript" || lang == "js" {
+                        Some(Box::new(JavaScriptHighlighter::new()))
+                    } else {
+                        None
+                    }
+                }),
+                cx,
+            );
+            state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
+                ScriptCompletionProvider::new(ScriptEditorKind::Tests),
+            ));
+            state.language("javascript").line_number(true).folding(false)
+        });
 
         let bearer_token_input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter Bearer token..."));
         let basic_user_input = cx.new(|cx| InputState::new(window, cx).placeholder("Username..."));
@@ -119,12 +151,12 @@ impl AppView {
 
             if let Some(script) = &req.script {
                 if let Some(pre) = &script.pre_request {
-                    pre_script_textarea.update(cx, |txt, cx| {
+                    pre_script_editor.update(cx, |txt, cx| {
                         txt.set_value(pre.clone(), window, cx);
                     });
                 }
                 if let Some(post) = &script.post_response {
-                    test_script_textarea.update(cx, |txt, cx| {
+                    test_script_editor.update(cx, |txt, cx| {
                         txt.set_value(post.clone(), window, cx);
                     });
                 }
@@ -260,9 +292,9 @@ impl AppView {
             }
         }));
 
-        // 3c. Subscribe to Script textareas
+        // 3c. Subscribe to Script editors
         let ed_pre = editor_state.clone();
-        _subscriptions.push(cx.subscribe(&pre_script_textarea, move |_, txt, event, cx| {
+        _subscriptions.push(cx.subscribe(&pre_script_editor, move |_, txt, event, cx| {
             if let InputEvent::Change = event {
                 let val = txt.read(cx).value().to_string();
                 ed_pre.update(cx, |ed, cx| {
@@ -272,7 +304,7 @@ impl AppView {
         }));
 
         let ed_test = editor_state.clone();
-        _subscriptions.push(cx.subscribe(&test_script_textarea, move |_, txt, event, cx| {
+        _subscriptions.push(cx.subscribe(&test_script_editor, move |_, txt, event, cx| {
             if let InputEvent::Change = event {
                 let val = txt.read(cx).value().to_string();
                 ed_test.update(cx, |ed, cx| {
@@ -335,8 +367,8 @@ impl AppView {
             url_input,
             json_editor,
             raw_textarea,
-            pre_script_textarea,
-            test_script_textarea,
+            pre_script_editor,
+            test_script_editor,
             bearer_token_input,
             basic_user_input,
             basic_pass_input,
@@ -693,14 +725,14 @@ impl Render for AppView {
             }
 
             let pre_script = req.script.as_ref().and_then(|s| s.pre_request.clone()).unwrap_or_default();
-            if self.pre_script_textarea.read(cx).value().as_str() != pre_script {
-                self.pre_script_textarea.update(cx, |txt, cx| {
+            if self.pre_script_editor.read(cx).value().as_str() != pre_script {
+                self.pre_script_editor.update(cx, |txt, cx| {
                     txt.set_value(pre_script, window, cx);
                 });
             }
             let test_script = req.script.as_ref().and_then(|s| s.post_response.clone()).unwrap_or_default();
-            if self.test_script_textarea.read(cx).value().as_str() != test_script {
-                self.test_script_textarea.update(cx, |txt, cx| {
+            if self.test_script_editor.read(cx).value().as_str() != test_script {
+                self.test_script_editor.update(cx, |txt, cx| {
                     txt.set_value(test_script, window, cx);
                 });
             }
@@ -1320,34 +1352,48 @@ impl Render for AppView {
                                                                     })
                                                             }
                                                             RequestTabKind::PreRequestScript => {
-                                                                let pre_txt = self.pre_script_textarea.clone();
+                                                                let pre_txt = self.pre_script_editor.clone();
                                                                 let script_err = ed_entity.read(cx).script_error.clone();
                                                                 div().size_full().child(
                                                                     ScriptEditor::new(
-                                                                        self.pre_script_textarea.clone(),
+                                                                        self.pre_script_editor.clone(),
                                                                         ScriptEditorKind::PreRequest,
                                                                         script_err,
                                                                         move |snippet, window, cx| {
                                                                             pre_txt.update(cx, |t, cx| {
-                                                                                let cur = t.value();
-                                                                                t.set_value(format!("{}{}", cur, snippet), window, cx);
+                                                                                let cur = t.value().to_string();
+                                                                                let new_val = if cur.is_empty() {
+                                                                                    snippet.to_string()
+                                                                                } else if cur.ends_with('\n') {
+                                                                                    format!("{}{}", cur, snippet)
+                                                                                } else {
+                                                                                    format!("{}\n{}", cur, snippet)
+                                                                                };
+                                                                                t.set_value(new_val, window, cx);
                                                                             });
                                                                         },
                                                                     )
                                                                 )
                                                             }
                                                             RequestTabKind::Tests => {
-                                                                let test_txt = self.test_script_textarea.clone();
+                                                                let test_txt = self.test_script_editor.clone();
                                                                 let script_err = ed_entity.read(cx).script_error.clone();
                                                                 div().size_full().child(
                                                                     ScriptEditor::new(
-                                                                        self.test_script_textarea.clone(),
+                                                                        self.test_script_editor.clone(),
                                                                         ScriptEditorKind::Tests,
                                                                         script_err,
                                                                         move |snippet, window, cx| {
                                                                             test_txt.update(cx, |t, cx| {
-                                                                                let cur = t.value();
-                                                                                t.set_value(format!("{}{}", cur, snippet), window, cx);
+                                                                                let cur = t.value().to_string();
+                                                                                let new_val = if cur.is_empty() {
+                                                                                    snippet.to_string()
+                                                                                } else if cur.ends_with('\n') {
+                                                                                    format!("{}{}", cur, snippet)
+                                                                                } else {
+                                                                                    format!("{}\n{}", cur, snippet)
+                                                                                };
+                                                                                t.set_value(new_val, window, cx);
                                                                             });
                                                                         },
                                                                     )
