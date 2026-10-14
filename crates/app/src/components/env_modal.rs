@@ -2,10 +2,11 @@ use crate::state::WorkspaceState;
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, App, AppContext as _, Entity, InteractiveElement as _, IntoElement, ParentElement,
-    RenderOnce, StatefulInteractiveElement as _, Styled, Window,
+    div, px, AnyElement, App, AppContext as _, Entity, InteractiveElement as _, IntoElement, MouseButton,
+    ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::menu::{ContextMenuExt as _, PopupMenuItem};
 use gpui_component::scroll::ScrollableElement as _;
 use restclient_core::models::{Environment, EnvironmentVariable};
 
@@ -34,6 +35,8 @@ impl RenderOnce for EnvironmentModal {
         let env_query = ws.env_filter_query.to_lowercase();
         let var_query = ws.var_filter_query.to_lowercase();
         let ws_clone = self.workspace_state.clone();
+        let renaming_env_id = ws.renaming_env_id.clone();
+        let rename_env_input = ws.rename_env_input.clone();
 
         let is_global_selected = selected_id == "globals";
         let active_custom_env = envs.iter().find(|e| e.id == selected_id).cloned();
@@ -150,40 +153,6 @@ impl RenderOnce for EnvironmentModal {
 
         let is_target_active = !is_global_selected
             && active_custom_env.as_ref().map(|e| e.id.as_str()) == active_env_id.as_deref();
-
-        // Target name input for renaming custom environment
-        let env_name_input = if let Some(custom) = &active_custom_env {
-            let custom_id = custom.id.clone();
-            let custom_name = custom.name.clone();
-            let ws_rename = ws_clone.clone();
-
-            let holder = window.use_keyed_state(
-                gpui::SharedString::from(format!("env-name-editor-{}", custom_id)),
-                cx,
-                |window, cx| {
-                    let input = cx.new(|cx| InputState::new(window, cx).placeholder("Environment name..."));
-                    let inp = input.clone();
-                    let cid = custom_id.clone();
-                    let sub = cx.subscribe_in(&input, window, move |_, _, ev, _, cx| {
-                        if let InputEvent::Change = ev {
-                            let val = inp.read(cx).value().to_string();
-                            ws_rename.update(cx, |state, cx| {
-                                state.rename_environment(&cid, val, cx);
-                            });
-                        }
-                    });
-                    (input, sub)
-                },
-            );
-
-            let inp = holder.read(cx).0.clone();
-            if inp.read(cx).value().as_str() != custom_name {
-                inp.update(cx, |i, cx| i.set_value(custom_name, window, cx));
-            }
-            Some(inp)
-        } else {
-            None
-        };
 
         div()
             .absolute()
@@ -420,8 +389,11 @@ impl RenderOnce for EnvironmentModal {
                                             .children(filtered_envs.into_iter().map(|env| {
                                                 let is_sel = selected_id == env.id;
                                                 let is_act = active_env_id.as_deref() == Some(&env.id);
+                                                let is_renaming = renaming_env_id.as_deref() == Some(&env.id);
                                                 let env_id = env.id.clone();
+                                                let env_name = env.name.clone();
                                                 let env_id_click = env.id.clone();
+                                                let env_name_click = env.name.clone();
                                                 let env_id_dup = env.id.clone();
                                                 let env_id_del = env.id.clone();
                                                 let count = env.variables.len();
@@ -441,13 +413,72 @@ impl RenderOnce for EnvironmentModal {
                                                     .flex()
                                                     .items_center()
                                                     .justify_between()
-                                                    .on_click(move |_, _, cx| {
-                                                        ws_sel.update(cx, |state, cx| {
-                                                            state.select_modal_environment(Some(env_id_click.clone()), cx);
-                                                        });
+                                                    .on_click(move |ev, window, cx| {
+                                                        if is_renaming {
+                                                            return;
+                                                        }
+                                                        if ev.click_count() > 1 {
+                                                            let cid = env_id_click.clone();
+                                                            let cname = env_name_click.clone();
+                                                            ws_sel.update(cx, |state, cx| {
+                                                                state.start_renaming_environment(cid, cname, window, cx);
+                                                            });
+                                                        } else {
+                                                            ws_sel.update(cx, |state, cx| {
+                                                                state.select_modal_environment(Some(env_id_click.clone()), cx);
+                                                            });
+                                                        }
+                                                    })
+                                                    .context_menu({
+                                                        let ws_ren = ws_clone.clone();
+                                                        let ren_id = env.id.clone();
+                                                        let ren_name = env.name.clone();
+                                                        let ws_du = ws_clone.clone();
+                                                        let du_id = env.id.clone();
+                                                        let ws_de = ws_clone.clone();
+                                                        let del_id = env.id.clone();
+
+                                                        move |menu, _window, _cx| {
+                                                            let ws_r = ws_ren.clone();
+                                                            let r_id = ren_id.clone();
+                                                            let r_name = ren_name.clone();
+                                                            let ws_d = ws_du.clone();
+                                                            let d_id = du_id.clone();
+                                                            let ws_delete = ws_de.clone();
+                                                            let id_delete = del_id.clone();
+
+                                                            menu
+                                                                .item(
+                                                                    PopupMenuItem::new("Rename")
+                                                                        .on_click(move |_, window, cx| {
+                                                                            ws_r.update(cx, |state, cx| {
+                                                                                state.start_renaming_environment(r_id.clone(), r_name.clone(), window, cx);
+                                                                            });
+                                                                        }),
+                                                                )
+                                                                .item(
+                                                                    PopupMenuItem::new("Duplicate")
+                                                                        .on_click(move |_, _, cx| {
+                                                                            ws_d.update(cx, |state, cx| {
+                                                                                state.duplicate_environment(&d_id, cx);
+                                                                            });
+                                                                        }),
+                                                                )
+                                                                .separator()
+                                                                .item(
+                                                                    PopupMenuItem::new("Delete")
+                                                                        .on_click(move |_, _, cx| {
+                                                                            ws_delete.update(cx, |state, cx| {
+                                                                                state.delete_environment(&id_delete, cx);
+                                                                            });
+                                                                        }),
+                                                                )
+                                                        }
                                                     })
                                                     .child(
                                                         div()
+                                                            .flex_1()
+                                                            .min_w(px(0.))
                                                             .flex()
                                                             .items_center()
                                                             .gap(px(6.))
@@ -458,14 +489,48 @@ impl RenderOnce for EnvironmentModal {
                                                                     .text_color(if is_act { t.status_2xx } else { t.text_muted })
                                                                     .child(if is_act { "●" } else { "○" }),
                                                             )
-                                                            .child(
+                                                            .child(if is_renaming && rename_env_input.is_some() {
+                                                                let inp = rename_env_input.as_ref().unwrap();
+                                                                let ws_esc = ws_clone.clone();
+                                                                div()
+                                                                    .flex_1()
+                                                                    .min_w(px(0.))
+                                                                    .h(px(22.))
+                                                                    .px(px(4.))
+                                                                    .rounded(px(4.))
+                                                                    .bg(t.bg_input)
+                                                                    .border_1()
+                                                                    .border_color(t.border_focus)
+                                                                    .flex()
+                                                                    .items_center()
+                                                                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                                                        cx.stop_propagation();
+                                                                    })
+                                                                    .on_key_down(move |event, _, cx| {
+                                                                        if event.keystroke.key.as_str() == "escape" {
+                                                                            ws_esc.update(cx, |state, cx| {
+                                                                                state.cancel_renaming_environment(cx);
+                                                                            });
+                                                                        }
+                                                                    })
+                                                                    .child(
+                                                                        Input::new(inp)
+                                                                            .id(format!("rename-env-input-field-{}", env_id))
+                                                                            .appearance(false)
+                                                                            .bordered(false)
+                                                                            .focus_bordered(false)
+                                                                            .cleanable(false),
+                                                                    )
+                                                                    .into_any_element()
+                                                            } else {
                                                                 div()
                                                                     .truncate()
                                                                     .text_xs()
                                                                     .font_weight(if is_sel { gpui::FontWeight::SEMIBOLD } else { gpui::FontWeight::NORMAL })
                                                                     .text_color(if is_sel { t.text_primary } else { t.text_secondary })
-                                                                    .child(env.name.clone()),
-                                                            ),
+                                                                    .child(env_name)
+                                                                    .into_any_element()
+                                                            }),
                                                     )
                                                     .child(
                                                         div()
@@ -584,56 +649,32 @@ impl RenderOnce for EnvironmentModal {
                                                         )
                                                     })
                                                     .when(!is_global_selected, |this| {
-                                                        if let Some(inp) = &env_name_input {
-                                                            let ws_act = ws_clone.clone();
-                                                            let is_act = is_target_active;
-                                                            let cur_id = selected_id.clone();
-
+                                                        if let Some(custom) = &active_custom_env {
                                                             this.child(
                                                                 div()
-                                                                    .w(px(240.))
-                                                                    .h(px(32.))
-                                                                    .px(px(8.))
-                                                                    .rounded(px(4.))
-                                                                    .bg(t.bg_input)
-                                                                    .border_1()
-                                                                    .border_color(t.border)
                                                                     .flex()
                                                                     .items_center()
+                                                                    .gap(px(8.))
                                                                     .child(
-                                                                        Input::new(inp)
-                                                                            .id("env-detail-name-input")
-                                                                            .appearance(false)
-                                                                            .bordered(false)
-                                                                            .focus_bordered(false),
-                                                                    ),
-                                                            )
-                                                            .child(
-                                                                // Active toggle button
-                                                                div()
-                                                                    .id("btn-toggle-active-env")
-                                                                    .cursor_pointer()
-                                                                    .px(px(10.))
-                                                                    .py(px(4.))
-                                                                    .rounded(px(4.))
-                                                                    .border_1()
-                                                                    .border_color(if is_act { t.status_2xx } else { t.border })
-                                                                    .bg(if is_act { gpui::Hsla { a: 0.15, ..t.status_2xx } } else { t.bg_card })
-                                                                    .text_color(if is_act { t.status_2xx } else { t.text_secondary })
-                                                                    .hover(|s| s.bg(t.bg_hover))
-                                                                    .text_xs()
-                                                                    .font_weight(gpui::FontWeight::MEDIUM)
-                                                                    .on_click(move |_, _, cx| {
-                                                                        let cid = cur_id.clone();
-                                                                        ws_act.update(cx, |state, cx| {
-                                                                            if is_act {
-                                                                                state.set_active_environment(None, cx);
-                                                                            } else {
-                                                                                state.set_active_environment(Some(cid), cx);
-                                                                            }
-                                                                        });
-                                                                    })
-                                                                    .child(if is_act { "✓ Active Environment" } else { "Set as Active" }),
+                                                                        div()
+                                                                            .text_sm()
+                                                                            .font_weight(gpui::FontWeight::BOLD)
+                                                                            .text_color(t.text_primary)
+                                                                            .child(custom.name.clone()),
+                                                                    )
+                                                                    .when(is_target_active, |this| {
+                                                                        this.child(
+                                                                            div()
+                                                                                .px(px(6.))
+                                                                                .py(px(2.))
+                                                                                .rounded(px(4.))
+                                                                                .bg(gpui::Hsla { a: 0.15, ..t.status_2xx })
+                                                                                .text_color(t.status_2xx)
+                                                                                .text_xs()
+                                                                                .font_weight(gpui::FontWeight::MEDIUM)
+                                                                                .child("● Active"),
+                                                                        )
+                                                                    }),
                                                             )
                                                         } else {
                                                             this.child(div().text_sm().child("Select an environment"))
@@ -641,58 +682,11 @@ impl RenderOnce for EnvironmentModal {
                                                     }),
                                             )
                                             .child(
-                                                // Right of header: Duplicate, Delete, Add variable
+                                                // Right of header: Add variable
                                                 div()
                                                     .flex()
                                                     .items_center()
                                                     .gap(px(8.))
-                                                    .when(!is_global_selected && active_custom_env.is_some(), |this| {
-                                                        let ws_dup = ws_clone.clone();
-                                                        let ws_del = ws_clone.clone();
-                                                        let cur_id_dup = selected_id.clone();
-                                                        let cur_id_del = selected_id.clone();
-
-                                                        this.child(
-                                                            div()
-                                                                .id("btn-detail-duplicate")
-                                                                .cursor_pointer()
-                                                                .px(px(8.))
-                                                                .py(px(4.))
-                                                                .rounded(px(4.))
-                                                                .bg(t.bg_card)
-                                                                .border_1()
-                                                                .border_color(t.border)
-                                                                .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
-                                                                .text_xs()
-                                                                .text_color(t.text_secondary)
-                                                                .on_click(move |_, _, cx| {
-                                                                    ws_dup.update(cx, |state, cx| {
-                                                                        state.duplicate_environment(&cur_id_dup, cx);
-                                                                    });
-                                                                })
-                                                                .child("❐ Duplicate"),
-                                                        )
-                                                        .child(
-                                                            div()
-                                                                .id("btn-detail-delete")
-                                                                .cursor_pointer()
-                                                                .px(px(8.))
-                                                                .py(px(4.))
-                                                                .rounded(px(4.))
-                                                                .bg(t.bg_card)
-                                                                .border_1()
-                                                                .border_color(t.border)
-                                                                .hover(|s| s.bg(t.bg_hover).text_color(t.status_5xx))
-                                                                .text_xs()
-                                                                .text_color(t.text_secondary)
-                                                                .on_click(move |_, _, cx| {
-                                                                    ws_del.update(cx, |state, cx| {
-                                                                        state.delete_environment(&cur_id_del, cx);
-                                                                    });
-                                                                })
-                                                                .child("🗑 Delete"),
-                                                        )
-                                                    })
                                                     .child({
                                                         let ws_add = ws_clone.clone();
                                                         let is_glob = is_global_selected;

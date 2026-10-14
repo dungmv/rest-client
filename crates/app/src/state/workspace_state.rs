@@ -30,6 +30,9 @@ pub struct WorkspaceState {
     pub renaming_request_id: Option<String>,
     pub rename_input: Option<Entity<InputState>>,
     pub rename_subscription: Option<gpui::Subscription>,
+    pub renaming_env_id: Option<String>,
+    pub rename_env_input: Option<Entity<InputState>>,
+    pub rename_env_subscription: Option<gpui::Subscription>,
 }
 
 impl WorkspaceState {
@@ -69,6 +72,9 @@ impl WorkspaceState {
             renaming_request_id: None,
             rename_input: None,
             rename_subscription: None,
+            renaming_env_id: None,
+            rename_env_input: None,
+            rename_env_subscription: None,
         };
 
         state.load_initial();
@@ -249,6 +255,67 @@ impl WorkspaceState {
             self.renaming_request_id = None;
             self.rename_input = None;
             self.rename_subscription = None;
+            cx.notify();
+        }
+    }
+
+    pub fn start_renaming_environment(
+        &mut self,
+        env_id: String,
+        initial_name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if env_id == "globals" {
+            return;
+        }
+        let input = cx.new(|cx| {
+            let mut s = InputState::new(window, cx);
+            s.set_value(initial_name, window, cx);
+            s.select_all(window, cx);
+            s.focus(window, cx);
+            s
+        });
+
+        let sub = cx.subscribe(&input, move |this, input, event: &gpui_component::input::InputEvent, cx| {
+            match event {
+                gpui_component::input::InputEvent::PressEnter { .. } => {
+                    let val = input.read(cx).value().to_string();
+                    this.finish_renaming_environment(val, cx);
+                }
+                gpui_component::input::InputEvent::Blur => {
+                    let val = input.read(cx).value().to_string();
+                    this.finish_renaming_environment(val, cx);
+                }
+                _ => {}
+            }
+        });
+
+        self.renaming_env_id = Some(env_id);
+        self.rename_env_input = Some(input);
+        self.rename_env_subscription = Some(sub);
+        cx.notify();
+    }
+
+    pub fn finish_renaming_environment(&mut self, new_name: String, cx: &mut Context<Self>) {
+        let Some(env_id) = self.renaming_env_id.take() else {
+            return;
+        };
+        self.rename_env_input = None;
+        self.rename_env_subscription = None;
+        let trimmed = new_name.trim();
+        if !trimmed.is_empty() {
+            self.rename_environment(&env_id, trimmed.to_string(), cx);
+        } else {
+            cx.notify();
+        }
+    }
+
+    pub fn cancel_renaming_environment(&mut self, cx: &mut Context<Self>) {
+        if self.renaming_env_id.is_some() {
+            self.renaming_env_id = None;
+            self.rename_env_input = None;
+            self.rename_env_subscription = None;
             cx.notify();
         }
     }
@@ -517,6 +584,9 @@ mod tests {
             renaming_request_id: None,
             rename_input: None,
             rename_subscription: None,
+            renaming_env_id: None,
+            rename_env_input: None,
+            rename_env_subscription: None,
         };
 
         let effective = ws_state.effective_environment();
@@ -578,6 +648,9 @@ mod tests {
             renaming_request_id: None,
             rename_input: None,
             rename_subscription: None,
+            renaming_env_id: None,
+            rename_env_input: None,
+            rename_env_subscription: None,
         };
 
         // Test duplicate

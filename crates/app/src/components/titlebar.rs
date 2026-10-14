@@ -4,6 +4,8 @@ use gpui::{
     div, img, px, App, Entity, Image, ImageFormat, InteractiveElement as _, IntoElement,
     ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Window, WindowControlArea,
 };
+use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use std::sync::{Arc, OnceLock};
 
 fn app_icon_image() -> Arc<Image> {
@@ -132,32 +134,27 @@ impl RenderOnce for AppTitleBar {
                             .child(format!("RestClient • {}", ws_name))
                     )
             )
-            // Environment pill: [● local ▾]
+            // Environment pill dropdown: [● local ▾]
             .child({
                 let ws_s = ws_clone.clone();
-                div()
-                    .id("btn-env-breadcrumb")
-                    .occlude()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
+                let envs = ws.environments.clone();
+                let active_env_id = ws.active_environment_id.clone();
+                let has_active = ws.active_environment().is_some();
+
+                Button::new("btn-env-breadcrumb")
+                    .ghost()
+                    .compact()
                     .px(px(8.))
                     .py(px(2.))
+                    .h(px(24.))
                     .rounded(px(5.))
                     .bg(t.bg_card)
                     .border_1()
                     .border_color(t.border)
-                    .cursor_pointer()
-                    .hover(|s| s.bg(t.bg_hover))
-                    .on_click(move |_, _, cx| {
-                        ws_s.update(cx, |state, cx| {
-                            state.toggle_env_modal(cx);
-                        });
-                    })
                     .child(
                         div()
                             .text_xs()
-                            .text_color(t.status_2xx)
+                            .text_color(if has_active { t.status_2xx } else { t.text_muted })
                             .child("●"),
                     )
                     .child(
@@ -173,6 +170,52 @@ impl RenderOnce for AppTitleBar {
                             .text_color(t.text_muted)
                             .child("▾"),
                     )
+                    .dropdown_menu(move |menu, _window, _cx| {
+                        let mut m = menu;
+
+                        // 1. "No Environment" option
+                        let ws_none = ws_s.clone();
+                        let is_none_active = active_env_id.is_none();
+                        m = m.item(
+                            PopupMenuItem::new("No Environment")
+                                .checked(is_none_active)
+                                .on_click(move |_, _, cx| {
+                                    ws_none.update(cx, |state, cx| {
+                                        state.set_active_environment(None, cx);
+                                    });
+                                }),
+                        );
+
+                        // 2. All workspace environments
+                        for env in &envs {
+                            let env_id = env.id.clone();
+                            let is_act = active_env_id.as_deref() == Some(&env_id);
+                            let ws_env = ws_s.clone();
+                            m = m.item(
+                                PopupMenuItem::new(env.name.clone())
+                                    .checked(is_act)
+                                    .on_click(move |_, _, cx| {
+                                        ws_env.update(cx, |state, cx| {
+                                            state.set_active_environment(Some(env_id.clone()), cx);
+                                        });
+                                    }),
+                            );
+                        }
+
+                        // 3. Separator and "Environment Settings..."
+                        let ws_settings = ws_s.clone();
+                        m = m.separator().item(
+                            PopupMenuItem::new("⚙ Environment Settings...")
+                                .on_click(move |_, _, cx| {
+                                    ws_settings.update(cx, |state, cx| {
+                                        state.show_env_modal = true;
+                                        cx.notify();
+                                    });
+                                }),
+                        );
+
+                        m
+                    })
             })
             // Cookie jar button
             .child({
