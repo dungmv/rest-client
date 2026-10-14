@@ -8,7 +8,9 @@ mod theme;
 use components::*;
 use gpui::prelude::FluentBuilder as _;
 use gpui::*;
-use gpui_component::input::{Input, InputEvent, InputState, TextareaState};
+use gpui_component::input::{
+    EditorState as CodeEditorState, Input, InputEvent, InputState, TextareaState,
+};
 use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
 use gpui_kit::assets::Assets;
 use platform::default_window_options;
@@ -33,7 +35,7 @@ pub struct AppView {
     response_state: Entity<ResponseState>,
     toast_state: Entity<ToastState>,
     url_input: Entity<InputState>,
-    json_textarea: Entity<TextareaState>,
+    json_editor: Entity<CodeEditorState>,
     raw_textarea: Entity<TextareaState>,
     bearer_token_input: Entity<InputState>,
     basic_user_input: Entity<InputState>,
@@ -53,7 +55,20 @@ impl AppView {
         let toast_state = cx.new(|_| ToastState::new());
 
         let url_input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter request URL (e.g. https://httpbin.org/get)"));
-        let json_textarea = cx.new(|cx| TextareaState::new(window, cx));
+        let json_editor = cx.new(|cx| {
+            let mut state = CodeEditorState::new(window, cx);
+            state.set_highlighter_factory(
+                std::rc::Rc::new(|lang: &str| {
+                    if lang == "json" {
+                        Some(Box::new(crate::components::body_editor::JsonHighlighter::new()))
+                    } else {
+                        None
+                    }
+                }),
+                cx,
+            );
+            state.language("json").folding(false)
+        });
         let raw_textarea = cx.new(|cx| TextareaState::new(window, cx));
 
         let bearer_token_input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter Bearer token..."));
@@ -83,7 +98,7 @@ impl AppView {
             });
 
             if let RequestBody::Json(json_content) = &req.body {
-                json_textarea.update(cx, |txt, cx| {
+                json_editor.update(cx, |txt, cx| {
                     txt.set_value(json_content.clone(), window, cx);
                 });
             } else if let RequestBody::Raw { content, .. } = &req.body {
@@ -124,9 +139,9 @@ impl AppView {
             }
         }));
 
-        // 2. Subscribe to JSON textarea change
+        // 2. Subscribe to JSON editor change
         let ed_json = editor_state.clone();
-        _subscriptions.push(cx.subscribe(&json_textarea, move |_, txt, event, cx| {
+        _subscriptions.push(cx.subscribe(&json_editor, move |_, txt, event, cx| {
             if let InputEvent::Change = event {
                 let val = txt.read(cx).value().to_string();
                 ed_json.update(cx, |ed, cx| {
@@ -274,7 +289,7 @@ impl AppView {
             response_state,
             toast_state,
             url_input,
-            json_textarea,
+            json_editor,
             raw_textarea,
             bearer_token_input,
             basic_user_input,
@@ -448,8 +463,8 @@ impl Render for AppView {
             }
             match &req.body {
                 RequestBody::Json(json_str) => {
-                    if self.json_textarea.read(cx).value().as_str() != json_str {
-                        self.json_textarea.update(cx, |txt, cx| {
+                    if self.json_editor.read(cx).value().as_str() != json_str {
+                        self.json_editor.update(cx, |txt, cx| {
                             txt.set_value(json_str.clone(), window, cx);
                         });
                     }
@@ -656,7 +671,7 @@ impl Render for AppView {
                                                                 div().size_full().child(
                                                                     BodyEditor::new(
                                                                         ed_entity.clone(),
-                                                                        self.json_textarea.clone(),
+                                                                        self.json_editor.clone(),
                                                                         self.raw_textarea.clone(),
                                                                     )
                                                                 )

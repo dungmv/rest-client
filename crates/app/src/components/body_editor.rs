@@ -1,14 +1,272 @@
+use std::ops::Range;
 use crate::components::kv_table::KvTable;
 use crate::state::EditorState;
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, App, AppContext as _, Entity, InteractiveElement as _, IntoElement, ParentElement,
-    RenderOnce, StatefulInteractiveElement as _, Styled, Window,
+    div, px, App, AppContext as _, Context, Entity, HighlightStyle, InteractiveElement as _,
+    IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement as _,
+    Styled, Window,
 };
-use gpui_component::input::{Textarea, TextareaState};
+use gpui_component::input::{
+    Editor, EditorState as CodeEditorState, FoldRange, HighlightStyleResolver, InputEdit,
+    InputHighlighter, Rope, Textarea, TextareaState,
+};
 use gpui_component::scroll::ScrollableElement as _;
 use restclient_core::models::{KeyValuePair, MultipartItem, RequestBody};
+
+pub struct JsonHighlighter {
+    text: Rope,
+}
+
+impl JsonHighlighter {
+    pub fn new() -> Self {
+        Self {
+            text: Rope::new(),
+        }
+    }
+}
+
+impl Default for JsonHighlighter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn clamp_char_boundary_left(s: &str, mut idx: usize) -> usize {
+    if idx >= s.len() {
+        return s.len();
+    }
+    while idx > 0 && !s.is_char_boundary(idx) {
+        idx -= 1;
+    }
+    idx
+}
+
+fn clamp_char_boundary_right(s: &str, mut idx: usize) -> usize {
+    if idx >= s.len() {
+        return s.len();
+    }
+    while idx < s.len() && !s.is_char_boundary(idx) {
+        idx += 1;
+    }
+    idx
+}
+
+impl InputHighlighter for JsonHighlighter {
+    fn language(&self) -> SharedString {
+        "json".into()
+    }
+
+    fn update(
+        &mut self,
+        _edit: Option<InputEdit>,
+        text: &Rope,
+        _folding: bool,
+        _window: &mut Window,
+        _cx: &mut Context<CodeEditorState>,
+    ) {
+        self.text = text.clone();
+    }
+
+    fn styles(
+        &self,
+        range: &Range<usize>,
+        _resolver: &dyn HighlightStyleResolver,
+    ) -> Vec<(Range<usize>, HighlightStyle)> {
+        let full_str = self.text.to_string();
+        if full_str.is_empty() || range.is_empty() {
+            return vec![(range.clone(), HighlightStyle::default())];
+        }
+
+        let start = clamp_char_boundary_left(&full_str, range.start);
+        let end = clamp_char_boundary_right(&full_str, range.end.min(full_str.len()));
+
+        if start >= end {
+            return vec![(range.clone(), HighlightStyle::default())];
+        }
+
+        let slice_str = &full_str[start..end];
+        let slice_bytes = slice_str.as_bytes();
+        let len = slice_bytes.len();
+        let mut i = 0;
+        let mut raw_tokens = Vec::new();
+        let t = theme();
+
+        while i < len {
+            let b = slice_bytes[i];
+            if b == b'"' {
+                let tok_start = i;
+                i += 1;
+                let mut escaped = false;
+                while i < len {
+                    let ch = slice_bytes[i];
+                    if escaped {
+                        escaped = false;
+                        i += 1;
+                    } else if ch == b'\\' {
+                        escaped = true;
+                        i += 1;
+                    } else if ch == b'"' {
+                        i += 1;
+                        break;
+                    } else if ch == b'\n' {
+                        break;
+                    } else {
+                        i += 1;
+                    }
+                }
+                let tok_end = i;
+                let mut j = tok_end;
+                while j < len
+                    && (slice_bytes[j] == b' '
+                        || slice_bytes[j] == b'\t'
+                        || slice_bytes[j] == b'\r'
+                        || slice_bytes[j] == b'\n')
+                {
+                    j += 1;
+                }
+                let is_key = j < len && slice_bytes[j] == b':';
+                let color = if is_key { t.json_key } else { t.json_string };
+                raw_tokens.push((
+                    start + tok_start..start + tok_end,
+                    HighlightStyle {
+                        color: Some(color),
+                        ..Default::default()
+                    },
+                ));
+            } else if matches!(b, b'{' | b'}' | b'[' | b']' | b':' | b',') {
+                raw_tokens.push((
+                    start + i..start + i + 1,
+                    HighlightStyle {
+                        color: Some(t.json_punctuation),
+                        ..Default::default()
+                    },
+                ));
+                i += 1;
+            } else if b == b'-' || b.is_ascii_digit() {
+                let num_start = i;
+                i += 1;
+                while i < len
+                    && (slice_bytes[i].is_ascii_digit()
+                        || matches!(slice_bytes[i], b'.' | b'e' | b'E' | b'+' | b'-'))
+                {
+                    i += 1;
+                }
+                raw_tokens.push((
+                    start + num_start..start + i,
+                    HighlightStyle {
+                        color: Some(t.json_number),
+                        ..Default::default()
+                    },
+                ));
+            } else if slice_str[i..].starts_with("true")
+                && (i + 4 == len
+                    || !slice_bytes[i + 4].is_ascii_alphanumeric() && slice_bytes[i + 4] != b'_')
+            {
+                raw_tokens.push((
+                    start + i..start + i + 4,
+                    HighlightStyle {
+                        color: Some(t.json_boolean),
+                        font_weight: Some(gpui::FontWeight::SEMIBOLD),
+                        ..Default::default()
+                    },
+                ));
+                i += 4;
+            } else if slice_str[i..].starts_with("false")
+                && (i + 5 == len
+                    || !slice_bytes[i + 5].is_ascii_alphanumeric() && slice_bytes[i + 5] != b'_')
+            {
+                raw_tokens.push((
+                    start + i..start + i + 5,
+                    HighlightStyle {
+                        color: Some(t.json_boolean),
+                        font_weight: Some(gpui::FontWeight::SEMIBOLD),
+                        ..Default::default()
+                    },
+                ));
+                i += 5;
+            } else if slice_str[i..].starts_with("null")
+                && (i + 4 == len
+                    || !slice_bytes[i + 4].is_ascii_alphanumeric() && slice_bytes[i + 4] != b'_')
+            {
+                raw_tokens.push((
+                    start + i..start + i + 4,
+                    HighlightStyle {
+                        color: Some(t.json_null),
+                        font_style: Some(gpui::FontStyle::Italic),
+                        ..Default::default()
+                    },
+                ));
+                i += 4;
+            } else {
+                let ch = slice_str[i..].chars().next().unwrap();
+                i += ch.len_utf8();
+            }
+        }
+
+        let mut full_styles = Vec::new();
+        let mut cursor = range.start;
+
+        for (token_range, style) in raw_tokens {
+            if token_range.start > cursor {
+                full_styles.push((cursor..token_range.start, HighlightStyle::default()));
+            }
+            cursor = token_range.end;
+            full_styles.push((token_range, style));
+        }
+
+        if cursor < range.end {
+            full_styles.push((cursor..range.end, HighlightStyle::default()));
+        }
+
+        full_styles
+    }
+
+    fn fold_ranges(&self, text: &Rope) -> Vec<FoldRange> {
+        let mut folds = Vec::new();
+        let mut stack = Vec::new();
+        let s = text.to_string();
+        let mut current_line = 0;
+        let mut in_string = false;
+        let mut escaped = false;
+        let bytes = s.as_bytes();
+        let len = bytes.len();
+        let mut i = 0;
+
+        while i < len {
+            let b = bytes[i];
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if b == b'\\' {
+                    escaped = true;
+                } else if b == b'"' {
+                    in_string = false;
+                }
+            } else {
+                match b {
+                    b'"' => in_string = true,
+                    b'{' | b'[' => stack.push(current_line),
+                    b'}' | b']' => {
+                        if let Some(start_line) = stack.pop() {
+                            if current_line > start_line {
+                                folds.push(FoldRange::new(start_line, current_line));
+                            }
+                        }
+                    }
+                    b'\n' => current_line += 1,
+                    _ => {}
+                }
+            }
+            if in_string && b == b'\n' {
+                current_line += 1;
+            }
+            i += 1;
+        }
+        folds
+    }
+}
 
 fn format_file_size(path_str: &str) -> String {
     if path_str.is_empty() {
@@ -31,19 +289,19 @@ fn format_file_size(path_str: &str) -> String {
 #[derive(IntoElement)]
 pub struct BodyEditor {
     editor_state: Entity<EditorState>,
-    json_textarea: Entity<TextareaState>,
+    json_editor: Entity<CodeEditorState>,
     raw_textarea: Entity<TextareaState>,
 }
 
 impl BodyEditor {
     pub fn new(
         editor_state: Entity<EditorState>,
-        json_textarea: Entity<TextareaState>,
+        json_editor: Entity<CodeEditorState>,
         raw_textarea: Entity<TextareaState>,
     ) -> Self {
         Self {
             editor_state,
-            json_textarea,
+            json_editor,
             raw_textarea,
         }
     }
@@ -135,7 +393,7 @@ impl RenderOnce for BodyEditor {
                         match &body {
                             RequestBody::Json(_) => {
                                 let ed_c = ed_entity.clone();
-                                let j_text = self.json_textarea.clone();
+                                let j_text = self.json_editor.clone();
                                 div()
                                     .flex()
                                     .items_center()
@@ -169,7 +427,7 @@ impl RenderOnce for BodyEditor {
                                             .child("Format JSON")
                                     )
                                     .child({
-                                        let j_text = self.json_textarea.clone();
+                                        let j_text = self.json_editor.clone();
                                         div()
                                             .id("btn-copy-json-body")
                                             .px(px(6.))
@@ -233,8 +491,14 @@ impl RenderOnce for BodyEditor {
                             RequestBody::Json(_) => {
                                 div()
                                     .size_full()
-                                    .p(px(8.))
-                                    .child(Textarea::new(&self.json_textarea).appearance(false).bordered(false))
+                                    .py(px(6.))
+                                    .px(px(4.))
+                                    .child(
+                                        Editor::new(&self.json_editor)
+                                            .appearance(false)
+                                            .bordered(false)
+                                            .h(gpui::relative(1.))
+                                    )
                                     .into_any_element()
                             }
                             RequestBody::FormUrlEncoded(pairs) => {
@@ -623,7 +887,12 @@ impl RenderOnce for BodyEditor {
                                         div()
                                             .flex_1()
                                             .p(px(8.))
-                                            .child(Textarea::new(&self.raw_textarea).appearance(false).bordered(false))
+                                            .child(
+                                                Textarea::new(&self.raw_textarea)
+                                                    .appearance(false)
+                                                    .bordered(false)
+                                                    .h(gpui::relative(1.))
+                                            )
                                     )
                                     .into_any_element()
                             }
@@ -766,5 +1035,72 @@ impl RenderOnce for BodyEditor {
                         }
                     })
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct DummyResolver;
+    impl HighlightStyleResolver for DummyResolver {
+        fn style(&self, _: &str) -> Option<HighlightStyle> {
+            None
+        }
+    }
+
+    #[test]
+    fn test_json_highlighter_styles_coverage() {
+        let mut highlighter = JsonHighlighter::new();
+        let json_text = r#"{"name": "Alice", "age": 30, "admin": true, "extra": null}"#;
+        highlighter.text = Rope::from_str(json_text);
+
+        let range = 0..json_text.len();
+        let styles = highlighter.styles(&range, &DummyResolver);
+
+        // Verify contiguous coverage
+        let mut cursor = 0;
+        for (sub_range, _) in &styles {
+            assert_eq!(sub_range.start, cursor);
+            assert!(sub_range.end > sub_range.start);
+            cursor = sub_range.end;
+        }
+        assert_eq!(cursor, json_text.len());
+
+        // Check that keys and values received colors
+        let t = theme();
+        let key_highlight = styles.iter().find(|(r, s)| {
+            &json_text[r.clone()] == "\"name\"" && s.color == Some(t.json_key)
+        });
+        assert!(key_highlight.is_some(), "Key should have json_key color");
+
+        let str_highlight = styles.iter().find(|(r, s)| {
+            &json_text[r.clone()] == "\"Alice\"" && s.color == Some(t.json_string)
+        });
+        assert!(str_highlight.is_some(), "String should have json_string color");
+
+        let num_highlight = styles.iter().find(|(r, s)| {
+            &json_text[r.clone()] == "30" && s.color == Some(t.json_number)
+        });
+        assert!(num_highlight.is_some(), "Number should have json_number color");
+
+        let bool_highlight = styles.iter().find(|(r, s)| {
+            &json_text[r.clone()] == "true" && s.color == Some(t.json_boolean)
+        });
+        assert!(bool_highlight.is_some(), "Boolean should have json_boolean color");
+
+        let null_highlight = styles.iter().find(|(r, s)| {
+            &json_text[r.clone()] == "null" && s.color == Some(t.json_null)
+        });
+        assert!(null_highlight.is_some(), "Null should have json_null color");
+    }
+
+    #[test]
+    fn test_json_highlighter_folding() {
+        let highlighter = JsonHighlighter::new();
+        let json_text = "{\n  \"items\": [\n    1,\n    2\n  ]\n}";
+        let rope = Rope::from_str(json_text);
+        let folds = highlighter.fold_ranges(&rope);
+        assert!(!folds.is_empty(), "Should detect foldable ranges");
     }
 }
