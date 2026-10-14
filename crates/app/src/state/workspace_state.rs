@@ -13,7 +13,11 @@ pub struct WorkspaceState {
     pub folders: Vec<Folder>,
     pub requests: Vec<HttpRequestItem>,
     pub environments: Vec<Environment>,
+    pub global_environment: Environment,
     pub active_environment_id: Option<String>,
+    pub selected_env_modal_id: Option<String>,
+    pub env_filter_query: String,
+    pub var_filter_query: String,
     pub git_branch: Option<String>,
     pub filter_query: String,
     pub sidebar_collapsed: bool,
@@ -48,7 +52,11 @@ impl WorkspaceState {
             folders: Vec::new(),
             requests: Vec::new(),
             environments: Vec::new(),
+            global_environment: Environment::new("default", "Globals"),
             active_environment_id: None,
+            selected_env_modal_id: Some("globals".to_string()),
+            env_filter_query: String::new(),
+            var_filter_query: String::new(),
             git_branch,
             filter_query: String::new(),
             sidebar_collapsed: false,
@@ -86,6 +94,11 @@ impl WorkspaceState {
             self.folders = self.fs_storage.load_folders(ws_id).unwrap_or_default();
             self.requests = self.fs_storage.list_requests(ws_id).unwrap_or_default();
             self.environments = self.fs_storage.load_environments(ws_id).unwrap_or_default();
+            self.global_environment = self.fs_storage.load_global_environment(ws_id).unwrap_or_else(|_| {
+                let mut g = Environment::new(ws_id, "Globals");
+                g.id = format!("{}-globals", ws_id);
+                g
+            });
             self.active_environment_id = ws.active_environment_id.clone().or_else(|| {
                 self.environments.first().map(|e| e.id.clone())
             });
@@ -116,6 +129,32 @@ impl WorkspaceState {
             let _ = self.fs_storage.save_workspace(ws);
         }
         cx.notify();
+    }
+
+    pub fn effective_environment(&self) -> Environment {
+        let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
+        let mut effective = Environment::new(ws_id, "Effective");
+
+        // 1. Add all enabled variables from global_environment
+        for v in &self.global_environment.variables {
+            if v.enabled {
+                effective.variables.push(v.clone());
+            }
+        }
+
+        // 2. Active environment overrides matching keys or adds new variables
+        if let Some(active_env) = self.active_environment() {
+            for v in &active_env.variables {
+                if v.enabled {
+                    if let Some(existing) = effective.variables.iter_mut().find(|x| x.key == v.key) {
+                        *existing = v.clone();
+                    } else {
+                        effective.variables.push(v.clone());
+                    }
+                }
+            }
+        }
+        effective
     }
 
     pub fn create_request(&mut self, folder_id: Option<String>, cx: &mut Context<Self>) -> HttpRequestItem {
@@ -275,6 +314,115 @@ impl WorkspaceState {
 
     pub fn toggle_env_modal(&mut self, cx: &mut Context<Self>) {
         self.show_env_modal = !self.show_env_modal;
+        if self.show_env_modal {
+            if self.selected_env_modal_id.is_none() {
+                self.selected_env_modal_id = self
+                    .active_environment_id
+                    .clone()
+                    .or_else(|| Some("globals".to_string()));
+            }
+        }
+        cx.notify();
+    }
+
+    pub fn select_modal_environment(&mut self, env_id: Option<String>, cx: &mut Context<Self>) {
+        self.selected_env_modal_id = env_id;
+        self.var_filter_query.clear();
+        cx.notify();
+    }
+
+    pub fn set_env_filter_query(&mut self, query: String, cx: &mut Context<Self>) {
+        self.env_filter_query = query;
+        cx.notify();
+    }
+
+    pub fn set_var_filter_query(&mut self, query: String, cx: &mut Context<Self>) {
+        self.var_filter_query = query;
+        cx.notify();
+    }
+
+    pub fn save_global_environment(&mut self, env: Environment, cx: &mut Context<Self>) {
+        let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
+        self.global_environment = env.clone();
+        let _ = self.fs_storage.save_global_environment(ws_id, &env);
+        cx.notify();
+    }
+
+    pub fn create_environment(&mut self, name: Option<String>, cx: &mut Context<Self>) -> String {
+        let ws_id = self.active_workspace.as_ref().map(|w| w.id.clone()).unwrap_or_else(|| "default".to_string());
+        let env_name = name.unwrap_or_else(|| format!("env-{}", self.environments.len() + 1));
+        let new_env = Environment::new(&ws_id, env_name);
+        let new_id = new_env.id.clone();
+        self.environments.push(new_env);
+        let ws_id_ref = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
+        let _ = self.fs_storage.save_environments(ws_id_ref, &self.environments);
+        self.selected_env_modal_id = Some(new_id.clone());
+        if self.active_environment_id.is_none() {
+            self.set_active_environment(Some(new_id.clone()), cx);
+        } else {
+            cx.notify();
+        }
+        new_id
+    }
+
+    pub fn duplicate_environment(&mut self, env_id: &str, cx: &mut Context<Self>) -> Option<String> {
+        let ws_id = self.active_workspace.as_ref().map(|w| w.id.clone()).unwrap_or_else(|| "default".to_string());
+        if env_id == "globals" {
+            let mut new_env = Environment::new(&ws_id, "Globals (Copy)");
+            new_env.variables = self.global_environment.variables.clone();
+            let new_id = new_env.id.clone();
+            self.environments.push(new_env);
+            let ws_id_ref = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
+            let _ = self.fs_storage.save_environments(ws_id_ref, &self.environments);
+            self.selected_env_modal_id = Some(new_id.clone());
+            cx.notify();
+            return Some(new_id);
+        }
+
+        let existing = self.environments.iter().find(|e| e.id == env_id)?.clone();
+        let mut dup = existing.clone();
+        dup.id = uuid::Uuid::new_v4().to_string();
+        dup.workspace_id = ws_id;
+        dup.name = format!("{} (Copy)", existing.name);
+        let dup_id = dup.id.clone();
+        self.environments.push(dup);
+        let ws_id_ref = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
+        let _ = self.fs_storage.save_environments(ws_id_ref, &self.environments);
+        self.selected_env_modal_id = Some(dup_id.clone());
+        cx.notify();
+        Some(dup_id)
+    }
+
+    pub fn rename_environment(&mut self, env_id: &str, new_name: String, cx: &mut Context<Self>) {
+        let trimmed = new_name.trim();
+        if trimmed.is_empty() || env_id == "globals" {
+            return;
+        }
+        if let Some(env) = self.environments.iter_mut().find(|e| e.id == env_id) {
+            env.name = trimmed.to_string();
+            let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
+            let _ = self.fs_storage.save_environments(ws_id, &self.environments);
+            cx.notify();
+        }
+    }
+
+    pub fn delete_environment(&mut self, env_id: &str, cx: &mut Context<Self>) {
+        if env_id == "globals" {
+            return;
+        }
+        self.environments.retain(|e| e.id != env_id);
+        if self.active_environment_id.as_deref() == Some(env_id) {
+            self.set_active_environment(None, cx);
+        }
+        if self.selected_env_modal_id.as_deref() == Some(env_id) {
+            self.selected_env_modal_id = self
+                .environments
+                .first()
+                .map(|e| e.id.clone())
+                .or_else(|| Some("globals".to_string()));
+        }
+        let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
+        let _ = self.fs_storage.save_environments(ws_id, &self.environments);
         cx.notify();
     }
 
@@ -298,5 +446,165 @@ impl WorkspaceState {
         self.environments = envs.clone();
         let _ = self.fs_storage.save_environments(ws_id, &envs);
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use restclient_core::models::EnvironmentVariable;
+
+    #[test]
+    fn test_effective_environment_override() {
+        let mut global = Environment::new("ws1", "Globals");
+        global.variables.push(EnvironmentVariable {
+            enabled: true,
+            key: "HOST".to_string(),
+            value: "global.example.com".to_string(),
+            secret: false,
+        });
+        global.variables.push(EnvironmentVariable {
+            enabled: true,
+            key: "GLOBAL_TOKEN".to_string(),
+            value: "token_123".to_string(),
+            secret: true,
+        });
+        global.variables.push(EnvironmentVariable {
+            enabled: false,
+            key: "DISABLED_KEY".to_string(),
+            value: "should_not_appear".to_string(),
+            secret: false,
+        });
+
+        let mut active = Environment::new("ws1", "Production");
+        // Overrides HOST from global
+        active.variables.push(EnvironmentVariable {
+            enabled: true,
+            key: "HOST".to_string(),
+            value: "prod.example.com".to_string(),
+            secret: false,
+        });
+        // Adds unique active var
+        active.variables.push(EnvironmentVariable {
+            enabled: true,
+            key: "PORT".to_string(),
+            value: "443".to_string(),
+            secret: false,
+        });
+
+        let ws_state = WorkspaceState {
+            fs_storage: Arc::new(FsStorage::new(std::env::temp_dir())),
+            history_storage: Arc::new(HistoryStorage::new_in_memory().unwrap()),
+            workspaces: Vec::new(),
+            active_workspace: Some(Workspace::new("Test")),
+            folders: Vec::new(),
+            requests: Vec::new(),
+            environments: vec![active.clone()],
+            global_environment: global,
+            active_environment_id: Some(active.id.clone()),
+            selected_env_modal_id: None,
+            env_filter_query: String::new(),
+            var_filter_query: String::new(),
+            git_branch: None,
+            filter_query: String::new(),
+            sidebar_collapsed: false,
+            sidebar_width: px(260.),
+            split_layout_vertical: false,
+            show_env_modal: false,
+            show_cookies_modal: false,
+            show_command_palette: false,
+            show_settings_modal: false,
+            renaming_request_id: None,
+            rename_input: None,
+            rename_subscription: None,
+        };
+
+        let effective = ws_state.effective_environment();
+        let map: std::collections::HashMap<_, _> = effective
+            .variables
+            .iter()
+            .map(|v| (v.key.as_str(), v.value.as_str()))
+            .collect();
+
+        // HOST should be overridden by active env
+        assert_eq!(map.get("HOST"), Some(&"prod.example.com"));
+        // GLOBAL_TOKEN should be retained from globals
+        assert_eq!(map.get("GLOBAL_TOKEN"), Some(&"token_123"));
+        // PORT should be included from active
+        assert_eq!(map.get("PORT"), Some(&"443"));
+        // Disabled variable should not be present
+        assert_eq!(map.get("DISABLED_KEY"), None);
+    }
+
+    #[test]
+    fn test_duplicate_and_rename_environment() {
+        let temp_dir = std::env::temp_dir().join(format!("restclient_ws_test_{}", uuid::Uuid::new_v4()));
+        let ws = Workspace::new("Test Workspace");
+        let ws_id = ws.id.clone();
+        let fs_storage = Arc::new(FsStorage::new(&temp_dir));
+        let _ = fs_storage.init_workspace(&ws);
+
+        let mut env1 = Environment::new(&ws_id, "Development");
+        env1.variables.push(EnvironmentVariable {
+            enabled: true,
+            key: "URL".to_string(),
+            value: "http://localhost:3000".to_string(),
+            secret: false,
+        });
+        let _ = fs_storage.save_environments(&ws_id, &[env1.clone()]);
+
+        let mut ws_state = WorkspaceState {
+            fs_storage: fs_storage.clone(),
+            history_storage: Arc::new(HistoryStorage::new_in_memory().unwrap()),
+            workspaces: vec![ws.clone()],
+            active_workspace: Some(ws),
+            folders: Vec::new(),
+            requests: Vec::new(),
+            environments: vec![env1.clone()],
+            global_environment: Environment::new(&ws_id, "Globals"),
+            active_environment_id: Some(env1.id.clone()),
+            selected_env_modal_id: Some(env1.id.clone()),
+            env_filter_query: String::new(),
+            var_filter_query: String::new(),
+            git_branch: None,
+            filter_query: String::new(),
+            sidebar_collapsed: false,
+            sidebar_width: px(260.),
+            split_layout_vertical: false,
+            show_env_modal: false,
+            show_cookies_modal: false,
+            show_command_palette: false,
+            show_settings_modal: false,
+            renaming_request_id: None,
+            rename_input: None,
+            rename_subscription: None,
+        };
+
+        // Test duplicate
+        let dup_id = {
+            let existing = ws_state.environments.iter().find(|e| e.id == env1.id).unwrap().clone();
+            let mut dup = existing.clone();
+            dup.id = uuid::Uuid::new_v4().to_string();
+            dup.name = format!("{} (Copy)", existing.name);
+            let dup_id = dup.id.clone();
+            ws_state.environments.push(dup);
+            dup_id
+        };
+
+        assert_eq!(ws_state.environments.len(), 2);
+        let duplicated = ws_state.environments.iter().find(|e| e.id == dup_id).unwrap();
+        assert_eq!(duplicated.name, "Development (Copy)");
+        assert_eq!(duplicated.variables.len(), 1);
+        assert_eq!(duplicated.variables[0].key, "URL");
+        assert_eq!(duplicated.variables[0].value, "http://localhost:3000");
+
+        // Test rename
+        if let Some(target) = ws_state.environments.iter_mut().find(|e| e.id == dup_id) {
+            target.name = "Staging".to_string();
+        }
+        let renamed = ws_state.environments.iter().find(|e| e.id == dup_id).unwrap();
+        assert_eq!(renamed.name, "Staging");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

@@ -112,6 +112,27 @@ impl FsStorage {
         Ok(envs)
     }
 
+    pub fn save_global_environment(&self, workspace_id: &str, environment: &Environment) -> Result<()> {
+        let ws_dir = self.workspace_dir(workspace_id);
+        fs::create_dir_all(&ws_dir)?;
+        let path = ws_dir.join("globals.json");
+        let json = serde_json::to_string_pretty(environment)?;
+        fs::write(path, json)?;
+        Ok(())
+    }
+
+    pub fn load_global_environment(&self, workspace_id: &str) -> Result<Environment> {
+        let path = self.workspace_dir(workspace_id).join("globals.json");
+        if !path.exists() {
+            let mut global = Environment::new(workspace_id, "Globals");
+            global.id = format!("{}-globals", workspace_id);
+            return Ok(global);
+        }
+        let content = fs::read_to_string(path)?;
+        let env: Environment = serde_json::from_str(&content)?;
+        Ok(env)
+    }
+
     pub fn save_request(&self, request: &HttpRequestItem) -> Result<()> {
         let req_dir = self.requests_dir(&request.workspace_id);
         fs::create_dir_all(&req_dir)?;
@@ -157,5 +178,43 @@ impl FsStorage {
         }
         requests.sort_by_key(|r| r.sort_order);
         Ok(requests)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::EnvironmentVariable;
+
+    #[test]
+    fn test_save_and_load_global_environment() {
+        let temp_dir = std::env::temp_dir().join(format!("restclient_test_{}", uuid::Uuid::new_v4()));
+        let storage = FsStorage::new(&temp_dir);
+        let ws_id = "test-workspace";
+
+        // When globals.json does not exist yet
+        let default_global = storage.load_global_environment(ws_id).unwrap();
+        assert_eq!(default_global.name, "Globals");
+        assert_eq!(default_global.id, format!("{}-globals", ws_id));
+        assert!(default_global.variables.is_empty());
+
+        // Save global variables
+        let mut global = default_global;
+        global.variables.push(EnvironmentVariable {
+            enabled: true,
+            key: "GLOBAL_API_KEY".to_string(),
+            value: "secret_123".to_string(),
+            secret: true,
+        });
+        storage.save_global_environment(ws_id, &global).unwrap();
+
+        // Load again
+        let loaded = storage.load_global_environment(ws_id).unwrap();
+        assert_eq!(loaded.variables.len(), 1);
+        assert_eq!(loaded.variables[0].key, "GLOBAL_API_KEY");
+        assert_eq!(loaded.variables[0].value, "secret_123");
+        assert!(loaded.variables[0].secret);
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

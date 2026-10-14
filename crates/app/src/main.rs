@@ -75,6 +75,9 @@ impl AppView {
                 }),
                 cx,
             );
+            state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
+                crate::components::env_autocomplete::EnvCompletionProvider::new(workspace_state.clone()),
+            ));
             state.language("json").folding(false)
         });
         let raw_textarea = cx.new(|cx| TextareaState::new(window, cx));
@@ -135,8 +138,12 @@ impl AppView {
             });
 
             let req_url = req.url.clone();
+            let tokenized_url = {
+                let ws = workspace_state.read(cx);
+                crate::components::env_autocomplete::build_tokenized_content(&req_url, ws)
+            };
             url_input.update(cx, |inp, cx| {
-                inp.set_value(req_url, window, cx);
+                inp.set_value(tokenized_url, window, cx);
             });
 
             if let RequestBody::Json(json_content) = &req.body {
@@ -424,7 +431,7 @@ impl AppView {
         }
 
         let ws = ws_entity.read(cx);
-        let env = ws.active_environment().cloned();
+        let env = Some(ws.effective_environment());
 
         // 2. Pre-request Script execution
         let pre_script_code = req_item.script.as_ref().and_then(|s| {
@@ -599,6 +606,27 @@ impl AppView {
                                             let envs = ws.environments.clone();
                                             let _ = ws.fs_storage.save_environments(ws_id, &envs);
                                             cx.notify();
+                                        } else {
+                                            for (k, v_opt) in &all_mutations {
+                                                if let Some(val) = v_opt {
+                                                    if let Some(var) = ws.global_environment.variables.iter_mut().find(|v| v.key == *k) {
+                                                        var.value = val.clone();
+                                                    } else {
+                                                        ws.global_environment.variables.push(EnvironmentVariable {
+                                                            enabled: true,
+                                                            key: k.clone(),
+                                                            value: val.clone(),
+                                                            secret: false,
+                                                        });
+                                                    }
+                                                } else {
+                                                    ws.global_environment.variables.retain(|v| v.key != *k);
+                                                }
+                                            }
+                                            let ws_id = ws.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
+                                            let global = ws.global_environment.clone();
+                                            let _ = ws.fs_storage.save_global_environment(ws_id, &global);
+                                            cx.notify();
                                         }
                                     });
                                 }
@@ -678,8 +706,12 @@ impl Render for AppView {
         // Synchronize active request fields into InputState / TextareaState when switched or updated via query params
         if let Some(req) = &active_req {
             if self.url_input.read(cx).value().as_str() != req.url {
+                let tokenized_url = {
+                    let ws = self.workspace_state.read(cx);
+                    crate::components::env_autocomplete::build_tokenized_content(&req.url, ws)
+                };
                 self.url_input.update(cx, |inp, cx| {
-                    inp.set_value(req.url.clone(), window, cx);
+                    inp.set_value(tokenized_url, window, cx);
                 });
             }
             match &req.body {
@@ -939,6 +971,7 @@ impl Render for AppView {
                                                                         self.json_editor.clone(),
                                                                         self.raw_textarea.clone(),
                                                                     )
+                                                                    .workspace_state(ws_entity.clone())
                                                                 )
                                                             }
                                                             RequestTabKind::Params => {
@@ -966,6 +999,7 @@ impl Render for AppView {
                                                                             });
                                                                         },
                                                                     )
+                                                                    .workspace_state(ws_entity.clone())
                                                                 )
                                                             }
                                                             RequestTabKind::Headers => {
@@ -993,6 +1027,7 @@ impl Render for AppView {
                                                                             });
                                                                         },
                                                                     )
+                                                                    .workspace_state(ws_entity.clone())
                                                                 )
                                                             }
                                                             RequestTabKind::Auth => {

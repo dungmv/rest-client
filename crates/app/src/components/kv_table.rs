@@ -1,9 +1,17 @@
+use crate::components::env_autocomplete::{
+    build_tokenized_content, detect_unclosed_env_var, get_env_completions, get_variable_details,
+    get_variable_kind_and_color, EnvVarCandidate,
+};
+use crate::state::WorkspaceState;
 use crate::theme::theme;
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, App, AppContext as _, Entity, InteractiveElement as _, IntoElement, ParentElement,
-    RenderOnce, StatefulInteractiveElement as _, Styled, Subscription, Window,
+    deferred, div, px, App, AppContext as _, Entity, InteractiveElement as _, IntoElement,
+    ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Subscription, Window,
 };
 use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::scroll::ScrollableElement as _;
+use restclient_core::interpolation::scan_variables;
 use restclient_core::models::KeyValuePair;
 use std::rc::Rc;
 
@@ -13,6 +21,14 @@ struct KvRowInputHolder {
     _subscriptions: Vec<Subscription>,
 }
 
+#[derive(Clone)]
+struct RowEnvData {
+    key_vars: Vec<(String, String, String, bool)>,
+    val_vars: Vec<(String, String, String, bool)>,
+    key_completions: Option<(usize, Vec<EnvVarCandidate>)>,
+    val_completions: Option<(usize, Vec<EnvVarCandidate>)>,
+}
+
 #[derive(IntoElement)]
 pub struct KvTable {
     id_prefix: String,
@@ -20,6 +36,7 @@ pub struct KvTable {
     on_update: Rc<dyn Fn(usize, String, String, bool, &mut Window, &mut App)>,
     on_add: Rc<dyn Fn(&mut Window, &mut App)>,
     on_remove: Rc<dyn Fn(usize, &mut Window, &mut App)>,
+    workspace_state: Option<Entity<WorkspaceState>>,
 }
 
 impl KvTable {
@@ -36,7 +53,18 @@ impl KvTable {
             on_update: Rc::new(on_update),
             on_add: Rc::new(on_add),
             on_remove: Rc::new(on_remove),
+            workspace_state: None,
         }
+    }
+
+    pub fn workspace_state(mut self, ws: Entity<WorkspaceState>) -> Self {
+        self.workspace_state = Some(ws);
+        self
+    }
+
+    pub fn optional_workspace_state(mut self, ws: Option<Entity<WorkspaceState>>) -> Self {
+        self.workspace_state = ws;
+        self
     }
 }
 
@@ -45,6 +73,55 @@ impl RenderOnce for KvTable {
         let t = theme();
         let on_add_cb = self.on_add.clone();
         let id_prefix = self.id_prefix.clone();
+        let ws_clone = self.workspace_state.clone();
+
+        // Precompute variable information for all rows before running use_keyed_state
+        let row_env_info: Vec<RowEnvData> = if let Some(ws_entity) = &self.workspace_state {
+            let ws = ws_entity.read(cx);
+            let effective_env = ws.effective_environment();
+            self.pairs
+                .iter()
+                .map(|pair| {
+                    let key_vars = scan_variables(&pair.key, Some(&effective_env))
+                        .into_iter()
+                        .map(|v| {
+                            let (val, scope, is_res) = get_variable_details(ws, &v.name);
+                            (v.name, val, scope, is_res)
+                        })
+                        .collect();
+
+                    let val_vars = scan_variables(&pair.value, Some(&effective_env))
+                        .into_iter()
+                        .map(|v| {
+                            let (val, scope, is_res) = get_variable_details(ws, &v.name);
+                            (v.name, val, scope, is_res)
+                        })
+                        .collect();
+
+                    let key_completions = detect_unclosed_env_var(&pair.key)
+                        .map(|(pos, q)| (pos, get_env_completions(ws, &q)));
+
+                    let val_completions = detect_unclosed_env_var(&pair.value)
+                        .map(|(pos, q)| (pos, get_env_completions(ws, &q)));
+
+                    RowEnvData {
+                        key_vars,
+                        val_vars,
+                        key_completions,
+                        val_completions,
+                    }
+                })
+                .collect()
+        } else {
+            (0..self.pairs.len())
+                .map(|_| RowEnvData {
+                    key_vars: vec![],
+                    val_vars: vec![],
+                    key_completions: None,
+                    val_completions: None,
+                })
+                .collect()
+        };
 
         div()
             .w_full()
@@ -77,6 +154,12 @@ impl RenderOnce for KvTable {
                 let val_val = pair.value.clone();
                 let enabled = pair.enabled;
                 let row_prefix = format!("{}-row-{}", id_prefix, idx);
+                let row_env = row_env_info.get(idx).cloned().unwrap_or_else(|| RowEnvData {
+                    key_vars: vec![],
+                    val_vars: vec![],
+                    key_completions: None,
+                    val_completions: None,
+                });
 
                 let on_up_k = on_update.clone();
                 let on_up_v = on_update.clone();
@@ -120,14 +203,37 @@ impl RenderOnce for KvTable {
                     (h.key_input.clone(), h.val_input.clone())
                 };
 
-                if key_input.read(cx).value().as_str() != key_val {
+                let hover_k_state = window.use_keyed_state(
+                    gpui::SharedString::from(format!("hover-ktoken-{}", row_prefix)),
+                    cx,
+                    |_window, _cx| None::<(String, gpui::Bounds<gpui::Pixels>)>,
+                );
+                let hover_v_state = window.use_keyed_state(
+                    gpui::SharedString::from(format!("hover-vtoken-{}", row_prefix)),
+                    cx,
+                    |_window, _cx| None::<(String, gpui::Bounds<gpui::Pixels>)>,
+                );
+                let hovered_k = hover_k_state.read(cx).clone();
+                let hovered_v = hover_v_state.read(cx).clone();
+
+                let (key_tokenized, val_tokenized) = if let Some(ws_m) = &self.workspace_state {
+                    let ws = ws_m.read(cx);
+                    (
+                        build_tokenized_content(&key_val, ws),
+                        build_tokenized_content(&val_val, ws),
+                    )
+                } else {
+                    (key_val.clone().into(), val_val.clone().into())
+                };
+
+                if key_input.read(cx).value().as_str() != key_val || key_input.read(cx).tokens().len() != key_tokenized.tokens().len() {
                     key_input.update(cx, |inp, cx| {
-                        inp.set_value(key_val.clone(), window, cx);
+                        inp.set_value(key_tokenized, window, cx);
                     });
                 }
-                if val_input.read(cx).value().as_str() != val_val {
+                if val_input.read(cx).value().as_str() != val_val || val_input.read(cx).tokens().len() != val_tokenized.tokens().len() {
                     val_input.update(cx, |inp, cx| {
-                        inp.set_value(val_val.clone(), window, cx);
+                        inp.set_value(val_tokenized, window, cx);
                     });
                 }
 
@@ -163,9 +269,10 @@ impl RenderOnce for KvTable {
                             })
                             .child(if enabled { "✓" } else { "" })
                     })
-                    // Key Input
+                    // Key Input with hover badge and autocomplete
                     .child(
                         div()
+                            .relative()
                             .w(px(220.))
                             .h(px(28.))
                             .px(px(4.))
@@ -176,16 +283,234 @@ impl RenderOnce for KvTable {
                             .flex()
                             .items_center()
                             .child(
-                                Input::new(&key_input)
-                                    .id(gpui::SharedString::from(format!("{}-key", row_prefix)))
-                                    .appearance(false)
-                                    .bordered(false)
-                                    .focus_bordered(false),
-                            ),
+                                div()
+                                    .flex_1()
+                                    .child({
+                                        let ws_k = ws_clone.clone();
+                                        let ws_modal_k = ws_clone.clone();
+                                        let h_k = hover_k_state.clone();
+                                        Input::new(&key_input)
+                                            .id(gpui::SharedString::from(format!("{}-key", row_prefix)))
+                                            .appearance(false)
+                                            .bordered(false)
+                                            .focus_bordered(false)
+                                            .token(move |token_ctx, _window, cx| {
+                                                let var_name = token_ctx.token().id().to_string();
+                                                let (color, bg_tint) = if let Some(ws) = &ws_k {
+                                                    let (_val, scope, is_res) = get_variable_details(ws.read(cx), &var_name);
+                                                    let (_kind, c, bg) = get_variable_kind_and_color(&scope, is_res);
+                                                    (c, bg)
+                                                } else {
+                                                    let (_kind, c, bg) = get_variable_kind_and_color("Missing", false);
+                                                    (c, bg)
+                                                };
+                                                div()
+                                                    .id(gpui::SharedString::from(format!("k-tok-{}", var_name)))
+                                                    .flex()
+                                                    .items_center()
+                                                    .px(px(5.))
+                                                    .py(px(1.))
+                                                    .rounded(px(3.))
+                                                    .bg(bg_tint)
+                                                    .border_1()
+                                                    .border_color(color)
+                                                    .text_xs()
+                                                    .font_family(".SystemMonoFont")
+                                                    .text_color(color)
+                                                    .cursor_pointer()
+                                                    .child(var_name)
+                                            })
+                                            .on_token_hover(move |event, _window, cx| {
+                                                let is_h = event.is_hovered();
+                                                let name = event.token().id().to_string();
+                                                let bounds = event.bounds();
+                                                h_k.update(cx, |h, cx| {
+                                                    if is_h { *h = Some((name, bounds)); } else { *h = None; }
+                                                    cx.notify();
+                                                });
+                                            })
+                                            .when_some(ws_modal_k, |el, ws| {
+                                                el.on_token_click(move |_, _window, cx| {
+                                                    ws.update(cx, |state, cx| {
+                                                        state.toggle_env_modal(cx);
+                                                    });
+                                                })
+                                            })
+                                    }),
+                            )
+                            // Tooltip card shown ON HOVER over inline key token
+                            .when_some(hovered_k.clone(), |this, (var_name, _)| {
+                                let (val, scope, is_res) = row_env.key_vars.iter()
+                                    .find(|(n, _, _, _)| n == &var_name)
+                                    .map(|(_, v, s, r)| (v.clone(), s.clone(), *r))
+                                    .unwrap_or_else(|| ("".to_string(), "".to_string(), false));
+                                let (_kind, color, bg_tint) = get_variable_kind_and_color(&scope, is_res);
+                                this.child(
+                                    deferred(
+                                        div()
+                                            .absolute()
+                                            .top(px(30.))
+                                            .left(px(0.))
+                                            .w(px(280.))
+                                            .p(px(8.))
+                                            .rounded(px(6.))
+                                            .bg(crate::theme::hex_to_hsla(0x161822))
+                                            .border_1()
+                                            .border_color(color)
+                                            .shadow_2xl()
+                                            .occlude()
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(4.))
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_between()
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .font_weight(gpui::FontWeight::BOLD)
+                                                            .text_color(color)
+                                                            .child(format!("{{{{{}}}}}", var_name)),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .px(px(5.))
+                                                            .py(px(1.))
+                                                            .rounded(px(3.))
+                                                            .bg(bg_tint)
+                                                            .border_1()
+                                                            .border_color(color)
+                                                            .text_xs()
+                                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                                            .text_color(color)
+                                                            .child(scope),
+                                                    ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .font_family(".SystemMonoFont")
+                                                    .text_color(if is_res { t.text_primary } else { color })
+                                                    .child(if is_res {
+                                                        format!("= \"{}\"", val)
+                                                    } else {
+                                                        "Variable not found in active or global environments".to_string()
+                                                    }),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(t.text_muted)
+                                                    .child("Click variable to manage environments"),
+                                            ),
+                                    )
+                                    .with_priority(90),
+                                )
+                            })
+                            // Floating Autocomplete Menu for Key
+                            .when_some(row_env.key_completions.clone(), |this, (start_pos, completions)| {
+                                if completions.is_empty() {
+                                    return this;
+                                }
+                                let key_input_c = key_input.clone();
+                                let cur_k = key_val.clone();
+                                let cur_v = val_val.clone();
+                                let on_up_c = on_update.clone();
+
+                                this.child(
+                                    deferred(
+                                        div()
+                                            .absolute()
+                                            .top(px(30.))
+                                            .left(px(0.))
+                                            .w(px(320.))
+                                            .max_h(px(200.))
+                                            .overflow_y_scrollbar()
+                                            .p(px(4.))
+                                            .rounded(px(6.))
+                                            .bg(crate::theme::hex_to_hsla(0x161822))
+                                            .border_1()
+                                            .border_color(t.primary)
+                                            .shadow_2xl()
+                                            .occlude()
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(2.))
+                                            .children(completions.into_iter().map(|item| {
+                                                let item_name = item.name.clone();
+                                                let item_val = item.value.clone();
+                                                let item_scope = item.scope.clone();
+                                                let k_in = key_input_c.clone();
+                                                let cur_k_item = cur_k.clone();
+                                                let cur_v_item = cur_v.clone();
+                                                let on_up = on_up_c.clone();
+                                                let (_kind, item_color, item_bg_tint) = get_variable_kind_and_color(&item_scope, true);
+
+                                                div()
+                                                    .id(gpui::SharedString::from(format!("{}-key-ac-{}", row_prefix, item.name)))
+                                                    .px(px(8.))
+                                                    .py(px(5.))
+                                                    .rounded(px(4.))
+                                                    .cursor_pointer()
+                                                    .hover(|s| s.bg(t.bg_hover))
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_between()
+                                                    .on_click(move |_, window, cx| {
+                                                        let before_brace = &cur_k_item[..start_pos];
+                                                        let new_key = format!("{before_brace}{{{{{}}}}}", item_name);
+                                                        k_in.update(cx, |inp, cx| {
+                                                            inp.set_value(new_key.clone(), window, cx);
+                                                        });
+                                                        on_up(idx, new_key, cur_v_item.clone(), enabled, window, cx);
+                                                    })
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .items_center()
+                                                            .gap(px(8.))
+                                                            .child(
+                                                                div()
+                                                                    .text_xs()
+                                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                                    .font_family(".SystemMonoFont")
+                                                                    .text_color(item_color)
+                                                                    .child(format!("{{{{{}}}}}", item.name)),
+                                                            )
+                                                            .child(
+                                                                div()
+                                                                    .truncate()
+                                                                    .max_w(px(120.))
+                                                                    .text_xs()
+                                                                    .font_family(".SystemMonoFont")
+                                                                    .text_color(t.text_muted)
+                                                                    .child(item_val),
+                                                            ),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .px(px(5.))
+                                                            .py(px(1.))
+                                                            .rounded(px(3.))
+                                                            .bg(item_bg_tint)
+                                                            .border_1()
+                                                            .border_color(item_color)
+                                                            .text_xs()
+                                                            .text_color(item_color)
+                                                            .child(item_scope),
+                                                    )
+                                            })),
+                                    )
+                                    .with_priority(100),
+                                )
+                            }),
                     )
-                    // Value Input
+                    // Value Input with hover badge and autocomplete
                     .child(
                         div()
+                            .relative()
                             .flex_1()
                             .h(px(28.))
                             .px(px(4.))
@@ -196,12 +521,229 @@ impl RenderOnce for KvTable {
                             .flex()
                             .items_center()
                             .child(
-                                Input::new(&val_input)
-                                    .id(gpui::SharedString::from(format!("{}-val", row_prefix)))
-                                    .appearance(false)
-                                    .bordered(false)
-                                    .focus_bordered(false),
-                            ),
+                                div()
+                                    .flex_1()
+                                    .child({
+                                        let ws_v = ws_clone.clone();
+                                        let ws_modal_v = ws_clone.clone();
+                                        let h_v = hover_v_state.clone();
+                                        Input::new(&val_input)
+                                            .id(gpui::SharedString::from(format!("{}-val", row_prefix)))
+                                            .appearance(false)
+                                            .bordered(false)
+                                            .focus_bordered(false)
+                                            .token(move |token_ctx, _window, cx| {
+                                                let var_name = token_ctx.token().id().to_string();
+                                                let (color, bg_tint) = if let Some(ws) = &ws_v {
+                                                    let (_val, scope, is_res) = get_variable_details(ws.read(cx), &var_name);
+                                                    let (_kind, c, bg) = get_variable_kind_and_color(&scope, is_res);
+                                                    (c, bg)
+                                                } else {
+                                                    let (_kind, c, bg) = get_variable_kind_and_color("Missing", false);
+                                                    (c, bg)
+                                                };
+                                                div()
+                                                    .id(gpui::SharedString::from(format!("v-tok-{}", var_name)))
+                                                    .flex()
+                                                    .items_center()
+                                                    .px(px(5.))
+                                                    .py(px(1.))
+                                                    .rounded(px(3.))
+                                                    .bg(bg_tint)
+                                                    .border_1()
+                                                    .border_color(color)
+                                                    .text_xs()
+                                                    .font_family(".SystemMonoFont")
+                                                    .text_color(color)
+                                                    .cursor_pointer()
+                                                    .child(var_name)
+                                            })
+                                            .on_token_hover(move |event, _window, cx| {
+                                                let is_h = event.is_hovered();
+                                                let name = event.token().id().to_string();
+                                                let bounds = event.bounds();
+                                                h_v.update(cx, |h, cx| {
+                                                    if is_h { *h = Some((name, bounds)); } else { *h = None; }
+                                                    cx.notify();
+                                                });
+                                            })
+                                            .when_some(ws_modal_v, |el, ws| {
+                                                el.on_token_click(move |_, _window, cx| {
+                                                    ws.update(cx, |state, cx| {
+                                                        state.toggle_env_modal(cx);
+                                                    });
+                                                })
+                                            })
+                                    }),
+                            )
+                            // Tooltip card shown ON HOVER over inline value token
+                            .when_some(hovered_v.clone(), |this, (var_name, _)| {
+                                let (val, scope, is_res) = row_env.val_vars.iter()
+                                    .find(|(n, _, _, _)| n == &var_name)
+                                    .map(|(_, v, s, r)| (v.clone(), s.clone(), *r))
+                                    .unwrap_or_else(|| ("".to_string(), "".to_string(), false));
+                                let (_kind, color, bg_tint) = get_variable_kind_and_color(&scope, is_res);
+                                this.child(
+                                    deferred(
+                                        div()
+                                            .absolute()
+                                            .top(px(30.))
+                                            .left(px(0.))
+                                            .w(px(280.))
+                                            .p(px(8.))
+                                            .rounded(px(6.))
+                                            .bg(crate::theme::hex_to_hsla(0x161822))
+                                            .border_1()
+                                            .border_color(color)
+                                            .shadow_2xl()
+                                            .occlude()
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(4.))
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_between()
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .font_weight(gpui::FontWeight::BOLD)
+                                                            .text_color(color)
+                                                            .child(format!("{{{{{}}}}}", var_name)),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .px(px(5.))
+                                                            .py(px(1.))
+                                                            .rounded(px(3.))
+                                                            .bg(bg_tint)
+                                                            .border_1()
+                                                            .border_color(color)
+                                                            .text_xs()
+                                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                                            .text_color(color)
+                                                            .child(scope),
+                                                    ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .font_family(".SystemMonoFont")
+                                                    .text_color(if is_res { t.text_primary } else { color })
+                                                    .child(if is_res {
+                                                        format!("= \"{}\"", val)
+                                                    } else {
+                                                        "Variable not found in active or global environments".to_string()
+                                                    }),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(t.text_muted)
+                                                    .child("Click variable to manage environments"),
+                                            ),
+                                    )
+                                    .with_priority(90),
+                                )
+                            })
+                            // Floating Autocomplete Menu for Value
+                            .when_some(row_env.val_completions.clone(), |this, (start_pos, completions)| {
+                                if completions.is_empty() {
+                                    return this;
+                                }
+                                let val_input_c = val_input.clone();
+                                let cur_k = key_val.clone();
+                                let cur_v = val_val.clone();
+                                let on_up_c = on_update.clone();
+
+                                this.child(
+                                    deferred(
+                                        div()
+                                            .absolute()
+                                            .top(px(30.))
+                                            .left(px(0.))
+                                            .w(px(320.))
+                                            .max_h(px(200.))
+                                            .overflow_y_scrollbar()
+                                            .p(px(4.))
+                                            .rounded(px(6.))
+                                            .bg(crate::theme::hex_to_hsla(0x161822))
+                                            .border_1()
+                                            .border_color(t.primary)
+                                            .shadow_2xl()
+                                            .occlude()
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(2.))
+                                            .children(completions.into_iter().map(|item| {
+                                                let item_name = item.name.clone();
+                                                let item_val = item.value.clone();
+                                                let item_scope = item.scope.clone();
+                                                let v_in = val_input_c.clone();
+                                                let cur_val = cur_v.clone();
+                                                let cur_k = cur_k.clone();
+                                                let on_up = on_up_c.clone();
+                                                let (_kind, item_color, item_bg_tint) = get_variable_kind_and_color(&item_scope, true);
+
+                                                div()
+                                                    .id(gpui::SharedString::from(format!("{}-val-ac-{}", row_prefix, item.name)))
+                                                    .px(px(8.))
+                                                    .py(px(5.))
+                                                    .rounded(px(4.))
+                                                    .cursor_pointer()
+                                                    .hover(|s| s.bg(t.bg_hover))
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_between()
+                                                    .on_click(move |_, window, cx| {
+                                                        let before_brace = &cur_val[..start_pos];
+                                                        let new_val = format!("{before_brace}{{{{{}}}}}", item_name);
+                                                        v_in.update(cx, |inp, cx| {
+                                                            inp.set_value(new_val.clone(), window, cx);
+                                                        });
+                                                        on_up(idx, cur_k.clone(), new_val, enabled, window, cx);
+                                                    })
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .items_center()
+                                                            .gap(px(8.))
+                                                            .child(
+                                                                div()
+                                                                    .text_xs()
+                                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                                    .font_family(".SystemMonoFont")
+                                                                    .text_color(item_color)
+                                                                    .child(format!("{{{{{}}}}}", item.name)),
+                                                            )
+                                                            .child(
+                                                                div()
+                                                                    .truncate()
+                                                                    .max_w(px(120.))
+                                                                    .text_xs()
+                                                                    .font_family(".SystemMonoFont")
+                                                                    .text_color(t.text_muted)
+                                                                    .child(item_val),
+                                                            ),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .px(px(5.))
+                                                            .py(px(1.))
+                                                            .rounded(px(3.))
+                                                            .bg(item_bg_tint)
+                                                            .border_1()
+                                                            .border_color(item_color)
+                                                            .text_xs()
+                                                            .text_color(item_color)
+                                                            .child(item_scope),
+                                                    )
+                                            })),
+                                    )
+                                    .with_priority(100),
+                                )
+                            }),
                     )
                     // Delete button
                     .child({
