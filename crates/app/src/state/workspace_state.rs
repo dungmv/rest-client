@@ -1,5 +1,5 @@
 use crate::platform::detect_git_branch;
-use gpui::{AppContext as _, Context, Entity, Window};
+use gpui::{AppContext as _, Context, Entity, Pixels, Window, px};
 use gpui_component::input::InputState;
 use restclient_core::models::{Environment, Folder, HttpMethod, HttpRequestItem, Workspace};
 use restclient_core::storage::{FsStorage, HistoryStorage};
@@ -17,6 +17,7 @@ pub struct WorkspaceState {
     pub git_branch: Option<String>,
     pub filter_query: String,
     pub sidebar_collapsed: bool,
+    pub sidebar_width: Pixels,
     pub split_layout_vertical: bool,
     pub show_env_modal: bool,
     pub show_cookies_modal: bool,
@@ -51,6 +52,7 @@ impl WorkspaceState {
             git_branch,
             filter_query: String::new(),
             sidebar_collapsed: false,
+            sidebar_width: px(260.),
             split_layout_vertical: false,
             show_env_modal: false,
             show_cookies_modal: false,
@@ -256,6 +258,14 @@ impl WorkspaceState {
     pub fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
         self.sidebar_collapsed = !self.sidebar_collapsed;
         cx.notify();
+    }
+
+    pub fn set_sidebar_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
+        let clamped = px(width.as_f32().clamp(200.0, 480.0));
+        if self.sidebar_width != clamped {
+            self.sidebar_width = clamped;
+            cx.notify();
+        }
     }
 
     pub fn toggle_split_layout(&mut self, cx: &mut Context<Self>) {

@@ -26,7 +26,7 @@ use state::*;
 use std::sync::Arc;
 use theme::theme;
 
-actions!(restclient, [SendRequest, ToggleCommandPalette]);
+actions!(restclient, [SendRequest, ToggleCommandPalette, ToggleSidebar]);
 
 pub enum HttpSendEvent {
     Progress(String),
@@ -665,6 +665,7 @@ impl Render for AppView {
         let t = theme();
 
         let sidebar_collapsed = self.workspace_state.read(cx).sidebar_collapsed;
+        let sidebar_width = self.workspace_state.read(cx).sidebar_width;
         let is_vertical_split = self.workspace_state.read(cx).split_layout_vertical;
         let show_env_modal = self.workspace_state.read(cx).show_env_modal;
         let show_cookies_modal = self.workspace_state.read(cx).show_cookies_modal;
@@ -778,6 +779,14 @@ impl Render for AppView {
                     });
                 }
             })
+            .on_action({
+                let ws_c = ws_entity.clone();
+                move |_: &ToggleSidebar, _, cx| {
+                    ws_c.update(cx, |state, cx| {
+                        state.toggle_sidebar(cx);
+                    });
+                }
+            })
             // Custom Title Bar
             .child(AppTitleBar::new(ws_entity.clone(), ed_entity.clone()))
             // Main workspace content area
@@ -786,21 +795,10 @@ impl Render for AppView {
                     .flex_1()
                     .w_full()
                     .overflow_hidden()
-                    .child(
-                        // Outer horizontal resizable: Sidebar | Editor & Response Split
-                        h_resizable("outer-split")
-                            .when(!sidebar_collapsed, |group| {
-                                group.child(
-                                    resizable_panel()
-                                        .size(px(260.))
-                                        .child(SidebarTree::new(ws_entity.clone(), ed_entity.clone())),
-                                )
-                            })
-                            .child(
-                                resizable_panel().child(
-                                    div().size_full().child({
-                                        // Editor & Response split: Horizontal or Vertical
-                                        let editor_pane = div()
+                    .child({
+                        let main_content = div().size_full().child({
+                            // Editor & Response split: Horizontal or Vertical
+                            let editor_pane = div()
                                             .size_full()
                                             .bg(t.bg_editor)
                                             .relative()
@@ -1474,10 +1472,33 @@ impl Render for AppView {
                                                     .child(resizable_panel().child(response_pane)),
                                             )
                                         }
-                                    }),
-                                ),
-                            ),
-                    ),
+                                    });
+
+                        if sidebar_collapsed {
+                            main_content.into_any_element()
+                        } else {
+                            h_resizable("workspace-sidebar-split")
+                                .child(
+                                    resizable_panel()
+                                        .size(sidebar_width)
+                                        .size_range(px(200.)..px(480.))
+                                        .child(SidebarTree::new(ws_entity.clone(), ed_entity.clone())),
+                                )
+                                .child(resizable_panel().child(main_content))
+                                .on_resize({
+                                    let ws_entity = ws_entity.clone();
+                                    move |state, _window, cx| {
+                                        let new_size = state.read(cx).sizes().first().copied();
+                                        if let Some(size) = new_size {
+                                            ws_entity.update(cx, |ws, cx| {
+                                                ws.set_sidebar_width(size, cx);
+                                            });
+                                        }
+                                    }
+                                })
+                                .into_any_element()
+                        }
+                    }),
             )
             // Modals & Overlays
             .when(show_env_modal, |this| {
@@ -1512,6 +1533,8 @@ fn main() {
             KeyBinding::new("cmd-enter", SendRequest, None),
             KeyBinding::new("ctrl-k", ToggleCommandPalette, None),
             KeyBinding::new("cmd-k", ToggleCommandPalette, None),
+            KeyBinding::new("ctrl-b", ToggleSidebar, None),
+            KeyBinding::new("cmd-b", ToggleSidebar, None),
         ]);
 
         cx.on_window_closed(|cx, _window_id| {

@@ -88,6 +88,7 @@ impl RenderOnce for AppTitleBar {
             // Sidebar toggle button
             .child({
                 let ws_s = ws_clone.clone();
+                let sidebar_collapsed = ws_clone.read(cx).sidebar_collapsed;
                 div()
                     .id("btn-toggle-sidebar")
                     .occlude()
@@ -95,8 +96,9 @@ impl RenderOnce for AppTitleBar {
                     .py(px(3.))
                     .rounded(px(4.))
                     .cursor_pointer()
+                    .bg(if !sidebar_collapsed { t.bg_hover } else { gpui::transparent_black() })
                     .hover(|s| s.bg(t.bg_hover))
-                    .text_color(t.text_secondary)
+                    .text_color(if !sidebar_collapsed { t.text_primary } else { t.text_secondary })
                     .on_click(move |_, _, cx| {
                         ws_s.update(cx, |state, cx| {
                             state.toggle_sidebar(cx);
