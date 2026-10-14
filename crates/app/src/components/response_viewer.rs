@@ -3,7 +3,7 @@ use crate::state::{EditorState, ResponseState, ResponseTabKind, ResponseViewMode
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
+    div, px, uniform_list, AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
     RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::scroll::ScrollableElement as _;
@@ -411,33 +411,33 @@ impl RenderOnce for ResponseViewer {
                                         .into_any_element()
                                 } else {
                                     let body_bytes = current_resp.as_ref().map(|r| r.body.clone()).unwrap_or_default();
-                                let raw_str = String::from_utf8_lossy(&body_bytes).to_string();
+                                    let raw_str = String::from_utf8_lossy(&body_bytes).to_string();
 
-                                let parsed_json = serde_json::from_str::<serde_json::Value>(&raw_str).ok();
-                                let is_json = parsed_json.is_some()
-                                    || current_resp.as_ref().map(|r| r.is_json()).unwrap_or(false)
-                                    || raw_str.trim_start().starts_with('{')
-                                    || raw_str.trim_start().starts_with('[');
-
-                                // Format if Pretty mode and valid JSON
-                                let display_text = if matches!(view_mode, ResponseViewMode::Pretty) {
-                                    if let Some(parsed) = &parsed_json {
-                                        serde_json::to_string_pretty(parsed).unwrap_or_else(|_| raw_str.clone())
+                                    let (_display_text, lines, is_json) = if let Some(fmt) = &resp_s.formatted_body {
+                                        (fmt.display_text.clone(), fmt.lines.clone(), fmt.is_json)
                                     } else {
-                                        raw_str.clone()
-                                    }
-                                } else {
-                                    raw_str.clone()
-                                };
+                                        let parsed_json = serde_json::from_str::<serde_json::Value>(&raw_str).ok();
+                                        let is_json = parsed_json.is_some()
+                                            || current_resp.as_ref().map(|r| r.is_json()).unwrap_or(false)
+                                            || raw_str.trim_start().starts_with('{')
+                                            || raw_str.trim_start().starts_with('[');
 
-                                let lines: Vec<&str> = display_text.lines().collect();
-                                let total_lines = lines.len();
-                                let is_large_payload = body_bytes.len() > 2 * 1024 * 1024 || total_lines > 5000;
-                                let lines_to_render = if is_large_payload {
-                                    &lines[..lines.len().min(3000)]
-                                } else {
-                                    &lines[..]
-                                };
+                                        let display_text = if matches!(view_mode, ResponseViewMode::Pretty) {
+                                            if let Some(parsed) = &parsed_json {
+                                                serde_json::to_string_pretty(parsed).unwrap_or_else(|_| raw_str.clone())
+                                            } else {
+                                                raw_str.clone()
+                                            }
+                                        } else {
+                                            raw_str.clone()
+                                        };
+
+                                        let lines: Vec<String> = display_text.lines().map(|s| s.to_string()).collect();
+                                        (std::sync::Arc::new(display_text), std::sync::Arc::new(lines), is_json)
+                                    };
+
+                                    let total_lines = lines.len();
+                                    let is_large_payload = body_bytes.len() > 10 * 1024 * 1024 || total_lines > 20000;
 
                                 let rs_toggle = resp_state_clone.clone();
                                 let raw_for_copy = raw_str.clone();
@@ -564,7 +564,7 @@ impl RenderOnce for ResponseViewer {
                                                     }),
                                             ),
                                     )
-                                    // Large payload protection banner
+                                    // Large payload notice banner
                                     .when(is_large_payload, |this| {
                                         this.child(
                                             div()
@@ -580,51 +580,63 @@ impl RenderOnce for ResponseViewer {
                                                     div()
                                                         .text_xs()
                                                         .text_color(t.var_unresolved)
-                                                        .child(format!("⚠ Large payload detected ({} lines). Showing first 3,000 lines to ensure 120 FPS performance.", total_lines)),
+                                                        .child(format!("⚠ Large payload ({} lines). Virtualized list active at 120 FPS.", total_lines)),
                                                 )
                                         )
                                     })
-                                    // Response lines scrollable area
+                                    // Response lines virtualized scrollable area
                                     .child(
                                         div()
                                             .flex_1()
-                                            .overflow_y_scrollbar()
+                                            .size_full()
+                                            .overflow_hidden()
                                             .p(px(8.))
-                                            .flex()
-                                            .gap(px(12.))
                                             .child(
-                                                // Line numbers
-                                                div()
-                                                    .w(px(32.))
-                                                    .flex()
-                                                    .flex_col()
-                                                    .items_end()
-                                                    .text_xs()
-                                                    .font_family(".SystemMonoFont")
-                                                    .text_color(t.text_muted)
-                                                    .children((1..=lines_to_render.len()).map(|num| {
-                                                        div().h(px(20.)).child(format!("{}", num))
-                                                    })),
+                                                uniform_list("response-lines-virtual", lines.len(), {
+                                                    let lines = lines.clone();
+                                                    let is_json = is_json;
+                                                    let t = t;
+                                                    move |range, _window, _cx| {
+                                                        range
+                                                            .map(|idx| {
+                                                                let line_num = idx + 1;
+                                                                let line = &lines[idx];
+                                                                div()
+                                                                    .h(px(20.))
+                                                                    .flex()
+                                                                    .items_center()
+                                                                    .gap(px(12.))
+                                                                    .child(
+                                                                        div()
+                                                                            .w(px(40.))
+                                                                            .flex()
+                                                                            .justify_end()
+                                                                            .text_xs()
+                                                                            .font_family(".SystemMonoFont")
+                                                                            .text_color(t.text_muted)
+                                                                            .child(format!("{}", line_num)),
+                                                                    )
+                                                                    .child(
+                                                                        div()
+                                                                            .flex_1()
+                                                                            .text_xs()
+                                                                            .font_family(".SystemMonoFont")
+                                                                            .text_color(t.text_primary)
+                                                                            .child(if line.is_empty() {
+                                                                                div().child(" ")
+                                                                            } else if is_json {
+                                                                                div().child(highlight_json_line(line, &t))
+                                                                            } else {
+                                                                                div().child(line.clone())
+                                                                            }),
+                                                                    )
+                                                            })
+                                                            .collect::<Vec<_>>()
+                                                    }
+                                                })
+                                                .track_scroll(&resp_s.scroll_handle)
+                                                .size_full(),
                                             )
-                                            .child(
-                                                // Response text lines
-                                                div()
-                                                    .flex_1()
-                                                    .flex()
-                                                    .flex_col()
-                                                    .text_xs()
-                                                    .font_family(".SystemMonoFont")
-                                                    .text_color(t.text_primary)
-                                                    .children(lines_to_render.iter().map(|line| {
-                                                        div().h(px(20.)).child(if line.is_empty() {
-                                                            div().child(" ")
-                                                        } else if is_json {
-                                                            div().child(highlight_json_line(line, t))
-                                                        } else {
-                                                            div().child(line.to_string())
-                                                        })
-                                                    })),
-                                            ),
                                     )
                                     .into_any_element()
                                 }
@@ -691,7 +703,9 @@ impl RenderOnce for ResponseViewer {
                                                 } else {
                                                     preview.clone()
                                                 };
-                                                let p_lines: Vec<&str> = preview_display.lines().collect();
+                                                let p_lines_vec: Vec<String> = preview_display.lines().map(|s| s.to_string()).collect();
+                                                let p_count = p_lines_vec.len();
+                                                let p_lines = std::sync::Arc::new(p_lines_vec);
 
                                                 this.child(
                                                     div()
@@ -709,17 +723,51 @@ impl RenderOnce for ResponseViewer {
                                                         .border_color(t.border)
                                                         .font_family(".SystemMonoFont")
                                                         .text_xs()
-                                                        .flex()
-                                                        .flex_col()
-                                                        .children(p_lines.into_iter().map(|line| {
-                                                            div().h(px(20.)).child(if line.is_empty() {
-                                                                div().child(" ")
-                                                            } else if is_preview_json {
-                                                                div().child(highlight_json_line(line, t))
+                                                        .child({
+                                                            if p_count > 30 {
+                                                                div()
+                                                                    .h(px(320.))
+                                                                    .size_full()
+                                                                    .overflow_hidden()
+                                                                    .child(
+                                                                        uniform_list("request-sent-preview-lines", p_count, {
+                                                                            let p_lines = p_lines.clone();
+                                                                            let t = t;
+                                                                            move |range, _window, _cx| {
+                                                                                range
+                                                                                    .map(|idx| {
+                                                                                        let line = &p_lines[idx];
+                                                                                        div().h(px(20.)).child(if line.is_empty() {
+                                                                                            div().child(" ")
+                                                                                        } else if is_preview_json {
+                                                                                            div().child(highlight_json_line(line, &t))
+                                                                                        } else {
+                                                                                            div().child(line.clone())
+                                                                                        })
+                                                                                    })
+                                                                                    .collect::<Vec<_>>()
+                                                                            }
+                                                                        })
+                                                                        .size_full(),
+                                                                    )
+                                                                    .into_any_element()
                                                             } else {
-                                                                div().child(line.to_string())
-                                                            })
-                                                        })),
+                                                                div()
+                                                                    .flex()
+                                                                    .flex_col()
+                                                                    .children((0..p_count).map(|idx| {
+                                                                        let line = &p_lines[idx];
+                                                                        div().h(px(20.)).child(if line.is_empty() {
+                                                                            div().child(" ")
+                                                                        } else if is_preview_json {
+                                                                            div().child(highlight_json_line(line, &t))
+                                                                        } else {
+                                                                            div().child(line.clone())
+                                                                        })
+                                                                    }))
+                                                                    .into_any_element()
+                                                            }
+                                                        }),
                                                 )
                                             })
                                             .into_any_element()

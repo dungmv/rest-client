@@ -31,6 +31,7 @@ pub struct EditorState {
     pub body_dropdown_open: bool,
     pub auth_dropdown_open: bool,
     pub script_error: Option<String>,
+    pub body_version: usize,
 }
 
 impl EditorState {
@@ -53,6 +54,7 @@ impl EditorState {
             body_dropdown_open: false,
             auth_dropdown_open: false,
             script_error: None,
+            body_version: 0,
         }
     }
 
@@ -81,6 +83,7 @@ impl EditorState {
         }
         self.active_request = Some(req);
         self.is_dirty = false;
+        self.body_version = self.body_version.wrapping_add(1);
         cx.notify();
     }
 
@@ -251,6 +254,7 @@ impl EditorState {
             req.body = body;
             self.body_dropdown_open = false;
             self.is_dirty = true;
+            self.body_version = self.body_version.wrapping_add(1);
             cx.notify();
         }
     }

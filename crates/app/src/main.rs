@@ -52,6 +52,8 @@ pub struct AppView {
     apikey_val_input: Entity<InputState>,
     executor: Arc<ReqwestExecutor>,
     tokio_rt: Arc<tokio::runtime::Runtime>,
+    last_synced_request_id: Option<String>,
+    last_synced_body_version: usize,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -366,6 +368,9 @@ impl AppView {
             }
         }));
 
+        let last_synced_request_id = initial_req.as_ref().map(|r| r.id.clone());
+        let last_synced_body_version = editor_state.read(cx).body_version;
+
         Self {
             workspace_state,
             editor_state,
@@ -383,6 +388,8 @@ impl AppView {
             apikey_val_input,
             executor,
             tokio_rt,
+            last_synced_request_id,
+            last_synced_body_version,
             _subscriptions,
         }
     }
@@ -705,7 +712,16 @@ impl Render for AppView {
 
         // Synchronize active request fields into InputState / TextareaState when switched or updated via query params
         if let Some(req) = &active_req {
-            if self.url_input.read(cx).value().as_str() != req.url {
+            let req_switched = self.last_synced_request_id.as_deref() != Some(&req.id);
+            let ed_body_ver = self.editor_state.read(cx).body_version;
+            let body_ver_changed = self.last_synced_body_version != ed_body_ver;
+
+            if req_switched {
+                self.last_synced_request_id = Some(req.id.clone());
+                self.last_synced_body_version = ed_body_ver;
+            }
+
+            if req_switched || self.url_input.read(cx).value().as_str() != req.url {
                 let tokenized_url = {
                     let ws = self.workspace_state.read(cx);
                     crate::components::env_autocomplete::build_tokenized_content(&req.url, ws)
@@ -714,69 +730,62 @@ impl Render for AppView {
                     inp.set_value(tokenized_url, window, cx);
                 });
             }
-            match &req.body {
-                RequestBody::Json(json_str) => {
-                    if self.json_editor.read(cx).value().as_str() != json_str {
+
+            if req_switched || body_ver_changed {
+                self.last_synced_body_version = ed_body_ver;
+                match &req.body {
+                    RequestBody::Json(json_str) => {
                         self.json_editor.update(cx, |txt, cx| {
                             txt.set_value(json_str.clone(), window, cx);
                         });
                     }
-                }
-                RequestBody::Raw { content, .. } => {
-                    if self.raw_textarea.read(cx).value().as_str() != content {
+                    RequestBody::Raw { content, .. } => {
                         self.raw_textarea.update(cx, |txt, cx| {
                             txt.set_value(content.clone(), window, cx);
                         });
                     }
+                    _ => {}
                 }
-                _ => {}
             }
-            match &req.auth {
-                Auth::Bearer { token } => {
-                    if self.bearer_token_input.read(cx).value().as_str() != token {
+
+            if req_switched {
+                match &req.auth {
+                    Auth::Bearer { token } => {
                         self.bearer_token_input.update(cx, |inp, cx| {
                             inp.set_value(token.clone(), window, cx);
                         });
                     }
-                }
-                Auth::Basic { username, password } => {
-                    if self.basic_user_input.read(cx).value().as_str() != username {
+                    Auth::Basic { username, password } => {
                         self.basic_user_input.update(cx, |inp, cx| {
                             inp.set_value(username.clone(), window, cx);
                         });
-                    }
-                    if self.basic_pass_input.read(cx).value().as_str() != password {
                         self.basic_pass_input.update(cx, |inp, cx| {
                             inp.set_value(password.clone(), window, cx);
                         });
                     }
-                }
-                Auth::ApiKey { key, value, .. } => {
-                    if self.apikey_key_input.read(cx).value().as_str() != key {
+                    Auth::ApiKey { key, value, .. } => {
                         self.apikey_key_input.update(cx, |inp, cx| {
                             inp.set_value(key.clone(), window, cx);
                         });
-                    }
-                    if self.apikey_val_input.read(cx).value().as_str() != value {
                         self.apikey_val_input.update(cx, |inp, cx| {
                             inp.set_value(value.clone(), window, cx);
                         });
                     }
+                    Auth::None => {}
                 }
-                Auth::None => {}
-            }
 
-            let pre_script = req.script.as_ref().and_then(|s| s.pre_request.clone()).unwrap_or_default();
-            if self.pre_script_editor.read(cx).value().as_str() != pre_script {
-                self.pre_script_editor.update(cx, |txt, cx| {
-                    txt.set_value(pre_script, window, cx);
-                });
-            }
-            let test_script = req.script.as_ref().and_then(|s| s.post_response.clone()).unwrap_or_default();
-            if self.test_script_editor.read(cx).value().as_str() != test_script {
-                self.test_script_editor.update(cx, |txt, cx| {
-                    txt.set_value(test_script, window, cx);
-                });
+                let pre_script = req.script.as_ref().and_then(|s| s.pre_request.clone()).unwrap_or_default();
+                if self.pre_script_editor.read(cx).value().as_str() != pre_script {
+                    self.pre_script_editor.update(cx, |txt, cx| {
+                        txt.set_value(pre_script, window, cx);
+                    });
+                }
+                let test_script = req.script.as_ref().and_then(|s| s.post_response.clone()).unwrap_or_default();
+                if self.test_script_editor.read(cx).value().as_str() != test_script {
+                    self.test_script_editor.update(cx, |txt, cx| {
+                        txt.set_value(test_script, window, cx);
+                    });
+                }
             }
         }
 

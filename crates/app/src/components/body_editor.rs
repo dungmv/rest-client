@@ -16,13 +16,15 @@ use gpui_component::scroll::ScrollableElement as _;
 use restclient_core::models::{KeyValuePair, MultipartItem, RequestBody};
 
 pub struct JsonHighlighter {
-    text: Rope,
+    pub text: Rope,
+    pub cached_str: String,
 }
 
 impl JsonHighlighter {
     pub fn new() -> Self {
         Self {
             text: Rope::new(),
+            cached_str: String::new(),
         }
     }
 }
@@ -67,6 +69,7 @@ impl InputHighlighter for JsonHighlighter {
         _cx: &mut Context<CodeEditorState>,
     ) {
         self.text = text.clone();
+        self.cached_str = text.to_string();
     }
 
     fn styles(
@@ -74,13 +77,21 @@ impl InputHighlighter for JsonHighlighter {
         range: &Range<usize>,
         _resolver: &dyn HighlightStyleResolver,
     ) -> Vec<(Range<usize>, HighlightStyle)> {
-        let full_str = self.text.to_string();
+        let temp_str;
+        let full_str: &str = if !self.cached_str.is_empty() {
+            &self.cached_str
+        } else if self.text.len() != 0 {
+            temp_str = self.text.to_string();
+            &temp_str
+        } else {
+            ""
+        };
         if full_str.is_empty() || range.is_empty() {
             return vec![(range.clone(), HighlightStyle::default())];
         }
 
-        let start = clamp_char_boundary_left(&full_str, range.start);
-        let end = clamp_char_boundary_right(&full_str, range.end.min(full_str.len()));
+        let start = clamp_char_boundary_left(full_str, range.start);
+        let end = clamp_char_boundary_right(full_str, range.end.min(full_str.len()));
 
         if start >= end {
             return vec![(range.clone(), HighlightStyle::default())];
@@ -882,7 +893,7 @@ impl RenderOnce for BodyEditor {
                             }
                             RequestBody::Raw { content_type, .. } => {
                                 let ed_c = ed_entity.clone();
-                                let raw_content = self.raw_textarea.read(cx).value().to_string();
+                                let raw_tx = self.raw_textarea.clone();
 
                                 div()
                                     .size_full()
@@ -913,7 +924,7 @@ impl RenderOnce for BodyEditor {
                                             ].into_iter().map(|mime| {
                                                 let is_sel = content_type == mime;
                                                 let ed_mime = ed_c.clone();
-                                                let r_c = raw_content.clone();
+                                                let raw_tx_c = raw_tx.clone();
                                                 div()
                                                     .id(format!("raw-mime-{}", mime))
                                                     .px(px(6.))
@@ -924,8 +935,9 @@ impl RenderOnce for BodyEditor {
                                                     .cursor_pointer()
                                                     .text_xs()
                                                     .on_click(move |_, _, cx| {
+                                                        let r_c = raw_tx_c.read(cx).value().to_string();
                                                         ed_mime.update(cx, |state, cx| {
-                                                            state.set_raw_body(r_c.clone(), mime.to_string(), cx);
+                                                            state.set_raw_body(r_c, mime.to_string(), cx);
                                                         });
                                                     })
                                                     .child(mime)
@@ -1150,5 +1162,21 @@ mod tests {
         let rope = Rope::from_str(json_text);
         let folds = highlighter.fold_ranges(&rope);
         assert!(!folds.is_empty(), "Should detect foldable ranges");
+    }
+
+    #[test]
+    fn test_json_highlighter_large_file_performance() {
+        let mut highlighter = JsonHighlighter::new();
+        let items: Vec<String> = (0..500)
+            .map(|i| format!(r#"{{"id": {}, "title": "large test item {}", "active": true}}"#, i, i))
+            .collect();
+        let json_text = format!("[\n{}\n]", items.join(",\n"));
+        highlighter.text = Rope::from_str(&json_text);
+        highlighter.cached_str = json_text.clone();
+
+        // Highlighting individual line range should be instant and not allocate full string
+        let first_line_range = 0..1;
+        let styles = highlighter.styles(&first_line_range, &DummyResolver);
+        assert!(!styles.is_empty());
     }
 }

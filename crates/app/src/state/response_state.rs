@@ -2,6 +2,14 @@ use gpui::Context;
 use restclient_core::models::{
     ConsoleLogEntry, ConsoleLogLevel, ConsoleLogSource, HttpResponseRecord, TestResult,
 };
+use std::sync::Arc;
+
+#[derive(Clone, Debug, Default)]
+pub struct FormattedResponseBody {
+    pub display_text: Arc<String>,
+    pub lines: Arc<Vec<String>>,
+    pub is_json: bool,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ResponseTabKind {
@@ -44,6 +52,8 @@ pub struct ResponseState {
     pub test_results: Vec<TestResult>,
     pub console_logs: Vec<ConsoleLogEntry>,
     pub console_filter: ConsoleFilter,
+    pub formatted_body: Option<FormattedResponseBody>,
+    pub scroll_handle: gpui::UniformListScrollHandle,
 }
 
 impl ResponseState {
@@ -60,6 +70,38 @@ impl ResponseState {
             test_results: Vec::new(),
             console_logs: Vec::new(),
             console_filter: ConsoleFilter::All,
+            formatted_body: None,
+            scroll_handle: gpui::UniformListScrollHandle::new(),
+        }
+    }
+
+    pub fn refresh_formatted_body(&mut self) {
+        if let Some(resp) = &self.current_response {
+            let raw_str = String::from_utf8_lossy(&resp.body).to_string();
+            let parsed_json = serde_json::from_str::<serde_json::Value>(&raw_str).ok();
+            let is_json = parsed_json.is_some()
+                || resp.is_json()
+                || raw_str.trim_start().starts_with('{')
+                || raw_str.trim_start().starts_with('[');
+
+            let display_text = if matches!(self.view_mode, ResponseViewMode::Pretty) {
+                if let Some(parsed) = &parsed_json {
+                    serde_json::to_string_pretty(parsed).unwrap_or_else(|_| raw_str)
+                } else {
+                    raw_str
+                }
+            } else {
+                raw_str
+            };
+
+            let lines: Vec<String> = display_text.lines().map(|s| s.to_string()).collect();
+            self.formatted_body = Some(FormattedResponseBody {
+                display_text: Arc::new(display_text),
+                lines: Arc::new(lines),
+                is_json,
+            });
+        } else {
+            self.formatted_body = None;
         }
     }
 
@@ -75,6 +117,8 @@ impl ResponseState {
         }
         self.current_response = response;
         self.history = history;
+        self.scroll_handle = gpui::UniformListScrollHandle::new();
+        self.refresh_formatted_body();
         cx.notify();
     }
 
@@ -84,6 +128,8 @@ impl ResponseState {
             self.console_logs = rec.console_logs.clone();
             self.current_response = Some(rec);
             self.show_history_dropdown = false;
+            self.scroll_handle = gpui::UniformListScrollHandle::new();
+            self.refresh_formatted_body();
             cx.notify();
         }
     }
@@ -95,6 +141,7 @@ impl ResponseState {
 
     pub fn set_view_mode(&mut self, mode: ResponseViewMode, cx: &mut Context<Self>) {
         self.view_mode = mode;
+        self.refresh_formatted_body();
         cx.notify();
     }
 
@@ -226,6 +273,46 @@ mod tests {
         assert_eq!(state.active_tab, ResponseTabKind::Response);
         state.active_tab = ResponseTabKind::Console;
         assert_eq!(state.active_tab, ResponseTabKind::Console);
+    }
+
+    #[test]
+    fn test_large_response_body_formatting() {
+        let mut state = ResponseState::new();
+
+        // Create a 500-item JSON array
+        let items: Vec<String> = (0..500).map(|i| format!(r#"{{"id": {}, "title": "item {}"}}"#, i, i)).collect();
+        let json_body = format!("[\n{}\n]", items.join(",\n"));
+
+        let rec = HttpResponseRecord {
+            id: "resp-1".to_string(),
+            request_id: "req-1".to_string(),
+            status_code: 200,
+            status_text: "OK".to_string(),
+            duration_ms: 25,
+            size_bytes: json_body.len(),
+            headers: vec![("content-type".to_string(), "application/json".to_string())],
+            cookies: vec![],
+            body: json_body.into_bytes(),
+            timing: restclient_core::models::TimingBreakdown::default(),
+            request_sent: None,
+            test_results: vec![],
+            console_logs: vec![],
+            created_at: chrono::Utc::now(),
+        };
+
+        state.current_response = Some(rec);
+        state.refresh_formatted_body();
+
+        let fmt = state.formatted_body.as_ref().expect("formatted body should be present");
+        assert!(fmt.is_json);
+        // Each item has 4 lines in pretty JSON (bracket, id, title, bracket), so > 1000 lines
+        assert!(fmt.lines.len() >= 500);
+
+        // Switch to Raw mode
+        state.view_mode = ResponseViewMode::Raw;
+        state.refresh_formatted_body();
+        let fmt_raw = state.formatted_body.as_ref().unwrap();
+        assert!(!fmt_raw.lines.is_empty());
     }
 }
 

@@ -51,12 +51,16 @@ fn clamp_char_boundary_right(s: &str, mut idx: usize) -> usize {
 // =========================================================================
 
 pub struct JavaScriptHighlighter {
-    text: Rope,
+    pub text: Rope,
+    pub cached_str: String,
 }
 
 impl JavaScriptHighlighter {
     pub fn new() -> Self {
-        Self { text: Rope::new() }
+        Self {
+            text: Rope::new(),
+            cached_str: String::new(),
+        }
     }
 }
 
@@ -98,6 +102,7 @@ impl InputHighlighter for JavaScriptHighlighter {
         _cx: &mut Context<CodeEditorState>,
     ) {
         self.text = text.clone();
+        self.cached_str = text.to_string();
     }
 
     fn styles(
@@ -105,13 +110,21 @@ impl InputHighlighter for JavaScriptHighlighter {
         range: &Range<usize>,
         _resolver: &dyn HighlightStyleResolver,
     ) -> Vec<(Range<usize>, HighlightStyle)> {
-        let full_str = self.text.to_string();
+        let temp_str;
+        let full_str: &str = if !self.cached_str.is_empty() {
+            &self.cached_str
+        } else if self.text.len() != 0 {
+            temp_str = self.text.to_string();
+            &temp_str
+        } else {
+            ""
+        };
         if full_str.is_empty() || range.is_empty() {
             return vec![(range.clone(), HighlightStyle::default())];
         }
 
-        let start = clamp_char_boundary_left(&full_str, range.start);
-        let end = clamp_char_boundary_right(&full_str, range.end.min(full_str.len()));
+        let start = clamp_char_boundary_left(full_str, range.start);
+        let end = clamp_char_boundary_right(full_str, range.end.min(full_str.len()));
 
         if start >= end {
             return vec![(range.clone(), HighlightStyle::default())];
