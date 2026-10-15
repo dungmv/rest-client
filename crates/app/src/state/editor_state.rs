@@ -69,10 +69,7 @@ impl EditorState {
         self.active_request.as_mut().unwrap()
     }
 
-    pub fn set_active_request(&mut self, mut req: HttpRequestItem, pin: bool, cx: &mut Context<Self>) {
-        if is_legacy_url_name(&req.name, &req.url) {
-            req.name = default_name_from_url(&req.url);
-        }
+    pub fn set_active_request(&mut self, req: HttpRequestItem, pin: bool, cx: &mut Context<Self>) {
         let req_id = req.id.clone();
         if !self.open_tabs.contains(&req_id) {
             self.open_tabs.push(req_id.clone());
@@ -92,16 +89,18 @@ impl EditorState {
     }
 
     pub fn close_tab(&mut self, req_id: &str, cx: &mut Context<Self>) -> Option<String> {
-        let idx = self.open_tabs.iter().position(|id| id == req_id)?;
-        self.open_tabs.remove(idx);
+        let idx = self.open_tabs.iter().position(|id| id == req_id);
+        if let Some(i) = idx {
+            self.open_tabs.remove(i);
+        }
         self.pinned_tabs.remove(req_id);
 
         let next_active = if self.active_request.as_ref().map(|r| r.id.as_str()) == Some(req_id) {
+            self.active_request = None;
             if !self.open_tabs.is_empty() {
-                let new_idx = idx.min(self.open_tabs.len() - 1);
+                let new_idx = idx.unwrap_or(0).min(self.open_tabs.len() - 1);
                 Some(self.open_tabs[new_idx].clone())
             } else {
-                self.active_request = None;
                 None
             }
         } else {
@@ -134,9 +133,6 @@ impl EditorState {
     /// Sets URL and synchronizes query parameters to params table (Bi-directional sync)
     pub fn set_url(&mut self, url: String, cx: &mut Context<Self>) {
         if let Some(req) = &mut self.active_request {
-            let old_url = req.url.clone();
-            let should_auto_name = is_auto_name(&req.name, &old_url);
-
             let (_, parsed_params) = parse_query_from_url(&url);
             req.url = url.clone();
             if url.contains('?') {
@@ -144,9 +140,6 @@ impl EditorState {
             } else {
                 // Keep any disabled params, remove enabled ones that were in the URL
                 req.params.retain(|p| !p.enabled);
-            }
-            if should_auto_name {
-                req.name = default_name_from_url(&url);
             }
             self.is_dirty = true;
             cx.notify();
@@ -512,6 +505,7 @@ pub fn default_name_from_url(url: &str) -> String {
     truncate_text(domain, MAX_DEFAULT_DOMAIN_LEN)
 }
 
+#[allow(dead_code)]
 pub fn is_legacy_url_name(name: &str, url: &str) -> bool {
     let clean = url
         .trim()
@@ -525,6 +519,7 @@ pub fn is_legacy_url_name(name: &str, url: &str) -> bool {
     (name == clean || name == without_query) && name != default_dom
 }
 
+#[allow(dead_code)]
 pub fn is_auto_name(name: &str, old_url: &str) -> bool {
     let trimmed = name.trim();
     trimmed.is_empty()
@@ -534,25 +529,15 @@ pub fn is_auto_name(name: &str, old_url: &str) -> bool {
         || is_legacy_url_name(trimmed, old_url)
 }
 
-/// Returns the display name of a request (custom name if set, otherwise truncated domain from URL),
+/// Returns the display name of a request (custom name if set, otherwise "Untitled Request"),
 /// capped at `MAX_DISPLAY_TITLE_LEN` characters.
 pub fn effective_request_name(req: &HttpRequestItem) -> String {
     let raw_name = req.name.trim();
-    if raw_name.is_empty()
-        || raw_name == "New Request"
-        || raw_name == "Untitled Request"
-        || is_legacy_url_name(raw_name, &req.url)
-    {
-        if !req.url.trim().is_empty() {
-            return default_name_from_url(&req.url);
-        }
-        return if raw_name.is_empty() {
-            "Untitled Request".to_string()
-        } else {
-            raw_name.to_string()
-        };
+    if raw_name.is_empty() {
+        "Untitled Request".to_string()
+    } else {
+        truncate_text(raw_name, MAX_DISPLAY_TITLE_LEN)
     }
-    truncate_text(raw_name, MAX_DISPLAY_TITLE_LEN)
 }
 
 #[cfg(test)]
@@ -580,19 +565,19 @@ mod tests {
     #[test]
     fn test_effective_request_name() {
         let mut req = HttpRequestItem::new("test", "New Request", HttpMethod::Get, "https://speedtest.vn/api");
-        assert_eq!(effective_request_name(&req), "speedtest.vn");
+        // Request name remains fixed even when URL has a domain
+        assert_eq!(effective_request_name(&req), "New Request");
 
         // Custom name takes precedence
         req.name = "Get Speedtest Servers".to_string();
         assert_eq!(effective_request_name(&req), "Get Speedtest Servers");
 
-        // Empty name falls back to domain
+        // Empty name falls back to Untitled Request
         req.name = "".to_string();
-        assert_eq!(effective_request_name(&req), "speedtest.vn");
+        assert_eq!(effective_request_name(&req), "Untitled Request");
 
-        // Legacy full-path URL name is recognized and sanitized to domain
-        req.name = "speedtest.vn/api".to_string();
-        assert_eq!(effective_request_name(&req), "speedtest.vn");
+        req.name = "   ".to_string();
+        assert_eq!(effective_request_name(&req), "Untitled Request");
     }
 }
 
