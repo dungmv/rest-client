@@ -206,6 +206,16 @@ impl ResponseState {
         cx.notify();
     }
 
+    pub fn rename_example(&mut self, old_name: &str, new_name: &str, cx: &mut Context<Self>) {
+        if self.active_example_name.as_deref() == Some(old_name) {
+            self.active_example_name = Some(new_name.to_string());
+            if let Some(r) = &mut self.current_response {
+                r.status_text = format!("Example: {}", new_name);
+            }
+            cx.notify();
+        }
+    }
+
     pub fn refresh_formatted_body(&mut self) {
         if let Some(resp) = &self.current_response {
             let raw_str = String::from_utf8_lossy(&resp.body).to_string();

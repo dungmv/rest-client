@@ -48,6 +48,10 @@ pub struct WorkspaceState {
     pub renaming_env_id: Option<String>,
     pub rename_env_input: Option<Entity<InputState>>,
     pub rename_env_subscription: Option<gpui::Subscription>,
+    pub renaming_example: Option<(String, String)>,
+    pub rename_example_input: Option<Entity<InputState>>,
+    pub rename_example_subscription: Option<gpui::Subscription>,
+    pub last_renamed_example: Option<(String, String, String)>,
     pub collapsed_folders: HashSet<String>,
     pub collapsed_requests: HashSet<String>,
     pub unsaved_requests: HashSet<String>,
@@ -119,6 +123,10 @@ impl WorkspaceState {
             renaming_env_id: None,
             rename_env_input: None,
             rename_env_subscription: None,
+            renaming_example: None,
+            rename_example_input: None,
+            rename_example_subscription: None,
+            last_renamed_example: None,
             collapsed_folders: HashSet::new(),
             collapsed_requests: HashSet::new(),
             unsaved_requests: HashSet::new(),
@@ -553,6 +561,86 @@ impl WorkspaceState {
             self.renaming_request_id = None;
             self.rename_input = None;
             self.rename_subscription = None;
+            cx.notify();
+        }
+    }
+
+    pub fn start_renaming_example(
+        &mut self,
+        req_id: String,
+        example_name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.cancel_renaming(cx);
+        self.cancel_renaming_folder(cx);
+
+        let input = cx.new(|cx| {
+            let mut s = InputState::new(window, cx);
+            s.set_value(example_name.clone(), window, cx);
+            s.select_all(window, cx);
+            s.focus(window, cx);
+            s
+        });
+
+        let sub = cx.subscribe(&input, move |this, input, event: &gpui_component::input::InputEvent, cx| {
+            match event {
+                gpui_component::input::InputEvent::PressEnter { .. } => {
+                    let val = input.read(cx).value().to_string();
+                    this.finish_renaming_example(val, cx);
+                }
+                gpui_component::input::InputEvent::Blur => {
+                    let val = input.read(cx).value().to_string();
+                    this.finish_renaming_example(val, cx);
+                }
+                _ => {}
+            }
+        });
+
+        self.renaming_example = Some((req_id, example_name));
+        self.rename_example_input = Some(input);
+        self.rename_example_subscription = Some(sub);
+        cx.notify();
+    }
+
+    pub fn rename_example_internal(&mut self, req_id: &str, old_name: &str, new_name: &str) -> bool {
+        let trimmed = new_name.trim();
+        if !trimmed.is_empty() && trimmed != old_name {
+            if let Some(mut req_file) = self.get_request_file(req_id) {
+                let mut unique_name = trimmed.to_string();
+                let mut idx = 2;
+                while req_file.examples.iter().any(|e| e.name == unique_name && e.name != old_name) {
+                    unique_name = format!("{}-{}", trimmed, idx);
+                    idx += 1;
+                }
+                if let Some(ex) = req_file.examples.iter_mut().find(|e| e.name == old_name) {
+                    ex.name = unique_name.clone();
+                }
+                self.last_renamed_example = Some((req_id.to_string(), old_name.to_string(), unique_name));
+                let _ = self.store.write_request(req_id, &req_file);
+                self.reload_tree();
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn finish_renaming_example(&mut self, new_name: String, cx: &mut Context<Self>) {
+        let Some((req_id, old_name)) = self.renaming_example.take() else {
+            return;
+        };
+        self.rename_example_input = None;
+        self.rename_example_subscription = None;
+        if self.rename_example_internal(&req_id, &old_name, &new_name) {
+            cx.notify();
+        }
+    }
+
+    pub fn cancel_renaming_example(&mut self, cx: &mut Context<Self>) {
+        if self.renaming_example.is_some() {
+            self.renaming_example = None;
+            self.rename_example_input = None;
+            self.rename_example_subscription = None;
             cx.notify();
         }
     }
@@ -1208,6 +1296,10 @@ mod tests {
             renaming_env_id: None,
             rename_env_input: None,
             rename_env_subscription: None,
+            renaming_example: None,
+            rename_example_input: None,
+            rename_example_subscription: None,
+            last_renamed_example: None,
             collapsed_folders: HashSet::new(),
             collapsed_requests: HashSet::new(),
             unsaved_requests: HashSet::new(),
@@ -1281,6 +1373,10 @@ mod tests {
             renaming_env_id: None,
             rename_env_input: None,
             rename_env_subscription: None,
+            renaming_example: None,
+            rename_example_input: None,
+            rename_example_subscription: None,
+            last_renamed_example: None,
             collapsed_folders: HashSet::new(),
             collapsed_requests: HashSet::new(),
             unsaved_requests: HashSet::new(),
@@ -1326,6 +1422,108 @@ mod tests {
         // In-memory version is preserved
         assert_eq!(ws_state.requests.len(), 1);
         assert_eq!(ws_state.requests[0].name, "Login");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_rename_example() {
+        let temp_dir = std::env::temp_dir().join(format!("test_ws_rename_ex_{}", uuid::Uuid::new_v4().simple()));
+        let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
+        store.init_workspace("Rename Ex WS").unwrap();
+
+        let (_slug, rel_path) = store.create_request(None, "Auth", HttpMethod::Post, "https://api.example.com/auth").unwrap();
+        let mut req_file = store.read_request(&rel_path).unwrap();
+        req_file.examples.push(restclient_core::storage::models::RequestExampleFile {
+            name: "Success".to_string(),
+            status: 200,
+            headers: Vec::new(),
+            body: Some("{}".to_string()),
+            extra: std::collections::BTreeMap::new(),
+        });
+        req_file.examples.push(restclient_core::storage::models::RequestExampleFile {
+            name: "Error".to_string(),
+            status: 400,
+            headers: Vec::new(),
+            body: Some("{}".to_string()),
+            extra: std::collections::BTreeMap::new(),
+        });
+        store.write_request(&rel_path, &req_file).unwrap();
+
+        let mut ws_state = WorkspaceState {
+            store: store.clone(),
+            workspace_path: temp_dir.clone(),
+            workspace_meta: WorkspaceMeta::default(),
+            active_workspace: Some(Workspace::new("Rename Ex WS")),
+            folders: Vec::new(),
+            requests: Vec::new(),
+            parse_errors: HashMap::new(),
+            pins: Vec::new(),
+            local_state: LocalState::default(),
+            environments: Vec::new(),
+            global_environment: Environment::new("default", "Globals"),
+            active_environment_id: None,
+            selected_env_modal_id: None,
+            env_filter_query: String::new(),
+            var_filter_query: String::new(),
+            git_branch: None,
+            git_tracked_warning: false,
+            filter_query: String::new(),
+            sidebar_collapsed: false,
+            sidebar_width: px(260.),
+            split_layout_vertical: false,
+            show_env_modal: false,
+            show_cookies_modal: false,
+            show_command_palette: false,
+            show_settings_modal: false,
+            renaming_request_id: None,
+            rename_input: None,
+            rename_subscription: None,
+            renaming_folder_id: None,
+            rename_folder_input: None,
+            rename_folder_subscription: None,
+            renaming_env_id: None,
+            rename_env_input: None,
+            rename_env_subscription: None,
+            renaming_example: None,
+            rename_example_input: None,
+            rename_example_subscription: None,
+            last_renamed_example: None,
+            collapsed_folders: HashSet::new(),
+            collapsed_requests: HashSet::new(),
+            unsaved_requests: HashSet::new(),
+            running_request_id: None,
+            recent_workspaces: Vec::new(),
+            nav_history: Vec::new(),
+            nav_index: 0,
+            state_save_task: None,
+            request_save_tasks: HashMap::new(),
+            conflicts: HashMap::new(),
+            corrupt_secrets_warning: None,
+            last_renamed_request: None,
+            watcher: None,
+            watcher_task: None,
+        };
+
+        ws_state.reload_tree();
+        assert_eq!(ws_state.requests.len(), 1);
+        assert_eq!(ws_state.requests[0].examples.len(), 2);
+
+        // 1. Rename "Success" -> "Auth OK"
+        let renamed = ws_state.rename_example_internal(&rel_path, "Success", "Auth OK");
+        assert!(renamed);
+        assert_eq!(ws_state.requests[0].examples[0].name, "Auth OK");
+        assert_eq!(ws_state.last_renamed_example, Some((rel_path.clone(), "Success".to_string(), "Auth OK".to_string())));
+
+        // Verify persisted on disk
+        let disk_req = store.read_request(&rel_path).unwrap();
+        assert_eq!(disk_req.examples[0].name, "Auth OK");
+
+        // 2. Collision test: Rename "Error" -> "Auth OK", should become "Auth OK-2"
+        let renamed2 = ws_state.rename_example_internal(&rel_path, "Error", "Auth OK");
+        assert!(renamed2);
+        assert_eq!(ws_state.requests[0].examples[1].name, "Auth OK-2");
+        assert_eq!(ws_state.last_renamed_example, Some((rel_path.clone(), "Error".to_string(), "Auth OK-2".to_string())));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

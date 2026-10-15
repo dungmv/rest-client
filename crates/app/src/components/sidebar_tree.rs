@@ -121,7 +121,7 @@ impl SidebarTree {
 impl RenderOnce for SidebarTree {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
-        let (git_branch, query, filter_query_raw, folders, requests, renaming_req_id, rename_input, renaming_folder_id, rename_folder_input, collapsed_folders, collapsed_requests, pins, parse_errors, unsaved_requests, running_request_id) = {
+        let (git_branch, query, filter_query_raw, folders, requests, renaming_req_id, rename_input, renaming_folder_id, rename_folder_input, renaming_example, rename_example_input, collapsed_folders, collapsed_requests, pins, parse_errors, unsaved_requests, running_request_id) = {
             let ws = self.workspace_state.read(cx);
             (
                 ws.git_branch.clone().unwrap_or_else(|| "main".to_string()),
@@ -133,6 +133,8 @@ impl RenderOnce for SidebarTree {
                 ws.rename_input.clone(),
                 ws.renaming_folder_id.clone(),
                 ws.rename_folder_input.clone(),
+                ws.renaming_example.clone(),
+                ws.rename_example_input.clone(),
                 ws.collapsed_folders.clone(),
                 ws.collapsed_requests.clone(),
                 ws.pins.clone(),
@@ -497,6 +499,7 @@ impl RenderOnce for SidebarTree {
                     .when(!is_req_collapsed, |this| {
                         this.children(examples_list.into_iter().enumerate().map(|(idx, ex)| {
                             let is_this_ex_active = is_req_active && active_example_name.as_deref() == Some(&ex.name);
+                            let is_renaming_this_ex = renaming_example.as_ref().map(|(r_id, ex_name)| r_id == &parent_id && ex_name == &ex.name).unwrap_or(false);
                             let ed_ex_click = ed_clone.clone();
                             let resp_ex_click = resp_clone.clone();
                             let ws_ex_click = ws_clone.clone();
@@ -529,16 +532,33 @@ impl RenderOnce for SidebarTree {
                                 .flex()
                                 .items_center()
                                 .justify_between()
-                                .on_click(move |_, _window, cx| {
-                                    ws_ex_click.update(cx, |state, cx| {
-                                        state.record_navigation(&r_id_for_click, cx);
-                                    });
-                                    ed_ex_click.update(cx, |state, cx| {
-                                        state.set_active_request(req_for_click.clone(), false, cx);
-                                    });
-                                    resp_ex_click.update(cx, |state, cx| {
-                                        state.view_example(&ex_for_click, cx);
-                                    });
+                                .on_click(move |ev, window, cx| {
+                                    if is_renaming_this_ex {
+                                        return;
+                                    }
+                                    if ev.click_count() > 1 {
+                                        let r_id = r_id_for_click.clone();
+                                        let ex_name = ex_for_click.name.clone();
+                                        ws_ex_click.update(cx, |state, cx| {
+                                            state.start_renaming_example(r_id, ex_name, window, cx);
+                                        });
+                                        ed_ex_click.update(cx, |state, cx| {
+                                            state.set_active_request(req_for_click.clone(), false, cx);
+                                        });
+                                        resp_ex_click.update(cx, |state, cx| {
+                                            state.view_example(&ex_for_click, cx);
+                                        });
+                                    } else {
+                                        ws_ex_click.update(cx, |state, cx| {
+                                            state.record_navigation(&r_id_for_click, cx);
+                                        });
+                                        ed_ex_click.update(cx, |state, cx| {
+                                            state.set_active_request(req_for_click.clone(), false, cx);
+                                        });
+                                        resp_ex_click.update(cx, |state, cx| {
+                                            state.view_example(&ex_for_click, cx);
+                                        });
+                                    }
                                 })
                                 .context_menu({
                                     let ws_ctx = ws_clone.clone();
@@ -548,6 +568,10 @@ impl RenderOnce for SidebarTree {
                                     let total_ex = req_for_children.examples.len();
 
                                     move |menu, _window, _cx| {
+                                        let ws_ren = ws_ctx.clone();
+                                        let r_id_ren = r_id_ctx.clone();
+                                        let ex_ren_name = ex_ctx.name.clone();
+
                                         let ws_dup = ws_ctx.clone();
                                         let r_id_dup = r_id_ctx.clone();
                                         let ex_dup = ex_ctx.clone();
@@ -558,6 +582,14 @@ impl RenderOnce for SidebarTree {
                                         let ex_del_name = ex_ctx.name.clone();
 
                                         let mut m = menu
+                                            .item(
+                                                gpui_component::menu::PopupMenuItem::new("Rename")
+                                                    .on_click(move |_, window, cx| {
+                                                        ws_ren.update(cx, |state, cx| {
+                                                            state.start_renaming_example(r_id_ren.clone(), ex_ren_name.clone(), window, cx);
+                                                        });
+                                                    }),
+                                            )
                                             .item(
                                                 gpui_component::menu::PopupMenuItem::new("Duplicate")
                                                     .on_click(move |_, _, cx| {
@@ -649,7 +681,39 @@ impl RenderOnce for SidebarTree {
                                                 .text_color(t.text_muted)
                                                 .child("↳"),
                                         )
-                                        .child(
+                                        .child(if let (true, Some(inp)) = (is_renaming_this_ex, rename_example_input.as_ref()) {
+                                            let ws_esc = ws_clone.clone();
+                                            div()
+                                                .flex_1()
+                                                .min_w(px(0.))
+                                                .h(px(22.))
+                                                .px(px(4.))
+                                                .rounded(px(4.))
+                                                .bg(t.bg_input)
+                                                .border_1()
+                                                .border_color(t.border_focus)
+                                                .flex()
+                                                .items_center()
+                                                .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                                    cx.stop_propagation();
+                                                })
+                                                .on_key_down(move |event, _, cx| {
+                                                    if event.keystroke.key.as_str() == "escape" {
+                                                        ws_esc.update(cx, |state, cx| {
+                                                            state.cancel_renaming_example(cx);
+                                                        });
+                                                    }
+                                                })
+                                                .child(
+                                                    gpui_component::input::Input::new(inp)
+                                                        .id(format!("rename-ex-input-{}-{}", parent_id, idx))
+                                                        .appearance(false)
+                                                        .bordered(false)
+                                                        .focus_bordered(false)
+                                                        .cleanable(false),
+                                                )
+                                                .into_any_element()
+                                        } else {
                                             div()
                                                 .text_xs()
                                                 .font_family(".SystemMonoFont")
@@ -659,8 +723,9 @@ impl RenderOnce for SidebarTree {
                                                     t.text_secondary
                                                 })
                                                 .truncate()
-                                                .child(ex.name.clone()),
-                                        ),
+                                                .child(ex.name.clone())
+                                                .into_any_element()
+                                        }),
                                 )
                                 .child(
                                     div()

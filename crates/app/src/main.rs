@@ -451,6 +451,13 @@ impl AppView {
                     }
                 });
             }
+
+            let last_renamed_ex = ws.update(cx, |ws, _cx| ws.last_renamed_example.take());
+            if let Some((_req_id, old_ex, new_ex)) = last_renamed_ex {
+                resp_sync.update(cx, |resp, cx| {
+                    resp.rename_example(&old_ex, &new_ex, cx);
+                });
+            }
         }));
 
         let last_synced_request_id = initial_req.as_ref().map(|r| r.id.clone());
