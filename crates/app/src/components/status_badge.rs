@@ -23,6 +23,7 @@ impl RenderOnce for MethodBadge {
         };
 
         div()
+            .flex_shrink_0()
             .px(px(6.))
             .py(px(1.5))
             .rounded(px(4.))
@@ -49,13 +50,20 @@ impl RenderOnce for StatusCodeBadge {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let t = theme();
         let color = t.status_color(self.status_code);
+        let bg_color = gpui::Hsla {
+            a: 0.15,
+            ..color
+        };
 
         div()
+            .flex_shrink_0()
             .px(px(5.))
             .py(px(1.))
+            .rounded(px(3.))
+            .bg(bg_color)
             .text_color(color)
             .text_xs()
-            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .font_weight(gpui::FontWeight::BOLD)
             .child(format!("{}", self.status_code))
     }
 }

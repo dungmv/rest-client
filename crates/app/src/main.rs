@@ -547,6 +547,10 @@ impl AppView {
         ed_entity.update(cx, |state, cx| {
             state.start_sending(cancel_tx, cx);
         });
+        ws_entity.update(cx, |ws, cx| {
+            ws.running_request_id = Some(req_item.id.clone());
+            cx.notify();
+        });
         let initial_logs = pre_output.console_entries.clone();
         self.response_state.update(cx, |resp, cx| {
             resp.set_pre_request_logs(initial_logs, cx);
@@ -680,11 +684,13 @@ impl AppView {
                                 final_record.console_logs = combined_console_logs.clone();
 
                                 let loc_file = restclient_core::storage::models::LocFile::from_record(&final_record);
-                                this.workspace_state.update(cx, |ws, _cx| {
+                                this.workspace_state.update(cx, |ws, cx| {
+                                    ws.running_request_id = None;
                                     if let Some(r) = ws.requests.iter_mut().find(|r| r.id == req_id) {
                                         r.last_status_code = Some(status);
                                     }
                                     let _ = ws.store.save_response_cache(&req_id, &loc_file);
+                                    cx.notify();
                                 });
 
                                 this.response_state.update(cx, |resp, cx| {
@@ -702,11 +708,19 @@ impl AppView {
                                 });
                             }
                             HttpSendEvent::Cancelled => {
+                                this.workspace_state.update(cx, |ws, cx| {
+                                    ws.running_request_id = None;
+                                    cx.notify();
+                                });
                                 this.editor_state.update(cx, |ed, cx| {
                                     ed.stop_sending(cx);
                                 });
                             }
                             HttpSendEvent::Error(err_msg) => {
+                                this.workspace_state.update(cx, |ws, cx| {
+                                    ws.running_request_id = None;
+                                    cx.notify();
+                                });
                                 this.editor_state.update(cx, |ed, cx| {
                                     ed.stop_sending(cx);
                                 });

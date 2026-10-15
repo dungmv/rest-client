@@ -411,6 +411,7 @@ impl RenderOnce for SidebarTree {
                 )
                 .child(
                     div()
+                        .flex_shrink_0()
                         .flex()
                         .items_center()
                         .gap(px(4.))

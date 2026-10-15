@@ -555,10 +555,13 @@ impl WorkspaceState {
         }
     }
 
-    pub fn update_request(&mut self, req: HttpRequestItem, cx: &mut Context<Self>) {
+    pub fn update_request(&mut self, mut req: HttpRequestItem, cx: &mut Context<Self>) {
         let Some(idx) = self.requests.iter().position(|r| r.id == req.id) else {
             return;
         };
+        if req.last_status_code.is_none() {
+            req.last_status_code = self.requests[idx].last_status_code;
+        }
         if self.requests[idx] == req {
             return;
         }
@@ -637,7 +640,11 @@ impl WorkspaceState {
                             self.parse_errors.remove(&rel_path);
                             let ws_name = self.workspace_meta.name.clone();
                             if let Some(r) = self.requests.iter_mut().find(|r| r.id == rel_path) {
+                                let prev_status = r.last_status_code.or_else(|| {
+                                    self.store.load_response_cache(&r.id).ok().flatten().map(|l| l.response.status)
+                                });
                                 *r = req_file.to_item(&r.id, &ws_name, r.folder_id.clone());
+                                r.last_status_code = prev_status;
                             }
                             cx.notify();
                         }
@@ -673,7 +680,11 @@ impl WorkspaceState {
             self.parse_errors.remove(rel_path);
             let ws_name = self.workspace_meta.name.clone();
             if let Some(r) = self.requests.iter_mut().find(|r| r.id == rel_path) {
+                let prev_status = r.last_status_code.or_else(|| {
+                    self.store.load_response_cache(&r.id).ok().flatten().map(|l| l.response.status)
+                });
                 *r = req_file.to_item(&r.id, &ws_name, r.folder_id.clone());
+                r.last_status_code = prev_status;
             }
         }
         cx.notify();
