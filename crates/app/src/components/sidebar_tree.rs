@@ -255,6 +255,10 @@ impl RenderOnce for SidebarTree {
                             state.set_active_request(req_for_click.clone(), false, cx);
                         });
                     } else {
+                        let r_id = req_for_click.id.clone();
+                        ws_click.update(cx, |state, cx| {
+                            state.record_navigation(&r_id, cx);
+                        });
                         ed_s.update(cx, |state, cx| {
                             state.set_active_request(req_for_click.clone(), false, cx);
                         });

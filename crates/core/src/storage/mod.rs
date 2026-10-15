@@ -347,4 +347,34 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
+
+    #[test]
+    fn test_burst_state_changes_and_pins() {
+        let temp_dir = std::env::temp_dir().join(format!("test_burst_{}", uuid::Uuid::new_v4().simple()));
+        let store = FsWorkspaceStore::new(&temp_dir);
+        store.init_workspace("Burst Workspace").unwrap();
+
+        // Simulate rapid burst of 100 state changes
+        let mut state = store.load_state().unwrap();
+        for i in 0..100 {
+            state.active_request = Some(format!("req_{}.yaml", i));
+            state.sidebar.width = 250.0 + (i as f32);
+            state.recent.push(format!("req_{}.yaml", i));
+        }
+        // Save the resulting state (as done after debounce)
+        store.save_state(&state).unwrap();
+
+        let loaded = store.load_state().unwrap();
+        assert_eq!(loaded.active_request.as_deref(), Some("req_99.yaml"));
+        assert_eq!(loaded.sidebar.width, 349.0);
+        assert_eq!(loaded.recent.len(), 100);
+
+        // Test pins save and load
+        let pins = vec!["auth/login.yaml".to_string(), "users/get.yaml".to_string()];
+        store.save_pins(&pins).unwrap();
+        let loaded_pins = store.load_pins().unwrap();
+        assert_eq!(loaded_pins, pins);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }

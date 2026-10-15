@@ -34,7 +34,15 @@ impl RenderOnce for CommandPalette {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
         let ws = self.workspace_state.read(cx);
-        let requests = ws.requests.clone();
+        let mut requests = ws.requests.clone();
+        let recent = ws.local_state.recent.clone();
+        requests.sort_by_key(|r| {
+            if let Some(pos) = recent.iter().position(|p| p == &r.id) {
+                pos
+            } else {
+                recent.len() + 100
+            }
+        });
         let envs = ws.environments.clone();
 
         let ws_clone = self.workspace_state.clone();
@@ -235,11 +243,13 @@ impl RenderOnce for CommandPalette {
                                             .items_center()
                                             .gap(px(8.))
                                             .on_click(move |_, _, cx| {
+                                                let r_id = r.id.clone();
+                                                ws_s.update(cx, |state, cx| {
+                                                    state.record_navigation(&r_id, cx);
+                                                    state.toggle_command_palette(cx);
+                                                });
                                                 ed_s.update(cx, |state, cx| {
                                                     state.set_active_request(r.clone(), true, cx);
-                                                });
-                                                ws_s.update(cx, |state, cx| {
-                                                    state.toggle_command_palette(cx);
                                                 });
                                             })
                                             .child(MethodBadge::new(req.method))

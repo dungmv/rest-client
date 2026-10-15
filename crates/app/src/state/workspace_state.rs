@@ -1,6 +1,6 @@
 use crate::platform::detect_git_branch;
 use crate::settings::AppSettings;
-use gpui::{AppContext as _, Context, Entity, Pixels, Window, px};
+use gpui::{AppContext as _, Context, Entity, Pixels, Task, Window, px};
 use gpui_component::input::InputState;
 use restclient_core::models::{
     Environment, Folder, HttpMethod, HttpRequestItem, Workspace,
@@ -52,6 +52,10 @@ pub struct WorkspaceState {
     pub unsaved_requests: HashSet<String>,
     pub running_request_id: Option<String>,
     pub recent_workspaces: Vec<String>,
+    pub nav_history: Vec<String>,
+    pub nav_index: usize,
+    pub state_save_task: Option<Task<()>>,
+    pub request_save_tasks: HashMap<String, Task<()>>,
 }
 
 impl WorkspaceState {
@@ -114,6 +118,10 @@ impl WorkspaceState {
             unsaved_requests: HashSet::new(),
             running_request_id: None,
             recent_workspaces: settings.recent_workspaces,
+            nav_history: Vec::new(),
+            nav_index: 0,
+            state_save_task: None,
+            request_save_tasks: HashMap::new(),
         };
 
         state.reload_all();
@@ -167,6 +175,13 @@ impl WorkspaceState {
 
         self.reload_tree();
         self.reload_environments();
+
+        if let Some(act) = &self.local_state.active_request {
+            if self.nav_history.is_empty() {
+                self.nav_history = vec![act.clone()];
+                self.nav_index = 0;
+            }
+        }
     }
 
     pub fn reload_tree(&mut self) {
@@ -283,10 +298,63 @@ impl WorkspaceState {
         }
     }
 
+    pub fn schedule_state_save(&mut self, cx: &mut Context<Self>) {
+        self.state_save_task = Some(cx.spawn(async move |this, cx| {
+            tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |ws, _| {
+                    let _ = ws.store.save_state(&ws.local_state);
+                });
+            }
+        }));
+    }
+
+    pub fn record_navigation(&mut self, req_id: &str, cx: &mut Context<Self>) {
+        if self.nav_history.get(self.nav_index).map(|s| s.as_str()) != Some(req_id) {
+            if self.nav_index + 1 < self.nav_history.len() {
+                self.nav_history.truncate(self.nav_index + 1);
+            }
+            self.nav_history.push(req_id.to_string());
+            self.nav_index = self.nav_history.len().saturating_sub(1);
+        }
+
+        self.local_state.active_request = Some(req_id.to_string());
+        self.local_state.recent.retain(|p| p != req_id);
+        self.local_state.recent.insert(0, req_id.to_string());
+        if self.local_state.recent.len() > 50 {
+            self.local_state.recent.truncate(50);
+        }
+        self.schedule_state_save(cx);
+    }
+
+    pub fn navigate_back(&mut self, cx: &mut Context<Self>) -> Option<HttpRequestItem> {
+        if self.nav_index > 0 {
+            self.nav_index -= 1;
+            if let Some(req_id) = self.nav_history.get(self.nav_index).cloned() {
+                self.local_state.active_request = Some(req_id.clone());
+                self.schedule_state_save(cx);
+                return self.requests.iter().find(|r| r.id == req_id).cloned();
+            }
+        }
+        None
+    }
+
+    pub fn navigate_forward(&mut self, cx: &mut Context<Self>) -> Option<HttpRequestItem> {
+        if self.nav_index + 1 < self.nav_history.len() {
+            self.nav_index += 1;
+            if let Some(req_id) = self.nav_history.get(self.nav_index).cloned() {
+                self.local_state.active_request = Some(req_id.clone());
+                self.schedule_state_save(cx);
+                return self.requests.iter().find(|r| r.id == req_id).cloned();
+            }
+        }
+        None
+    }
+
     pub fn set_active_environment(&mut self, env_id: Option<String>, cx: &mut Context<Self>) {
         self.active_environment_id = env_id.clone();
         self.local_state.active_environment = env_id;
-        let _ = self.store.save_state(&self.local_state);
+        self.schedule_state_save(cx);
         cx.notify();
     }
 
@@ -447,19 +515,37 @@ impl WorkspaceState {
     }
 
     pub fn update_request(&mut self, req: HttpRequestItem, cx: &mut Context<Self>) {
-        if let Some(idx) = self.requests.iter().position(|r| r.id == req.id) {
-            let mut req_file = self.store.read_request(&req.id).unwrap_or_else(|_| RequestFile {
-                name: req.name.clone(),
-                method: req.method,
-                url: req.url.clone(),
-                ..Default::default()
-            });
-            req_file.update_from_item(&req);
-            let _ = self.store.write_request(&req.id, &req_file);
-            self.unsaved_requests.remove(&req.id);
-            self.requests[idx] = req;
-            cx.notify();
+        let Some(idx) = self.requests.iter().position(|r| r.id == req.id) else {
+            return;
+        };
+        if self.requests[idx] == req {
+            return;
         }
+        self.requests[idx] = req.clone();
+        self.unsaved_requests.insert(req.id.clone());
+        cx.notify();
+
+        let req_id = req.id.clone();
+        let task = cx.spawn(async move |this, cx| {
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |ws, cx| {
+                    if let Some(r) = ws.requests.iter().find(|r| r.id == req_id) {
+                        let mut req_file = ws.store.read_request(&req_id).unwrap_or_else(|_| RequestFile {
+                            name: r.name.clone(),
+                            method: r.method,
+                            url: r.url.clone(),
+                            ..Default::default()
+                        });
+                        req_file.update_from_item(r);
+                        let _ = ws.store.write_request(&req_id, &req_file);
+                        ws.unsaved_requests.remove(&req_id);
+                        cx.notify();
+                    }
+                });
+            }
+        });
+        self.request_save_tasks.insert(req.id, task);
     }
 
     pub fn mark_dirty(&mut self, req_id: String, cx: &mut Context<Self>) {
@@ -500,7 +586,7 @@ impl WorkspaceState {
             .map(|f| f.id.clone())
             .filter(|id| !self.collapsed_folders.contains(id))
             .collect();
-        let _ = self.store.save_state(&self.local_state);
+        self.schedule_state_save(cx);
         cx.notify();
     }
 
@@ -737,7 +823,7 @@ impl WorkspaceState {
     pub fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
         self.sidebar_collapsed = !self.sidebar_collapsed;
         self.local_state.sidebar.collapsed = self.sidebar_collapsed;
-        let _ = self.store.save_state(&self.local_state);
+        self.schedule_state_save(cx);
         cx.notify();
     }
 
@@ -746,7 +832,7 @@ impl WorkspaceState {
         if self.sidebar_width != clamped {
             self.sidebar_width = clamped;
             self.local_state.sidebar.width = clamped.as_f32();
-            let _ = self.store.save_state(&self.local_state);
+            self.schedule_state_save(cx);
             cx.notify();
         }
     }
@@ -758,7 +844,7 @@ impl WorkspaceState {
         } else {
             "horizontal".to_string()
         };
-        let _ = self.store.save_state(&self.local_state);
+        self.schedule_state_save(cx);
         cx.notify();
     }
 
@@ -962,6 +1048,10 @@ mod tests {
             unsaved_requests: HashSet::new(),
             running_request_id: None,
             recent_workspaces: Vec::new(),
+            nav_history: Vec::new(),
+            nav_index: 0,
+            state_save_task: None,
+            request_save_tasks: HashMap::new(),
         };
 
         let effective = ws_state.effective_environment();

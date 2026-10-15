@@ -27,7 +27,7 @@ use state::*;
 use std::sync::Arc;
 use theme::theme;
 
-actions!(restclient, [SendRequest, ToggleCommandPalette, ToggleSidebar, ToggleSettings]);
+actions!(restclient, [SendRequest, ToggleCommandPalette, ToggleSidebar, ToggleSettings, NavigateBack, NavigateForward]);
 
 pub enum HttpSendEvent {
     Progress(String),
@@ -826,6 +826,28 @@ impl Render for AppView {
                     });
                 }
             })
+            .on_action({
+                let ws_c = ws_entity.clone();
+                let ed_c = ed_entity.clone();
+                move |_: &NavigateBack, _, cx| {
+                    if let Some(req) = ws_c.update(cx, |ws, cx| ws.navigate_back(cx)) {
+                        ed_c.update(cx, |ed, cx| {
+                            ed.set_active_request(req, false, cx);
+                        });
+                    }
+                }
+            })
+            .on_action({
+                let ws_c = ws_entity.clone();
+                let ed_c = ed_entity.clone();
+                move |_: &NavigateForward, _, cx| {
+                    if let Some(req) = ws_c.update(cx, |ws, cx| ws.navigate_forward(cx)) {
+                        ed_c.update(cx, |ed, cx| {
+                            ed.set_active_request(req, false, cx);
+                        });
+                    }
+                }
+            })
             // Custom Title Bar
             .child(AppTitleBar::new(ws_entity.clone(), ed_entity.clone()))
             // Main workspace content area
@@ -1501,6 +1523,10 @@ fn main() {
             KeyBinding::new("cmd-b", ToggleSidebar, None),
             KeyBinding::new("ctrl-,", ToggleSettings, None),
             KeyBinding::new("cmd-,", ToggleSettings, None),
+            KeyBinding::new("ctrl-[", NavigateBack, None),
+            KeyBinding::new("cmd-[", NavigateBack, None),
+            KeyBinding::new("ctrl-]", NavigateForward, None),
+            KeyBinding::new("cmd-]", NavigateForward, None),
         ]);
 
         cx.on_window_closed(|cx, _window_id| {
