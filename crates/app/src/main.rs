@@ -2,6 +2,7 @@
 
 mod components;
 mod platform;
+pub mod settings;
 mod state;
 mod theme;
 
@@ -358,6 +359,16 @@ impl AppView {
         let last_synced_request_id = initial_req.as_ref().map(|r| r.id.clone());
         let last_synced_body_version = editor_state.read(cx).body_version;
 
+        if workspace_state.read(cx).git_tracked_warning {
+            toast_state.update(cx, |t, cx| {
+                t.push_error(
+                    "Security Warning",
+                    "A git repository was detected with .local/ or *.loc tracked in git. Secrets or response tokens may leak!",
+                    cx,
+                );
+            });
+        }
+
         Self {
             workspace_state,
             editor_state,
@@ -596,10 +607,8 @@ impl AppView {
                                                     act_env.variables.retain(|v| v.key != *k);
                                                 }
                                             }
-                                            let ws_id = ws.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
                                             let envs = ws.environments.clone();
-                                            let _ = ws.fs_storage.save_environments(ws_id, &envs);
-                                            cx.notify();
+                                            ws.save_environments(envs, cx);
                                         } else {
                                             for (k, v_opt) in &all_mutations {
                                                 if let Some(val) = v_opt {
@@ -617,10 +626,8 @@ impl AppView {
                                                     ws.global_environment.variables.retain(|v| v.key != *k);
                                                 }
                                             }
-                                            let ws_id = ws.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
                                             let global = ws.global_environment.clone();
-                                            let _ = ws.fs_storage.save_global_environment(ws_id, &global);
-                                            cx.notify();
+                                            ws.save_global_environment(global, cx);
                                         }
                                     });
                                 }
@@ -644,7 +651,6 @@ impl AppView {
                                 this.workspace_state.update(cx, |ws, _cx| {
                                     if let Some(r) = ws.requests.iter_mut().find(|r| r.id == req_id) {
                                         r.last_status_code = Some(status);
-                                        let _ = ws.fs_storage.save_request(r);
                                     }
                                 });
 

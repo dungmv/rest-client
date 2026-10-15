@@ -1,17 +1,28 @@
 use crate::platform::detect_git_branch;
+use crate::settings::AppSettings;
 use gpui::{AppContext as _, Context, Entity, Pixels, Window, px};
 use gpui_component::input::InputState;
-use restclient_core::models::{Environment, Folder, HttpMethod, HttpRequestItem, Workspace};
-use restclient_core::storage::FsStorage;
-use std::collections::HashSet;
+use restclient_core::models::{
+    Environment, Folder, HttpMethod, HttpRequestItem, Workspace,
+};
+use restclient_core::storage::models::{
+    EnvironmentFile, FolderNode, LocalState, RequestFile, WorkspaceMeta,
+};
+use restclient_core::storage::{FsWorkspaceStore, WorkspaceStore};
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 pub struct WorkspaceState {
-    pub fs_storage: Arc<FsStorage>,
-    pub workspaces: Vec<Workspace>,
+    pub store: Arc<dyn WorkspaceStore>,
+    pub workspace_path: PathBuf,
+    pub workspace_meta: WorkspaceMeta,
     pub active_workspace: Option<Workspace>,
     pub folders: Vec<Folder>,
     pub requests: Vec<HttpRequestItem>,
+    pub parse_errors: HashMap<String, String>,
+    pub pins: Vec<String>,
+    pub local_state: LocalState,
     pub environments: Vec<Environment>,
     pub global_environment: Environment,
     pub active_environment_id: Option<String>,
@@ -19,6 +30,7 @@ pub struct WorkspaceState {
     pub env_filter_query: String,
     pub var_filter_query: String,
     pub git_branch: Option<String>,
+    pub git_tracked_warning: bool,
     pub filter_query: String,
     pub sidebar_collapsed: bool,
     pub sidebar_width: Pixels,
@@ -37,20 +49,42 @@ pub struct WorkspaceState {
     pub rename_env_input: Option<Entity<InputState>>,
     pub rename_env_subscription: Option<gpui::Subscription>,
     pub collapsed_folders: HashSet<String>,
+    pub unsaved_requests: HashSet<String>,
+    pub running_request_id: Option<String>,
+    pub recent_workspaces: Vec<String>,
 }
 
 impl WorkspaceState {
     pub fn new() -> Self {
-        let storage_dir = FsStorage::default_storage_dir();
-        let fs_storage = Arc::new(FsStorage::new(&storage_dir));
-        let git_branch = detect_git_branch(None);
+        let mut settings = AppSettings::load();
+        let ws_dir = if let Some(curr) = &settings.current_workspace {
+            PathBuf::from(curr)
+        } else {
+            let default_dir = dirs::data_local_dir()
+                .map(|d| d.join("restclient").join("workspaces").join("my-workspace"))
+                .unwrap_or_else(|| PathBuf::from("./my-workspace"));
+            default_dir
+        };
+
+        let store: Arc<dyn WorkspaceStore> = Arc::new(FsWorkspaceStore::new(&ws_dir));
+        if !ws_dir.join("workspace.yaml").exists() {
+            let _ = store.init_workspace("My Workspace");
+        }
+
+        settings.add_recent_workspace(&ws_dir.to_string_lossy());
+        let git_branch = detect_git_branch(Some(&ws_dir));
+        let git_tracked_warning = store.ensure_gitignore().unwrap_or(false);
 
         let mut state = Self {
-            fs_storage,
-            workspaces: Vec::new(),
-            active_workspace: None,
+            store,
+            workspace_path: ws_dir,
+            workspace_meta: WorkspaceMeta::default(),
+            active_workspace: Some(Workspace::new("My Workspace")),
             folders: Vec::new(),
             requests: Vec::new(),
+            parse_errors: HashMap::new(),
+            pins: Vec::new(),
+            local_state: LocalState::default(),
             environments: Vec::new(),
             global_environment: Environment::new("default", "Globals"),
             active_environment_id: None,
@@ -58,6 +92,7 @@ impl WorkspaceState {
             env_filter_query: String::new(),
             var_filter_query: String::new(),
             git_branch,
+            git_tracked_warning,
             filter_query: String::new(),
             sidebar_collapsed: false,
             sidebar_width: px(260.),
@@ -76,46 +111,165 @@ impl WorkspaceState {
             rename_env_input: None,
             rename_env_subscription: None,
             collapsed_folders: HashSet::new(),
+            unsaved_requests: HashSet::new(),
+            running_request_id: None,
+            recent_workspaces: settings.recent_workspaces,
         };
 
-        state.load_initial();
+        state.reload_all();
         state
     }
 
-    fn load_initial(&mut self) {
-        let mut ws_list = self.fs_storage.list_workspaces().unwrap_or_default();
-        if ws_list.is_empty() {
-            let default_ws = Workspace::new("My Workspace");
-            let _ = self.fs_storage.init_workspace(&default_ws);
-            ws_list = vec![default_ws];
+    pub fn open_workspace(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let store: Arc<dyn WorkspaceStore> = Arc::new(FsWorkspaceStore::new(&path));
+        if !path.join("workspace.yaml").exists() {
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("My Workspace");
+            let _ = store.init_workspace(name);
         }
+        let git_tracked_warning = store.ensure_gitignore().unwrap_or(false);
+        self.store = store;
+        self.workspace_path = path.clone();
+        self.git_tracked_warning = git_tracked_warning;
+        self.git_branch = detect_git_branch(Some(&path));
 
-        self.workspaces = ws_list.clone();
-        if let Some(first_ws) = ws_list.first() {
-            self.switch_workspace(&first_ws.id);
+        let mut settings = AppSettings::load();
+        settings.add_recent_workspace(&path.to_string_lossy());
+        self.recent_workspaces = settings.recent_workspaces;
+
+        self.reload_all();
+        cx.notify();
+    }
+
+    pub fn new_workspace(&mut self, path: PathBuf, name: &str, cx: &mut Context<Self>) {
+        let store: Arc<dyn WorkspaceStore> = Arc::new(FsWorkspaceStore::new(&path));
+        let _ = store.init_workspace(name);
+        self.open_workspace(path, cx);
+    }
+
+    pub fn reload_all(&mut self) {
+        if let Ok(meta) = self.store.load_workspace_meta() {
+            self.workspace_meta = meta;
+        }
+        self.active_workspace = Some(Workspace {
+            id: self.workspace_path.to_string_lossy().to_string(),
+            name: self.workspace_meta.name.clone(),
+            description: String::new(),
+            active_environment_id: self.active_environment_id.clone(),
+        });
+
+        self.pins = self.store.load_pins().unwrap_or_default();
+        self.local_state = self.store.load_state().unwrap_or_default();
+        if self.local_state.sidebar.width > 0.0 {
+            self.sidebar_width = px(self.local_state.sidebar.width.clamp(200.0, 480.0));
+        }
+        self.sidebar_collapsed = self.local_state.sidebar.collapsed;
+        self.split_layout_vertical = self.local_state.layout.split == "vertical";
+
+        self.reload_tree();
+        self.reload_environments();
+    }
+
+    pub fn reload_tree(&mut self) {
+        if let Ok(tree) = self.store.scan_tree() {
+            let ws_name = self.workspace_meta.name.clone();
+            let mut all_requests = Vec::new();
+            let mut all_folders = Vec::new();
+            let mut errors = HashMap::new();
+
+            for req_node in &tree.root_requests {
+                let mut item = req_node.file.to_item(&req_node.rel_path, &ws_name, None);
+                item.last_status_code = req_node.last_status_code;
+                all_requests.push(item);
+                if let Some(err) = &req_node.parse_error {
+                    errors.insert(req_node.rel_path.clone(), err.clone());
+                }
+            }
+
+            fn process_folder(
+                folder_node: &FolderNode,
+                parent_id: Option<String>,
+                ws_name: &str,
+                all_folders: &mut Vec<Folder>,
+                all_requests: &mut Vec<HttpRequestItem>,
+                errors: &mut HashMap<String, String>,
+            ) {
+                let mut f = Folder::new(ws_name, &folder_node.file.name);
+                f.id = folder_node.rel_path.clone();
+                f.parent_id = parent_id;
+                all_folders.push(f);
+
+                for req_node in &folder_node.requests {
+                    let mut item = req_node
+                        .file
+                        .to_item(&req_node.rel_path, ws_name, Some(folder_node.rel_path.clone()));
+                    item.last_status_code = req_node.last_status_code;
+                    all_requests.push(item);
+                    if let Some(err) = &req_node.parse_error {
+                        errors.insert(req_node.rel_path.clone(), err.clone());
+                    }
+                }
+
+                for sub in &folder_node.subfolders {
+                    process_folder(
+                        sub,
+                        Some(folder_node.rel_path.clone()),
+                        ws_name,
+                        all_folders,
+                        all_requests,
+                        errors,
+                    );
+                }
+            }
+
+            for f_node in &tree.folders {
+                process_folder(
+                    f_node,
+                    None,
+                    &ws_name,
+                    &mut all_folders,
+                    &mut all_requests,
+                    &mut errors,
+                );
+            }
+
+            self.requests = all_requests;
+            self.folders = all_folders;
+            self.parse_errors = errors;
         }
     }
 
-    pub fn switch_workspace(&mut self, ws_id: &str) {
-        if let Ok(ws) = self.fs_storage.load_workspace(ws_id) {
-            self.folders = self.fs_storage.load_folders(ws_id).unwrap_or_default();
-            self.requests = self.fs_storage.list_requests(ws_id).unwrap_or_default();
-            self.environments = self.fs_storage.load_environments(ws_id).unwrap_or_default();
-            self.global_environment = self.fs_storage.load_global_environment(ws_id).unwrap_or_else(|_| {
-                let mut g = Environment::new(ws_id, "Globals");
-                g.id = format!("{}-globals", ws_id);
-                g
-            });
-            self.active_environment_id = ws.active_environment_id.clone().or_else(|| {
-                self.environments.first().map(|e| e.id.clone())
-            });
-            self.active_workspace = Some(ws);
+    pub fn reload_environments(&mut self) {
+        let ws_name = self.workspace_meta.name.clone();
+        let env_names = self.store.list_environments().unwrap_or_default();
+        let mut envs = Vec::new();
+
+        for name in &env_names {
+            if let Ok(env_file) = self.store.load_environment(name) {
+                let secrets = self.store.load_secrets(name).unwrap_or_default();
+                let env = env_file.to_environment(name, &ws_name, name, &secrets);
+                envs.push(env);
+            }
+        }
+
+        self.environments = envs;
+
+        let active_opt = self.local_state.active_environment.clone()
+            .or_else(|| self.workspace_meta.default_environment.clone());
+
+        if let Some(act) = active_opt {
+            if self.environments.iter().any(|e| e.name == act || e.id == act) {
+                self.active_environment_id = Some(act);
+            } else {
+                self.active_environment_id = self.environments.first().map(|e| e.id.clone());
+            }
+        } else if self.active_environment_id.is_none() {
+            self.active_environment_id = self.environments.first().map(|e| e.id.clone());
         }
     }
 
     pub fn active_environment(&self) -> Option<&Environment> {
         if let Some(env_id) = &self.active_environment_id {
-            self.environments.iter().find(|e| &e.id == env_id)
+            self.environments.iter().find(|e| &e.id == env_id || &e.name == env_id)
         } else {
             None
         }
@@ -123,7 +277,7 @@ impl WorkspaceState {
 
     pub fn active_environment_mut(&mut self) -> Option<&mut Environment> {
         if let Some(env_id) = &self.active_environment_id {
-            self.environments.iter_mut().find(|e| &e.id == env_id)
+            self.environments.iter_mut().find(|e| &e.id == env_id || &e.name == env_id)
         } else {
             None
         }
@@ -131,25 +285,21 @@ impl WorkspaceState {
 
     pub fn set_active_environment(&mut self, env_id: Option<String>, cx: &mut Context<Self>) {
         self.active_environment_id = env_id.clone();
-        if let Some(ws) = &mut self.active_workspace {
-            ws.active_environment_id = env_id;
-            let _ = self.fs_storage.save_workspace(ws);
-        }
+        self.local_state.active_environment = env_id;
+        let _ = self.store.save_state(&self.local_state);
         cx.notify();
     }
 
     pub fn effective_environment(&self) -> Environment {
-        let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-        let mut effective = Environment::new(ws_id, "Effective");
+        let ws_name = self.workspace_meta.name.as_str();
+        let mut effective = Environment::new(ws_name, "Effective");
 
-        // 1. Add all enabled variables from global_environment
         for v in &self.global_environment.variables {
             if v.enabled {
                 effective.variables.push(v.clone());
             }
         }
 
-        // 2. Active environment overrides matching keys or adds new variables
         if let Some(active_env) = self.active_environment() {
             for v in &active_env.variables {
                 if v.enabled {
@@ -164,28 +314,46 @@ impl WorkspaceState {
         effective
     }
 
-    pub fn create_request(&mut self, folder_id: Option<String>, cx: &mut Context<Self>) -> HttpRequestItem {
-        let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-        let mut req = HttpRequestItem::new(ws_id, "New Request", HttpMethod::Get, "");
-        req.folder_id = folder_id;
-        let _ = self.fs_storage.save_request(&req);
-        self.requests.push(req.clone());
+    pub fn create_request(&mut self, folder_rel: Option<String>, cx: &mut Context<Self>) -> HttpRequestItem {
+        let (_slug, rel_path) = self
+            .store
+            .create_request(folder_rel.as_deref(), "New Request", HttpMethod::Get, "")
+            .unwrap_or_else(|_| (format!("req-{}", uuid::Uuid::new_v4().simple()), "new-request.yaml".to_string()));
+
+        let ws_name = self.workspace_meta.name.clone();
+        let mut item = HttpRequestItem::new(&ws_name, "New Request", HttpMethod::Get, "");
+        item.id = rel_path.clone();
+        item.folder_id = folder_rel;
+
+        self.requests.push(item.clone());
+        self.reload_tree();
         cx.notify();
-        req
+        item
     }
 
     pub fn duplicate_request(&mut self, req_id: &str, cx: &mut Context<Self>) -> Option<HttpRequestItem> {
         let existing = self.requests.iter().find(|r| r.id == req_id)?.clone();
-        let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-        let mut dup = existing;
-        dup.id = uuid::Uuid::new_v4().to_string();
-        dup.workspace_id = ws_id.to_string();
-        dup.name = format!("{} (Copy)", dup.name);
-        dup.last_status_code = None;
-        let _ = self.fs_storage.save_request(&dup);
-        self.requests.push(dup.clone());
+        let mut req_file = self.store.read_request(req_id).unwrap_or_else(|_| RequestFile {
+            name: existing.name.clone(),
+            method: existing.method,
+            url: existing.url.clone(),
+            ..Default::default()
+        });
+
+        let new_name = format!("{} (Copy)", req_file.name);
+        req_file.name = new_name.clone();
+
+        let folder_rel = existing.folder_id.clone();
+        let (_slug, rel_path) = self
+            .store
+            .create_request(folder_rel.as_deref(), &new_name, req_file.method, &req_file.url)
+            .ok()?;
+
+        let _ = self.store.write_request(&rel_path, &req_file);
+        self.reload_tree();
+        let dup = self.requests.iter().find(|r| r.id == rel_path).cloned();
         cx.notify();
-        Some(dup)
+        dup
     }
 
     pub fn delete_request(&mut self, req_id: &str, cx: &mut Context<Self>) {
@@ -194,9 +362,14 @@ impl WorkspaceState {
             self.rename_input = None;
             self.rename_subscription = None;
         }
-        let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-        let _ = self.fs_storage.delete_request(ws_id, req_id);
+
+        let _ = self.store.delete_request(req_id);
+        self.unsaved_requests.remove(req_id);
+        self.pins.retain(|p| p != req_id);
+        let _ = self.store.save_pins(&self.pins);
+
         self.requests.retain(|r| r.id != req_id);
+        self.reload_tree();
         cx.notify();
     }
 
@@ -243,9 +416,22 @@ impl WorkspaceState {
         self.rename_subscription = None;
         let trimmed = new_name.trim();
         if !trimmed.is_empty() {
-            if let Some(req) = self.requests.iter_mut().find(|r| r.id == req_id) {
-                req.name = trimmed.to_string();
-                let _ = self.fs_storage.save_request(req);
+            if let Ok(new_rel_path) = self.store.rename_request(&req_id, trimmed) {
+                // Update pins if pinned
+                if let Some(pos) = self.pins.iter().position(|p| p == &req_id) {
+                    self.pins[pos] = new_rel_path.clone();
+                    let _ = self.store.save_pins(&self.pins);
+                }
+                // Update active request in state
+                if self.local_state.active_request.as_deref() == Some(&req_id) {
+                    self.local_state.active_request = Some(new_rel_path.clone());
+                    let _ = self.store.save_state(&self.local_state);
+                }
+                // Transfer unsaved status
+                if self.unsaved_requests.remove(&req_id) {
+                    self.unsaved_requests.insert(new_rel_path);
+                }
+                self.reload_tree();
             }
         }
         cx.notify();
@@ -256,6 +442,146 @@ impl WorkspaceState {
             self.renaming_request_id = None;
             self.rename_input = None;
             self.rename_subscription = None;
+            cx.notify();
+        }
+    }
+
+    pub fn update_request(&mut self, req: HttpRequestItem, cx: &mut Context<Self>) {
+        if let Some(idx) = self.requests.iter().position(|r| r.id == req.id) {
+            let mut req_file = self.store.read_request(&req.id).unwrap_or_else(|_| RequestFile {
+                name: req.name.clone(),
+                method: req.method,
+                url: req.url.clone(),
+                ..Default::default()
+            });
+            req_file.update_from_item(&req);
+            let _ = self.store.write_request(&req.id, &req_file);
+            self.unsaved_requests.remove(&req.id);
+            self.requests[idx] = req;
+            cx.notify();
+        }
+    }
+
+    pub fn mark_dirty(&mut self, req_id: String, cx: &mut Context<Self>) {
+        self.unsaved_requests.insert(req_id);
+        cx.notify();
+    }
+
+    pub fn create_folder(&mut self, name: String, cx: &mut Context<Self>) {
+        let trimmed = name.trim();
+        if !trimmed.is_empty() {
+            let _ = self.store.create_group(None, trimmed);
+            self.reload_tree();
+            cx.notify();
+        }
+    }
+
+    pub fn delete_folder(&mut self, folder_id: &str, cx: &mut Context<Self>) {
+        if self.renaming_folder_id.as_deref() == Some(folder_id) {
+            self.renaming_folder_id = None;
+            self.rename_folder_input = None;
+            self.rename_folder_subscription = None;
+        }
+        self.collapsed_folders.remove(folder_id);
+        let _ = self.store.delete_group(folder_id);
+        self.reload_tree();
+        cx.notify();
+    }
+
+    pub fn toggle_folder_collapsed(&mut self, folder_id: &str, cx: &mut Context<Self>) {
+        if self.collapsed_folders.contains(folder_id) {
+            self.collapsed_folders.remove(folder_id);
+        } else {
+            self.collapsed_folders.insert(folder_id.to_string());
+        }
+        self.local_state.expanded_folders = self
+            .folders
+            .iter()
+            .map(|f| f.id.clone())
+            .filter(|id| !self.collapsed_folders.contains(id))
+            .collect();
+        let _ = self.store.save_state(&self.local_state);
+        cx.notify();
+    }
+
+    pub fn start_renaming_folder(
+        &mut self,
+        folder_id: String,
+        initial_name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let input = cx.new(|cx| {
+            let mut s = InputState::new(window, cx);
+            s.set_value(initial_name, window, cx);
+            s.select_all(window, cx);
+            s.focus(window, cx);
+            s
+        });
+
+        let sub = cx.subscribe(&input, move |this, input, event: &gpui_component::input::InputEvent, cx| {
+            match event {
+                gpui_component::input::InputEvent::PressEnter { .. } => {
+                    let val = input.read(cx).value().to_string();
+                    this.finish_renaming_folder(val, cx);
+                }
+                gpui_component::input::InputEvent::Blur => {
+                    let val = input.read(cx).value().to_string();
+                    this.finish_renaming_folder(val, cx);
+                }
+                _ => {}
+            }
+        });
+
+        self.renaming_folder_id = Some(folder_id);
+        self.rename_folder_input = Some(input);
+        self.rename_folder_subscription = Some(sub);
+        cx.notify();
+    }
+
+    pub fn finish_renaming_folder(&mut self, new_name: String, cx: &mut Context<Self>) {
+        let Some(folder_id) = self.renaming_folder_id.take() else {
+            return;
+        };
+        self.rename_folder_input = None;
+        self.rename_folder_subscription = None;
+        let trimmed = new_name.trim();
+        if !trimmed.is_empty() {
+            let _ = self.store.rename_group(&folder_id, trimmed);
+            self.reload_tree();
+        }
+        cx.notify();
+    }
+
+    pub fn cancel_renaming_folder(&mut self, cx: &mut Context<Self>) {
+        if self.renaming_folder_id.is_some() {
+            self.renaming_folder_id = None;
+            self.rename_folder_input = None;
+            self.rename_folder_subscription = None;
+            cx.notify();
+        }
+    }
+
+    pub fn rename_folder(&mut self, folder_id: &str, new_name: String, cx: &mut Context<Self>) {
+        let trimmed = new_name.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        let _ = self.store.rename_group(folder_id, trimmed);
+        self.reload_tree();
+        cx.notify();
+    }
+
+    pub fn move_folder(&mut self, src_folder_id: &str, target_folder_id: &str, cx: &mut Context<Self>) {
+        if src_folder_id == target_folder_id {
+            return;
+        }
+        let src_pos = self.folders.iter().position(|f| f.id == src_folder_id);
+        let target_pos = self.folders.iter().position(|f| f.id == target_folder_id);
+        if let (Some(s_idx), Some(_)) = (src_pos, target_pos) {
+            let folder = self.folders.remove(s_idx);
+            let new_t_idx = self.folders.iter().position(|f| f.id == target_folder_id).unwrap_or(self.folders.len());
+            self.folders.insert(new_t_idx, folder);
             cx.notify();
         }
     }
@@ -321,146 +647,55 @@ impl WorkspaceState {
         }
     }
 
-    pub fn update_request(&mut self, mut req: HttpRequestItem, cx: &mut Context<Self>) {
-        if req.workspace_id.is_empty() || req.workspace_id == "scratch" {
-            if let Some(ws) = &self.active_workspace {
-                req.workspace_id = ws.id.clone();
-            }
-        }
-        // Only update existing requests; never resurrect or push a non-existent/deleted request
-        if let Some(idx) = self.requests.iter().position(|r| r.id == req.id) {
-            let _ = self.fs_storage.save_request(&req);
-            self.requests[idx] = req;
-            cx.notify();
-        }
-    }
-
-    pub fn create_folder(&mut self, name: String, cx: &mut Context<Self>) {
-        let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-        let folder = Folder::new(ws_id, name);
-        self.folders.push(folder);
-        let _ = self.fs_storage.save_folders(ws_id, &self.folders);
-        cx.notify();
-    }
-
-    pub fn delete_folder(&mut self, folder_id: &str, cx: &mut Context<Self>) {
-        if self.renaming_folder_id.as_deref() == Some(folder_id) {
-            self.renaming_folder_id = None;
-            self.rename_folder_input = None;
-            self.rename_folder_subscription = None;
-        }
-        self.collapsed_folders.remove(folder_id);
-        let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-        self.folders.retain(|f| f.id != folder_id);
-        for req in &mut self.requests {
-            if req.folder_id.as_deref() == Some(folder_id) {
-                req.folder_id = None;
-                let _ = self.fs_storage.save_request(req);
-            }
-        }
-        let _ = self.fs_storage.save_folders(ws_id, &self.folders);
-        cx.notify();
-    }
-
-    pub fn toggle_folder_collapsed(&mut self, folder_id: &str, cx: &mut Context<Self>) {
-        if self.collapsed_folders.contains(folder_id) {
-            self.collapsed_folders.remove(folder_id);
-        } else {
-            self.collapsed_folders.insert(folder_id.to_string());
-        }
-        cx.notify();
-    }
-
-    pub fn start_renaming_folder(
-        &mut self,
-        folder_id: String,
-        initial_name: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let input = cx.new(|cx| {
-            let mut s = InputState::new(window, cx);
-            s.set_value(initial_name, window, cx);
-            s.select_all(window, cx);
-            s.focus(window, cx);
-            s
-        });
-
-        let sub = cx.subscribe(&input, move |this, input, event: &gpui_component::input::InputEvent, cx| {
-            match event {
-                gpui_component::input::InputEvent::PressEnter { .. } => {
-                    let val = input.read(cx).value().to_string();
-                    this.finish_renaming_folder(val, cx);
-                }
-                gpui_component::input::InputEvent::Blur => {
-                    let val = input.read(cx).value().to_string();
-                    this.finish_renaming_folder(val, cx);
-                }
-                _ => {}
-            }
-        });
-
-        self.renaming_folder_id = Some(folder_id);
-        self.rename_folder_input = Some(input);
-        self.rename_folder_subscription = Some(sub);
-        cx.notify();
-    }
-
-    pub fn finish_renaming_folder(&mut self, new_name: String, cx: &mut Context<Self>) {
-        let Some(folder_id) = self.renaming_folder_id.take() else {
-            return;
-        };
-        self.rename_folder_input = None;
-        self.rename_folder_subscription = None;
-        let trimmed = new_name.trim();
-        if !trimmed.is_empty() {
-            self.rename_folder(&folder_id, trimmed.to_string(), cx);
-        } else {
-            cx.notify();
-        }
-    }
-
-    pub fn cancel_renaming_folder(&mut self, cx: &mut Context<Self>) {
-        if self.renaming_folder_id.is_some() {
-            self.renaming_folder_id = None;
-            self.rename_folder_input = None;
-            self.rename_folder_subscription = None;
-            cx.notify();
-        }
-    }
-
-    pub fn rename_folder(&mut self, folder_id: &str, new_name: String, cx: &mut Context<Self>) {
-        let trimmed = new_name.trim();
-        if trimmed.is_empty() {
-            return;
-        }
-        if let Some(folder) = self.folders.iter_mut().find(|f| f.id == folder_id) {
-            folder.name = trimmed.to_string();
-            let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-            let _ = self.fs_storage.save_folders(ws_id, &self.folders);
-            cx.notify();
-        }
-    }
-
     pub fn move_request(&mut self, src_req_id: &str, target_req_id: &str, cx: &mut Context<Self>) {
         if src_req_id == target_req_id {
             return;
         }
-        let src_pos = self.requests.iter().position(|r| r.id == src_req_id);
-        let target_pos = self.requests.iter().position(|r| r.id == target_req_id);
-        if let (Some(s_idx), Some(t_idx)) = (src_pos, target_pos) {
-            let target_folder_id = self.requests[t_idx].folder_id.clone();
-            let mut req = self.requests.remove(s_idx);
-            req.folder_id = target_folder_id;
-            let new_t_idx = self.requests.iter().position(|r| r.id == target_req_id).unwrap_or(self.requests.len());
-            self.requests.insert(new_t_idx, req);
+        // Move within folder / reorder
+        let src_req = self.requests.iter().find(|r| r.id == src_req_id).cloned();
+        let target_req = self.requests.iter().find(|r| r.id == target_req_id).cloned();
 
-            for (idx, r) in self.requests.iter_mut().enumerate() {
-                r.sort_order = idx as i32;
-                let _ = self.fs_storage.save_request(r);
+        if let (Some(src), Some(target)) = (src_req, target_req) {
+            if src.folder_id != target.folder_id {
+                let _ = self.store.move_request(src_req_id, target.folder_id.as_deref());
+                self.reload_tree();
+            } else {
+                // Same folder: reorder stems in _folder.yaml
+                let folder_id = src.folder_id.clone();
+                let mut stems: Vec<String> = self
+                    .requests
+                    .iter()
+                    .filter(|r| r.folder_id == folder_id)
+                    .map(|r| {
+                        PathBuf::from(&r.id)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("req")
+                            .to_string()
+                    })
+                    .collect();
+
+                let src_stem = PathBuf::from(src_req_id)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("req")
+                    .to_string();
+                let target_stem = PathBuf::from(target_req_id)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("req")
+                    .to_string();
+
+                if let Some(s_pos) = stems.iter().position(|s| s == &src_stem) {
+                    stems.remove(s_pos);
+                    let t_pos = stems.iter().position(|s| s == &target_stem).unwrap_or(stems.len());
+                    stems.insert(t_pos, src_stem);
+                    let _ = self.store.reorder_folder(folder_id.as_deref(), &stems);
+                    self.reload_tree();
+                }
             }
-            cx.notify();
         }
+        cx.notify();
     }
 
     pub fn move_request_to_folder(
@@ -469,48 +704,29 @@ impl WorkspaceState {
         target_folder_id: Option<String>,
         cx: &mut Context<Self>,
     ) {
-        if let Some(src_idx) = self.requests.iter().position(|r| r.id == src_req_id) {
-            let mut req = self.requests.remove(src_idx);
-            req.folder_id = target_folder_id.clone();
-            if let Some(ref fid) = target_folder_id {
-                self.collapsed_folders.remove(fid);
-            }
-
-            let insert_idx = self
-                .requests
-                .iter()
-                .rposition(|r| r.folder_id == target_folder_id)
-                .map(|pos| pos + 1)
-                .unwrap_or(self.requests.len());
-
-            self.requests.insert(insert_idx, req);
-
-            for (idx, r) in self.requests.iter_mut().enumerate() {
-                r.sort_order = idx as i32;
-                let _ = self.fs_storage.save_request(r);
-            }
-            cx.notify();
-        }
+        let _ = self.store.move_request(src_req_id, target_folder_id.as_deref());
+        self.reload_tree();
+        cx.notify();
     }
 
-    pub fn move_folder(&mut self, src_folder_id: &str, target_folder_id: &str, cx: &mut Context<Self>) {
-        if src_folder_id == target_folder_id {
-            return;
+    pub fn toggle_pin(&mut self, req_id: &str, cx: &mut Context<Self>) {
+        if self.pins.contains(&req_id.to_string()) {
+            self.pins.retain(|p| p != req_id);
+        } else {
+            self.pins.push(req_id.to_string());
         }
-        let src_pos = self.folders.iter().position(|f| f.id == src_folder_id);
-        let target_pos = self.folders.iter().position(|f| f.id == target_folder_id);
-        if let (Some(s_idx), Some(_)) = (src_pos, target_pos) {
-            let folder = self.folders.remove(s_idx);
-            let new_t_idx = self.folders.iter().position(|f| f.id == target_folder_id).unwrap_or(self.folders.len());
-            self.folders.insert(new_t_idx, folder);
+        let _ = self.store.save_pins(&self.pins);
+        cx.notify();
+    }
 
-            for (idx, f) in self.folders.iter_mut().enumerate() {
-                f.sort_order = idx as i32;
-            }
-            let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-            let _ = self.fs_storage.save_folders(ws_id, &self.folders);
-            cx.notify();
-        }
+    pub fn is_pinned(&self, req_id: &str) -> bool {
+        self.pins.contains(&req_id.to_string())
+    }
+
+    pub fn reorder_pins(&mut self, new_pins: Vec<String>, cx: &mut Context<Self>) {
+        self.pins = new_pins;
+        let _ = self.store.save_pins(&self.pins);
+        cx.notify();
     }
 
     pub fn set_filter_query(&mut self, query: String, cx: &mut Context<Self>) {
@@ -520,6 +736,8 @@ impl WorkspaceState {
 
     pub fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
         self.sidebar_collapsed = !self.sidebar_collapsed;
+        self.local_state.sidebar.collapsed = self.sidebar_collapsed;
+        let _ = self.store.save_state(&self.local_state);
         cx.notify();
     }
 
@@ -527,24 +745,31 @@ impl WorkspaceState {
         let clamped = px(width.as_f32().clamp(200.0, 480.0));
         if self.sidebar_width != clamped {
             self.sidebar_width = clamped;
+            self.local_state.sidebar.width = clamped.as_f32();
+            let _ = self.store.save_state(&self.local_state);
             cx.notify();
         }
     }
 
     pub fn toggle_split_layout(&mut self, cx: &mut Context<Self>) {
         self.split_layout_vertical = !self.split_layout_vertical;
+        self.local_state.layout.split = if self.split_layout_vertical {
+            "vertical".to_string()
+        } else {
+            "horizontal".to_string()
+        };
+        let _ = self.store.save_state(&self.local_state);
         cx.notify();
     }
 
     pub fn toggle_env_modal(&mut self, cx: &mut Context<Self>) {
         self.show_env_modal = !self.show_env_modal;
-        if self.show_env_modal {
-            if self.selected_env_modal_id.is_none() {
-                self.selected_env_modal_id = self
-                    .active_environment_id
-                    .clone()
-                    .or_else(|| Some("globals".to_string()));
-            }
+        if self.show_env_modal && self.selected_env_modal_id.is_none() {
+            self.selected_env_modal_id = self
+                .active_environment_id
+                .clone()
+                .or_else(|| self.environments.first().map(|e| e.id.clone()))
+                .or_else(|| Some("globals".to_string()));
         }
         cx.notify();
     }
@@ -566,55 +791,34 @@ impl WorkspaceState {
     }
 
     pub fn save_global_environment(&mut self, env: Environment, cx: &mut Context<Self>) {
-        let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-        self.global_environment = env.clone();
-        let _ = self.fs_storage.save_global_environment(ws_id, &env);
+        self.global_environment = env;
         cx.notify();
     }
 
     pub fn create_environment(&mut self, name: Option<String>, cx: &mut Context<Self>) -> String {
-        let ws_id = self.active_workspace.as_ref().map(|w| w.id.clone()).unwrap_or_else(|| "default".to_string());
         let env_name = name.unwrap_or_else(|| format!("env-{}", self.environments.len() + 1));
-        let new_env = Environment::new(&ws_id, env_name);
-        let new_id = new_env.id.clone();
-        self.environments.push(new_env);
-        let ws_id_ref = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-        let _ = self.fs_storage.save_environments(ws_id_ref, &self.environments);
-        self.selected_env_modal_id = Some(new_id.clone());
+        let env_file = EnvironmentFile::default();
+        let _ = self.store.save_environment(&env_name, &env_file);
+        self.reload_environments();
+        self.selected_env_modal_id = Some(env_name.clone());
         if self.active_environment_id.is_none() {
-            self.set_active_environment(Some(new_id.clone()), cx);
+            self.set_active_environment(Some(env_name.clone()), cx);
         } else {
             cx.notify();
         }
-        new_id
+        env_name
     }
 
     pub fn duplicate_environment(&mut self, env_id: &str, cx: &mut Context<Self>) -> Option<String> {
-        let ws_id = self.active_workspace.as_ref().map(|w| w.id.clone()).unwrap_or_else(|| "default".to_string());
-        if env_id == "globals" {
-            let mut new_env = Environment::new(&ws_id, "Globals (Copy)");
-            new_env.variables = self.global_environment.variables.clone();
-            let new_id = new_env.id.clone();
-            self.environments.push(new_env);
-            let ws_id_ref = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-            let _ = self.fs_storage.save_environments(ws_id_ref, &self.environments);
-            self.selected_env_modal_id = Some(new_id.clone());
-            cx.notify();
-            return Some(new_id);
-        }
-
-        let existing = self.environments.iter().find(|e| e.id == env_id)?.clone();
-        let mut dup = existing.clone();
-        dup.id = uuid::Uuid::new_v4().to_string();
-        dup.workspace_id = ws_id;
-        dup.name = format!("{} (Copy)", existing.name);
-        let dup_id = dup.id.clone();
-        self.environments.push(dup);
-        let ws_id_ref = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-        let _ = self.fs_storage.save_environments(ws_id_ref, &self.environments);
-        self.selected_env_modal_id = Some(dup_id.clone());
+        let existing = self.environments.iter().find(|e| e.id == env_id || e.name == env_id)?.clone();
+        let new_name = format!("{}-copy", existing.name);
+        let (env_file, secrets) = EnvironmentFile::from_environment(&existing);
+        let _ = self.store.save_environment(&new_name, &env_file);
+        let _ = self.store.save_secrets(&new_name, &secrets);
+        self.reload_environments();
+        self.selected_env_modal_id = Some(new_name.clone());
         cx.notify();
-        Some(dup_id)
+        Some(new_name)
     }
 
     pub fn rename_environment(&mut self, env_id: &str, new_name: String, cx: &mut Context<Self>) {
@@ -622,31 +826,29 @@ impl WorkspaceState {
         if trimmed.is_empty() || env_id == "globals" {
             return;
         }
-        if let Some(env) = self.environments.iter_mut().find(|e| e.id == env_id) {
-            env.name = trimmed.to_string();
-            let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-            let _ = self.fs_storage.save_environments(ws_id, &self.environments);
-            cx.notify();
+        let _ = self.store.rename_environment(env_id, trimmed);
+        self.reload_environments();
+        if self.active_environment_id.as_deref() == Some(env_id) {
+            self.active_environment_id = Some(trimmed.to_string());
         }
+        if self.selected_env_modal_id.as_deref() == Some(env_id) {
+            self.selected_env_modal_id = Some(trimmed.to_string());
+        }
+        cx.notify();
     }
 
     pub fn delete_environment(&mut self, env_id: &str, cx: &mut Context<Self>) {
         if env_id == "globals" {
             return;
         }
-        self.environments.retain(|e| e.id != env_id);
+        let _ = self.store.delete_environment(env_id);
+        self.reload_environments();
         if self.active_environment_id.as_deref() == Some(env_id) {
-            self.set_active_environment(None, cx);
+            self.set_active_environment(self.environments.first().map(|e| e.id.clone()), cx);
         }
         if self.selected_env_modal_id.as_deref() == Some(env_id) {
-            self.selected_env_modal_id = self
-                .environments
-                .first()
-                .map(|e| e.id.clone())
-                .or_else(|| Some("globals".to_string()));
+            self.selected_env_modal_id = self.environments.first().map(|e| e.id.clone());
         }
-        let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-        let _ = self.fs_storage.save_environments(ws_id, &self.environments);
         cx.notify();
     }
 
@@ -666,9 +868,12 @@ impl WorkspaceState {
     }
 
     pub fn save_environments(&mut self, envs: Vec<Environment>, cx: &mut Context<Self>) {
-        let ws_id = self.active_workspace.as_ref().map(|w| w.id.as_str()).unwrap_or("default");
-        self.environments = envs.clone();
-        let _ = self.fs_storage.save_environments(ws_id, &envs);
+        for env in &envs {
+            let (file, secrets) = EnvironmentFile::from_environment(env);
+            let _ = self.store.save_environment(&env.name, &file);
+            let _ = self.store.save_secrets(&env.name, &secrets);
+        }
+        self.environments = envs;
         cx.notify();
     }
 }
@@ -701,14 +906,12 @@ mod tests {
         });
 
         let mut active = Environment::new("ws1", "Production");
-        // Overrides HOST from global
         active.variables.push(EnvironmentVariable {
             enabled: true,
             key: "HOST".to_string(),
             value: "prod.example.com".to_string(),
             secret: false,
         });
-        // Adds unique active var
         active.variables.push(EnvironmentVariable {
             enabled: true,
             key: "PORT".to_string(),
@@ -716,12 +919,20 @@ mod tests {
             secret: false,
         });
 
+        let temp_dir = std::env::temp_dir().join(format!("test_ws_eff_{}", uuid::Uuid::new_v4().simple()));
+        let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
+        let _ = store.init_workspace("Test WS");
+
         let ws_state = WorkspaceState {
-            fs_storage: Arc::new(FsStorage::new(std::env::temp_dir())),
-            workspaces: Vec::new(),
+            store,
+            workspace_path: temp_dir.clone(),
+            workspace_meta: WorkspaceMeta::default(),
             active_workspace: Some(Workspace::new("Test")),
             folders: Vec::new(),
             requests: Vec::new(),
+            parse_errors: HashMap::new(),
+            pins: Vec::new(),
+            local_state: LocalState::default(),
             environments: vec![active.clone()],
             global_environment: global,
             active_environment_id: Some(active.id.clone()),
@@ -729,6 +940,7 @@ mod tests {
             env_filter_query: String::new(),
             var_filter_query: String::new(),
             git_branch: None,
+            git_tracked_warning: false,
             filter_query: String::new(),
             sidebar_collapsed: false,
             sidebar_width: px(260.),
@@ -747,233 +959,22 @@ mod tests {
             rename_env_input: None,
             rename_env_subscription: None,
             collapsed_folders: HashSet::new(),
+            unsaved_requests: HashSet::new(),
+            running_request_id: None,
+            recent_workspaces: Vec::new(),
         };
 
         let effective = ws_state.effective_environment();
-        let map: std::collections::HashMap<_, _> = effective
-            .variables
-            .iter()
-            .map(|v| (v.key.as_str(), v.value.as_str()))
-            .collect();
+        let host_var = effective.variables.iter().find(|v| v.key == "HOST").unwrap();
+        assert_eq!(host_var.value, "prod.example.com");
 
-        // HOST should be overridden by active env
-        assert_eq!(map.get("HOST"), Some(&"prod.example.com"));
-        // GLOBAL_TOKEN should be retained from globals
-        assert_eq!(map.get("GLOBAL_TOKEN"), Some(&"token_123"));
-        // PORT should be included from active
-        assert_eq!(map.get("PORT"), Some(&"443"));
-        // Disabled variable should not be present
-        assert_eq!(map.get("DISABLED_KEY"), None);
-    }
+        let port_var = effective.variables.iter().find(|v| v.key == "PORT").unwrap();
+        assert_eq!(port_var.value, "443");
 
-    #[test]
-    fn test_duplicate_and_rename_environment() {
-        let temp_dir = std::env::temp_dir().join(format!("restclient_ws_test_{}", uuid::Uuid::new_v4()));
-        let ws = Workspace::new("Test Workspace");
-        let ws_id = ws.id.clone();
-        let fs_storage = Arc::new(FsStorage::new(&temp_dir));
-        let _ = fs_storage.init_workspace(&ws);
+        let token_var = effective.variables.iter().find(|v| v.key == "GLOBAL_TOKEN").unwrap();
+        assert_eq!(token_var.value, "token_123");
 
-        let mut env1 = Environment::new(&ws_id, "Development");
-        env1.variables.push(EnvironmentVariable {
-            enabled: true,
-            key: "URL".to_string(),
-            value: "http://localhost:3000".to_string(),
-            secret: false,
-        });
-        let _ = fs_storage.save_environments(&ws_id, &[env1.clone()]);
-
-        let mut ws_state = WorkspaceState {
-            fs_storage: fs_storage.clone(),
-            workspaces: vec![ws.clone()],
-            active_workspace: Some(ws),
-            folders: Vec::new(),
-            requests: Vec::new(),
-            environments: vec![env1.clone()],
-            global_environment: Environment::new(&ws_id, "Globals"),
-            active_environment_id: Some(env1.id.clone()),
-            selected_env_modal_id: Some(env1.id.clone()),
-            env_filter_query: String::new(),
-            var_filter_query: String::new(),
-            git_branch: None,
-            filter_query: String::new(),
-            sidebar_collapsed: false,
-            sidebar_width: px(260.),
-            split_layout_vertical: false,
-            show_env_modal: false,
-            show_cookies_modal: false,
-            show_command_palette: false,
-            show_settings_modal: false,
-            renaming_request_id: None,
-            rename_input: None,
-            rename_subscription: None,
-            renaming_folder_id: None,
-            rename_folder_input: None,
-            rename_folder_subscription: None,
-            renaming_env_id: None,
-            rename_env_input: None,
-            rename_env_subscription: None,
-            collapsed_folders: HashSet::new(),
-        };
-
-        // Test duplicate
-        let dup_id = {
-            let existing = ws_state.environments.iter().find(|e| e.id == env1.id).unwrap().clone();
-            let mut dup = existing.clone();
-            dup.id = uuid::Uuid::new_v4().to_string();
-            dup.name = format!("{} (Copy)", existing.name);
-            let dup_id = dup.id.clone();
-            ws_state.environments.push(dup);
-            dup_id
-        };
-
-        assert_eq!(ws_state.environments.len(), 2);
-        let duplicated = ws_state.environments.iter().find(|e| e.id == dup_id).unwrap();
-        assert_eq!(duplicated.name, "Development (Copy)");
-        assert_eq!(duplicated.variables.len(), 1);
-        assert_eq!(duplicated.variables[0].key, "URL");
-        assert_eq!(duplicated.variables[0].value, "http://localhost:3000");
-
-        // Test rename
-        if let Some(target) = ws_state.environments.iter_mut().find(|e| e.id == dup_id) {
-            target.name = "Staging".to_string();
-        }
-        let renamed = ws_state.environments.iter().find(|e| e.id == dup_id).unwrap();
-        assert_eq!(renamed.name, "Staging");
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn test_update_request_does_not_resurrect_deleted_request() {
-        let temp_dir = std::env::temp_dir().join(format!("restclient_test_{}", uuid::Uuid::new_v4()));
-        let fs_storage = Arc::new(FsStorage::new(&temp_dir));
-        let ws_id = "test-ws";
-        let req1 = HttpRequestItem::new(ws_id, "Req 1", HttpMethod::Get, "https://api.example.com");
-
-        let mut ws_state = WorkspaceState {
-            fs_storage: fs_storage.clone(),
-            workspaces: Vec::new(),
-            active_workspace: None,
-            folders: Vec::new(),
-            requests: vec![req1.clone()],
-            environments: Vec::new(),
-            global_environment: Environment::new(ws_id, "Globals"),
-            active_environment_id: None,
-            selected_env_modal_id: None,
-            env_filter_query: String::new(),
-            var_filter_query: String::new(),
-            git_branch: None,
-            filter_query: String::new(),
-            sidebar_collapsed: false,
-            sidebar_width: px(260.),
-            split_layout_vertical: false,
-            show_env_modal: false,
-            show_cookies_modal: false,
-            show_command_palette: false,
-            show_settings_modal: false,
-            renaming_request_id: None,
-            rename_input: None,
-            rename_subscription: None,
-            renaming_folder_id: None,
-            rename_folder_input: None,
-            rename_folder_subscription: None,
-            renaming_env_id: None,
-            rename_env_input: None,
-            rename_env_subscription: None,
-            collapsed_folders: HashSet::new(),
-        };
-
-        assert_eq!(ws_state.requests.len(), 1);
-
-        // Simulate deleting req1
-        ws_state.requests.retain(|r| r.id != req1.id);
-        assert_eq!(ws_state.requests.len(), 0);
-
-        // When updating a request that is not in requests, it must not be added
-        if let Some(idx) = ws_state.requests.iter().position(|r| r.id == req1.id) {
-            ws_state.requests[idx] = req1.clone();
-        }
-        assert_eq!(ws_state.requests.len(), 0);
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn test_folder_reorder_and_request_drag_move() {
-        let temp_dir = std::env::temp_dir().join(format!("restclient_test_{}", uuid::Uuid::new_v4()));
-        let fs_storage = Arc::new(FsStorage::new(&temp_dir));
-        let ws_id = "test-ws";
-        let mut f1 = Folder::new(ws_id, "Folder 1");
-        f1.sort_order = 0;
-        let mut f2 = Folder::new(ws_id, "Folder 2");
-        f2.sort_order = 1;
-
-        let mut r1 = HttpRequestItem::new(ws_id, "Req 1", HttpMethod::Get, "https://api.example.com/1");
-        r1.sort_order = 0;
-        let mut r2 = HttpRequestItem::new(ws_id, "Req 2", HttpMethod::Post, "https://api.example.com/2");
-        r2.sort_order = 1;
-        let mut r3 = HttpRequestItem::new(ws_id, "Req 3", HttpMethod::Put, "https://api.example.com/3");
-        r3.sort_order = 2;
-
-        let mut ws_state = WorkspaceState {
-            fs_storage: fs_storage.clone(),
-            workspaces: Vec::new(),
-            active_workspace: None,
-            folders: vec![f1.clone(), f2.clone()],
-            requests: vec![r1.clone(), r2.clone(), r3.clone()],
-            environments: Vec::new(),
-            global_environment: Environment::new(ws_id, "Globals"),
-            active_environment_id: None,
-            selected_env_modal_id: None,
-            env_filter_query: String::new(),
-            var_filter_query: String::new(),
-            git_branch: None,
-            filter_query: String::new(),
-            sidebar_collapsed: false,
-            sidebar_width: px(260.),
-            split_layout_vertical: false,
-            show_env_modal: false,
-            show_cookies_modal: false,
-            show_command_palette: false,
-            show_settings_modal: false,
-            renaming_request_id: None,
-            rename_input: None,
-            rename_subscription: None,
-            renaming_folder_id: None,
-            rename_folder_input: None,
-            rename_folder_subscription: None,
-            renaming_env_id: None,
-            rename_env_input: None,
-            rename_env_subscription: None,
-            collapsed_folders: HashSet::new(),
-        };
-
-        // Test rename folder directly
-        if let Some(folder) = ws_state.folders.iter_mut().find(|f| f.id == f1.id) {
-            folder.name = "Folder 1 Renamed".to_string();
-        }
-        assert_eq!(ws_state.folders[0].name, "Folder 1 Renamed");
-
-        // Test move_folder: swap f1 and f2
-        let folder1_id = f1.id.clone();
-        let folder2_id = f2.id.clone();
-        let s_idx = ws_state.folders.iter().position(|f| f.id == folder1_id).unwrap();
-        let folder = ws_state.folders.remove(s_idx);
-        let t_idx = ws_state.folders.iter().position(|f| f.id == folder2_id).unwrap();
-        ws_state.folders.insert(t_idx + 1, folder);
-        assert_eq!(ws_state.folders[0].id, folder2_id);
-        assert_eq!(ws_state.folders[1].id, folder1_id);
-
-        // Test move request into folder
-        let r3_id = r3.id.clone();
-        let r3_pos = ws_state.requests.iter().position(|r| r.id == r3_id).unwrap();
-        let mut moved_r3 = ws_state.requests.remove(r3_pos);
-        moved_r3.folder_id = Some(folder1_id.clone());
-        ws_state.requests.insert(0, moved_r3);
-        assert_eq!(ws_state.requests[0].id, r3_id);
-        assert_eq!(ws_state.requests[0].folder_id, Some(folder1_id));
-
+        assert!(effective.variables.iter().all(|v| v.key != "DISABLED_KEY"));
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

@@ -5535,6 +5535,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "dirs 6.0.0",
  "embed-resource",
  "gpui-component",
  "gpui-kit",

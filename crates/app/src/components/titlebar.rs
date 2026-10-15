@@ -108,14 +108,18 @@ impl RenderOnce for AppTitleBar {
                     })
                     .child("◫")
             })
-            // App badge pill: [icon + RestClient]
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
+            // Workspace switcher pill dropdown: [icon + RestClient • ws_name ▾]
+            .child({
+                let ws_s = ws_clone.clone();
+                let recent = ws.recent_workspaces.clone();
+                let ws_path = ws.workspace_path.clone();
+
+                Button::new("btn-workspace-switcher")
+                    .ghost()
+                    .compact()
                     .px(px(6.))
                     .py(px(2.))
+                    .h(px(24.))
                     .rounded(px(5.))
                     .bg(t.bg_card)
                     .border_1()
@@ -133,7 +137,65 @@ impl RenderOnce for AppTitleBar {
                             .text_color(t.text_primary)
                             .child(format!("RestClient • {}", ws_name))
                     )
-            )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(t.text_muted)
+                            .child("▾")
+                    )
+                    .dropdown_menu(move |menu, _window, _cx| {
+                        let ws_new = ws_s.clone();
+                        let ws_open = ws_s.clone();
+                        let mut m = menu
+                            .item(
+                                PopupMenuItem::new("📁 Open Workspace...")
+                                    .on_click(move |_, _, cx| {
+                                        if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+                                            ws_open.update(cx, |state, cx| {
+                                                state.open_workspace(folder, cx);
+                                            });
+                                        }
+                                    })
+                            )
+                            .item(
+                                PopupMenuItem::new("✨ New Workspace...")
+                                    .on_click(move |_, _, cx| {
+                                        if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+                                            ws_new.update(cx, |state, cx| {
+                                                state.new_workspace(folder, "My Workspace", cx);
+                                            });
+                                        }
+                                    })
+                            );
+
+                        if !recent.is_empty() {
+                            m = m.separator();
+                            for r_path_str in &recent {
+                                let r_path = std::path::PathBuf::from(r_path_str);
+                                let display_name = r_path
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or(r_path_str.as_str())
+                                    .to_string();
+                                let ws_r = ws_s.clone();
+                                let is_curr = r_path == ws_path;
+                                let r_path_clone = r_path.clone();
+
+                                m = m.item(
+                                    PopupMenuItem::new(format!("{} ({})", display_name, r_path_str))
+                                        .checked(is_curr)
+                                        .on_click(move |_, _, cx| {
+                                            ws_r.update(cx, |state, cx| {
+                                                state.open_workspace(r_path_clone.clone(), cx);
+                                            });
+                                        })
+                                );
+                            }
+                        }
+
+                        m
+                    })
+            })
             // Environment pill dropdown: [● local ▾]
             .child({
                 let ws_s = ws_clone.clone();

@@ -384,6 +384,12 @@ impl Default for RequestFile {
 }
 
 impl RequestFile {
+    pub fn from_item(item: &HttpRequestItem) -> Self {
+        let mut file = Self::default();
+        file.update_from_item(item);
+        file
+    }
+
     pub fn to_item(&self, id: impl Into<String>, workspace_id: impl Into<String>, folder_id: Option<String>) -> HttpRequestItem {
         HttpRequestItem {
             id: id.into(),

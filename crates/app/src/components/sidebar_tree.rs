@@ -9,6 +9,31 @@ use gpui::{
 use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::scroll::ScrollableElement as _;
 use restclient_core::models::{HttpMethod, HttpRequestItem};
+use restclient_core::storage::models::RequestFile;
+use restclient_core::storage::serialize::to_yaml_string;
+
+#[derive(Clone, Debug)]
+pub struct DragPinnedItem {
+    pub id: String,
+    pub index: usize,
+}
+
+impl Render for DragPinnedItem {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        let t = theme();
+        div()
+            .px(px(8.))
+            .py(px(4.))
+            .rounded(px(6.))
+            .bg(t.bg_card)
+            .border_1()
+            .border_color(t.border_focus)
+            .shadow_md()
+            .text_xs()
+            .text_color(t.text_primary)
+            .child(format!("📌 {}", self.id))
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct DragRequestItem {
@@ -93,7 +118,7 @@ impl SidebarTree {
 impl RenderOnce for SidebarTree {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
-        let (git_branch, query, filter_query_raw, folders, requests, renaming_req_id, rename_input, renaming_folder_id, rename_folder_input, collapsed_folders) = {
+        let (git_branch, query, filter_query_raw, folders, requests, renaming_req_id, rename_input, renaming_folder_id, rename_folder_input, collapsed_folders, pins, parse_errors, unsaved_requests, running_request_id) = {
             let ws = self.workspace_state.read(cx);
             (
                 ws.git_branch.clone().unwrap_or_else(|| "main".to_string()),
@@ -106,6 +131,10 @@ impl RenderOnce for SidebarTree {
                 ws.renaming_folder_id.clone(),
                 ws.rename_folder_input.clone(),
                 ws.collapsed_folders.clone(),
+                ws.pins.clone(),
+                ws.parse_errors.clone(),
+                ws.unsaved_requests.clone(),
+                ws.running_request_id.clone(),
             )
         };
         let active_req_id = self.editor_state.read(cx).active_request.as_ref().map(|r| r.id.clone());
@@ -244,6 +273,13 @@ impl RenderOnce for SidebarTree {
                     let ed_del_ctx = ed_clone.clone();
                     let r_id_del_ctx = req_for_menu.id.clone();
 
+                    let ws_pin = ws_clone.clone();
+                    let r_id_pin = req_for_menu.id.clone();
+                    let is_pinned = pins.contains(&r_id_pin);
+
+                    let req_yaml = req_for_menu.clone();
+                    let req_curl = req_for_menu.clone();
+
                     move |menu, _window, _cx| {
                         let ws_r = ws_rename.clone();
                         let r_id_r = r_id_rename.clone();
@@ -257,7 +293,38 @@ impl RenderOnce for SidebarTree {
                         let ed_del = ed_del_ctx.clone();
                         let r_id_del = r_id_del_ctx.clone();
 
+                        let ws_p = ws_pin.clone();
+                        let r_id_p = r_id_pin.clone();
+
+                        let r_yaml = req_yaml.clone();
+                        let r_curl = req_curl.clone();
+
                         menu
+                            .item(
+                                gpui_component::menu::PopupMenuItem::new("Copy as YAML")
+                                    .on_click(move |_, _, cx| {
+                                        let rf = RequestFile::from_item(&r_yaml);
+                                        if let Ok(yaml) = to_yaml_string(&rf) {
+                                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(yaml));
+                                        }
+                                    }),
+                            )
+                            .item(
+                                gpui_component::menu::PopupMenuItem::new("Copy as cURL")
+                                    .on_click(move |_, _, cx| {
+                                        let curl = restclient_core::curl::request_to_curl(&r_curl, None);
+                                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(curl));
+                                    }),
+                            )
+                            .separator()
+                            .item(
+                                gpui_component::menu::PopupMenuItem::new(if is_pinned { "Unpin" } else { "Pin to top" })
+                                    .on_click(move |_, _, cx| {
+                                        ws_p.update(cx, |state, cx| {
+                                            state.toggle_pin(&r_id_p, cx);
+                                        });
+                                    }),
+                            )
                             .item(
                                 gpui_component::menu::PopupMenuItem::new("Rename")
                                     .on_click(move |_, window, cx| {
@@ -339,14 +406,39 @@ impl RenderOnce for SidebarTree {
                                 .into_any_element()
                         }),
                 )
-                .when_some(req.last_status_code, |this, code| {
-                    this.child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .child(StatusCodeBadge::new(code)),
-                    )
-                })
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(4.))
+                        .when(parse_errors.contains_key(&req.id), |this| {
+                            this.child(
+                                div()
+                                    .text_xs()
+                                    .text_color(t.status_5xx)
+                                    .child("⚠"),
+                            )
+                        })
+                        .when(running_request_id.as_deref() == Some(&req.id), |this| {
+                            this.child(
+                                div()
+                                    .text_xs()
+                                    .text_color(t.primary)
+                                    .child("⟳"),
+                            )
+                        })
+                        .when(unsaved_requests.contains(&req.id), |this| {
+                            this.child(
+                                div()
+                                    .text_xs()
+                                    .text_color(t.primary)
+                                    .child("●"),
+                            )
+                        })
+                        .when_some(req.last_status_code, |this, code| {
+                            this.child(StatusCodeBadge::new(code))
+                        }),
+                )
                 .into_any_element()
         };
 
@@ -471,6 +563,62 @@ impl RenderOnce for SidebarTree {
                                         })
                                         .child("+ New Request"),
                                 ),
+                        )
+                    })
+                    .when(!pins.is_empty(), |this| {
+                        let ws_pin_reorder = ws_clone.clone();
+                        let pinned_requests: Vec<_> = pins
+                            .iter()
+                            .filter_map(|pin_id| requests.iter().find(|r| &r.id == pin_id).cloned())
+                            .collect();
+
+                        this.child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(2.))
+                                .mb(px(4.))
+                                .child(
+                                    div()
+                                        .px(px(6.))
+                                        .py(px(2.))
+                                        .text_xs()
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .text_color(t.text_muted)
+                                        .child("📌 PINNED"),
+                                )
+                                .children(pinned_requests.into_iter().enumerate().map(|(idx, req)| {
+                                    let p_id = req.id.clone();
+                                    let drag_pin = DragPinnedItem {
+                                        id: p_id.clone(),
+                                        index: idx,
+                                    };
+                                    let ws_p_drop = ws_pin_reorder.clone();
+                                    let target_idx = idx;
+
+                                    div()
+                                        .id(format!("pinned-row-{}", p_id))
+                                        .on_drag(drag_pin, |item, _, _, cx| {
+                                            cx.new(|_| item.clone())
+                                        })
+                                        .drag_over::<DragPinnedItem>(|style, _, _, _| {
+                                            let t = theme();
+                                            style.bg(t.bg_hover).border_t_2().border_color(t.border_focus)
+                                        })
+                                        .on_drop(move |drag: &DragPinnedItem, _, cx| {
+                                            let from_idx = drag.index;
+                                            let to_idx = target_idx;
+                                            ws_p_drop.update(cx, |state, cx| {
+                                                if from_idx < state.pins.len() && to_idx < state.pins.len() {
+                                                    let item = state.pins.remove(from_idx);
+                                                    state.pins.insert(to_idx, item);
+                                                    let _ = state.store.save_pins(&state.pins);
+                                                    cx.notify();
+                                                }
+                                            });
+                                        })
+                                        .child(render_req_item(&req, false))
+                                }))
                         )
                     })
                     .children(folders.iter().map(|folder| {
