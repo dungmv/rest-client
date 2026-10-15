@@ -58,6 +58,7 @@ pub struct WorkspaceState {
     pub request_save_tasks: HashMap<String, Task<()>>,
     pub conflicts: HashMap<String, String>,
     pub corrupt_secrets_warning: Option<String>,
+    pub last_renamed_request: Option<(String, String)>,
     pub watcher: Option<restclient_core::storage::WorkspaceWatcher>,
     pub watcher_task: Option<Task<()>>,
 }
@@ -127,6 +128,7 @@ impl WorkspaceState {
             request_save_tasks: HashMap::new(),
             conflicts: HashMap::new(),
             corrupt_secrets_warning: None,
+            last_renamed_request: None,
             watcher: None,
             watcher_task: None,
         };
@@ -501,6 +503,9 @@ impl WorkspaceState {
         let trimmed = new_name.trim();
         if !trimmed.is_empty() {
             if let Ok(new_rel_path) = self.store.rename_request(&req_id, trimmed) {
+                // Record rename pair so EditorState & ResponseState can synchronize
+                self.last_renamed_request = Some((req_id.clone(), new_rel_path.clone()));
+
                 // Update pins if pinned
                 if let Some(pos) = self.pins.iter().position(|p| p == &req_id) {
                     self.pins[pos] = new_rel_path.clone();
@@ -511,9 +516,29 @@ impl WorkspaceState {
                     self.local_state.active_request = Some(new_rel_path.clone());
                     let _ = self.store.save_state(&self.local_state);
                 }
+                // Update recents
+                for r in &mut self.local_state.recent {
+                    if r == &req_id {
+                        *r = new_rel_path.clone();
+                    }
+                }
+                // Update nav history
+                for h in &mut self.nav_history {
+                    if h == &req_id {
+                        *h = new_rel_path.clone();
+                    }
+                }
                 // Transfer unsaved status
                 if self.unsaved_requests.remove(&req_id) {
-                    self.unsaved_requests.insert(new_rel_path);
+                    self.unsaved_requests.insert(new_rel_path.clone());
+                }
+                // Transfer parse errors
+                if let Some(err) = self.parse_errors.remove(&req_id) {
+                    self.parse_errors.insert(new_rel_path.clone(), err);
+                }
+                // Transfer conflicts
+                if let Some(c) = self.conflicts.remove(&req_id) {
+                    self.conflicts.insert(new_rel_path, c);
                 }
                 self.reload_tree();
             }
@@ -1171,6 +1196,7 @@ mod tests {
             request_save_tasks: HashMap::new(),
             conflicts: HashMap::new(),
             corrupt_secrets_warning: None,
+            last_renamed_request: None,
             watcher: None,
             watcher_task: None,
         };
@@ -1242,6 +1268,7 @@ mod tests {
             request_save_tasks: HashMap::new(),
             conflicts: HashMap::new(),
             corrupt_secrets_warning: None,
+            last_renamed_request: None,
             watcher: None,
             watcher_task: None,
         };

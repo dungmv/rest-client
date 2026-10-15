@@ -490,17 +490,27 @@ impl WorkspaceStore for FsWorkspaceStore {
 
     fn rename_request(&self, rel_path: &str, new_name: &str) -> Result<String> {
         let old_p = self.collections_dir().join(rel_path);
+        let old_loc = loc_path_for_yaml(&old_p);
         self.suppress_path(&old_p);
+        self.suppress_path(&old_loc);
         let new_path = rename_request(&self.collections_dir(), Path::new(rel_path), new_name)?;
-        self.suppress_path(&new_path);
+        let full_new_yaml = self.collections_dir().join(&new_path);
+        let full_new_loc = loc_path_for_yaml(&full_new_yaml);
+        self.suppress_path(&full_new_yaml);
+        self.suppress_path(&full_new_loc);
         Ok(path_to_forward_slash(&new_path))
     }
 
     fn move_request(&self, rel_path: &str, target_folder_rel: Option<&str>) -> Result<String> {
         let old_p = self.collections_dir().join(rel_path);
+        let old_loc = loc_path_for_yaml(&old_p);
         self.suppress_path(&old_p);
+        self.suppress_path(&old_loc);
         let new_path = move_request(&self.collections_dir(), Path::new(rel_path), target_folder_rel)?;
-        self.suppress_path(&new_path);
+        let full_new_yaml = self.collections_dir().join(&new_path);
+        let full_new_loc = loc_path_for_yaml(&full_new_yaml);
+        self.suppress_path(&full_new_yaml);
+        self.suppress_path(&full_new_loc);
         Ok(path_to_forward_slash(&new_path))
     }
 

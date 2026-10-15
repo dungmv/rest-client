@@ -261,12 +261,34 @@ mod tests {
         assert!(!store.collections_dir().join("login.yaml").exists());
         assert!(!store.collections_dir().join("login.loc").exists());
 
+        // 2b. Same-slug rename must preserve exact stem, never appending -2
+        let same_slug_rel = store.rename_request(&new_rel, "login user").unwrap();
+        assert_eq!(same_slug_rel, "login-user.yaml");
+        assert!(store.collections_dir().join("login-user.yaml").exists());
+        assert!(store.collections_dir().join("login-user.loc").exists());
+
+        // 2c. Rename when target .loc already exists (pre-existing or orphan)
+        let ghost_target_loc = store.collections_dir().join("login-admin.loc");
+        std::fs::write(&ghost_target_loc, "{\"stale\": true}").unwrap();
+        assert!(ghost_target_loc.exists());
+        let admin_rel = store.rename_request(&same_slug_rel, "Login Admin").unwrap();
+        assert_eq!(admin_rel, "login-admin.yaml");
+        assert!(store.collections_dir().join("login-admin.yaml").exists());
+        assert!(store.collections_dir().join("login-admin.loc").exists());
+        assert!(!store.collections_dir().join("login-user.yaml").exists());
+        assert!(!store.collections_dir().join("login-user.loc").exists());
+        // Verify target .loc contains the real cached response, not the stale ghost
+        let admin_loc_content = std::fs::read_to_string(store.collections_dir().join("login-admin.loc")).unwrap();
+        assert!(admin_loc_content.contains("\"status\": 200"));
+
+        let new_rel = admin_rel;
+
         // 3. Move request into group
         let (_, group_rel) = store.create_group(None, "Auth").unwrap();
         let moved_rel = store.move_request(&new_rel, Some(&group_rel)).unwrap();
-        assert_eq!(moved_rel, "auth/login-user.yaml");
-        assert!(store.collections_dir().join("auth/login-user.yaml").exists());
-        assert!(store.collections_dir().join("auth/login-user.loc").exists());
+        assert_eq!(moved_rel, "auth/login-admin.yaml");
+        assert!(store.collections_dir().join("auth/login-admin.yaml").exists());
+        assert!(store.collections_dir().join("auth/login-admin.loc").exists());
 
         // 4. Create an orphan .loc in auth/
         let orphan_loc = store.collections_dir().join("auth/ghost.loc");

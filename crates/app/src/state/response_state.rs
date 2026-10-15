@@ -134,6 +134,15 @@ impl ResponseState {
         cx.notify();
     }
 
+    pub fn rename_request(&mut self, old_id: &str, new_id: &str) {
+        if let Some(r) = self.session_responses.remove(old_id) {
+            self.session_responses.insert(new_id.to_string(), r);
+        }
+        if let Some(r) = self.previous_responses.remove(old_id) {
+            self.previous_responses.insert(new_id.to_string(), r);
+        }
+    }
+
     pub fn toggle_compare_with_previous(&mut self, cx: &mut Context<Self>) {
         if self.previous_response.is_some() {
             self.comparing_with_previous = !self.comparing_with_previous;

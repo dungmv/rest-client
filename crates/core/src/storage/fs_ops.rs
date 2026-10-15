@@ -75,8 +75,17 @@ pub fn rename_request(
         .unwrap_or(collections_dir)
         .to_path_buf();
 
+    let old_stem = old_yaml_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+
     let base_slug = slugify(new_name);
-    let new_slug = unique_slug(&parent_dir, &base_slug, "yaml");
+    let new_slug = if base_slug == old_stem {
+        base_slug
+    } else {
+        unique_slug(&parent_dir, &base_slug, "yaml")
+    };
     let new_yaml_path = parent_dir.join(format!("{}.yaml", new_slug));
     let new_loc_path = parent_dir.join(format!("{}.loc", new_slug));
     let old_loc_path = loc_path_for_yaml(&old_yaml_path);
@@ -99,7 +108,39 @@ pub fn rename_request(
 
         // Rename .loc best-effort
         if old_loc_path.exists() {
-            let _ = with_retry(|| std::fs::rename(&old_loc_path, &new_loc_path));
+            let rename_res = with_retry(|| {
+                if new_loc_path.exists() {
+                    let _ = std::fs::remove_file(&new_loc_path);
+                }
+                std::fs::rename(&old_loc_path, &new_loc_path)
+            });
+            if rename_res.is_err()
+                && old_loc_path.exists()
+                && std::fs::copy(&old_loc_path, &new_loc_path).is_ok()
+            {
+                let _ = with_retry(|| std::fs::remove_file(&old_loc_path));
+            }
+        }
+
+        // Update _folder.yaml in parent_dir if present
+        let folder_meta_path = parent_dir.join("_folder.yaml");
+        if folder_meta_path.exists() {
+            if let Ok(raw) = std::fs::read_to_string(&folder_meta_path) {
+                if let Ok(mut meta) = serde_yaml::from_str::<FolderFile>(&raw) {
+                    let mut changed = false;
+                    for stem in &mut meta.order {
+                        if stem == old_stem {
+                            *stem = new_slug.clone();
+                            changed = true;
+                        }
+                    }
+                    if changed {
+                        if let Ok(content) = to_yaml_string(&meta) {
+                            let _ = atomic_write_str(&folder_meta_path, &content);
+                        }
+                    }
+                }
+            }
         }
     } else {
         // Same slug, just write updated content
@@ -147,7 +188,18 @@ pub fn move_request(
 
     // Best-effort move of loc
     if old_loc_path.exists() {
-        let _ = with_retry(|| std::fs::rename(&old_loc_path, &new_loc_path));
+        let rename_res = with_retry(|| {
+            if new_loc_path.exists() {
+                let _ = std::fs::remove_file(&new_loc_path);
+            }
+            std::fs::rename(&old_loc_path, &new_loc_path)
+        });
+        if rename_res.is_err()
+            && old_loc_path.exists()
+            && std::fs::copy(&old_loc_path, &new_loc_path).is_ok()
+        {
+            let _ = with_retry(|| std::fs::remove_file(&old_loc_path));
+        }
     }
 
     let new_rel = new_yaml_path

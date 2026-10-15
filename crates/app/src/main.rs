@@ -345,19 +345,50 @@ impl AppView {
             }
         }));
 
-        // 5. Observe workspace_state: synchronize renamed request to editor_state.active_request
+        // 5. Observe workspace_state: synchronize renamed request to editor_state.active_request & response_state
         let ed_sync = editor_state.clone();
+        let resp_sync = response_state.clone();
         _subscriptions.push(cx.observe(&workspace_state, move |_, ws, cx| {
-            let active_opt = ed_sync.read(cx).active_request.as_ref().map(|r| (r.id.clone(), r.name.clone()));
-            if let Some((active_id, active_name)) = active_opt {
-                let saved_name = ws.read(cx).requests.iter().find(|r| r.id == active_id).map(|r| r.name.clone());
-                if let Some(saved) = saved_name {
-                    if saved != active_name {
-                        ed_sync.update(cx, |ed, cx| {
-                            ed.set_name(saved, cx);
-                        });
+            let (last_renamed, matching_req, saved_name_for_active) = {
+                let ws_ref = ws.read(cx);
+                let last_renamed = ws_ref.last_renamed_request.clone();
+                let matching_req = if let Some((_, new_id)) = &last_renamed {
+                    ws_ref.requests.iter().find(|r| &r.id == new_id).cloned()
+                } else {
+                    None
+                };
+                let active_id = ed_sync.read(cx).active_request.as_ref().map(|r| r.id.clone());
+                let saved_name_for_active = if let Some(a_id) = active_id {
+                    ws_ref.requests.iter().find(|r| r.id == a_id).map(|r| r.name.clone())
+                } else {
+                    None
+                };
+                (last_renamed, matching_req, saved_name_for_active)
+            };
+
+            if let Some((old_id, new_id)) = last_renamed {
+                resp_sync.update(cx, |resp, _cx| {
+                    resp.rename_request(&old_id, &new_id);
+                });
+                ed_sync.update(cx, |ed, cx| {
+                    if let Some(curr_act) = &ed.active_request {
+                        if curr_act.id == old_id {
+                            if let Some(matching) = matching_req {
+                                ed.set_active_request(matching, false, cx);
+                            }
+                        }
                     }
-                }
+                });
+            }
+
+            if let Some(saved) = saved_name_for_active {
+                ed_sync.update(cx, |ed, cx| {
+                    if let Some(curr) = &ed.active_request {
+                        if curr.name != saved {
+                            ed.set_name(saved, cx);
+                        }
+                    }
+                });
             }
         }));
 
