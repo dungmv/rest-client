@@ -1,6 +1,7 @@
 use crate::components::status_badge::MethodBadge;
 use crate::state::{EditorState, WorkspaceState};
 use crate::theme::theme;
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     div, px, App, AppContext as _, Entity, InteractiveElement as _, IntoElement, ParentElement,
     RenderOnce, StatefulInteractiveElement as _, Styled, Window,
@@ -162,6 +163,43 @@ impl RenderOnce for CommandPalette {
                                             ),
                                     )
                                     .child(div().text_xs().text_color(t.text_muted).child("Ctrl+Enter"))
+                            })
+                            // Action: Open Settings
+                            .when(q.is_empty() || "settings".contains(&q) || "preferences".contains(&q), |this| {
+                                let ws_s = ws_clone.clone();
+                                this.child(
+                                    div()
+                                        .id("cmd-open-settings")
+                                        .px(px(8.))
+                                        .py(px(6.))
+                                        .rounded(px(4.))
+                                        .hover(|s| s.bg(t.bg_hover))
+                                        .cursor_pointer()
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .on_click(move |_, _, cx| {
+                                            ws_s.update(cx, |state, cx| {
+                                                state.toggle_command_palette(cx);
+                                                state.toggle_settings_modal(cx);
+                                            });
+                                        })
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(8.))
+                                                .child("⚙")
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                        .text_color(t.text_primary)
+                                                        .child("Open Settings"),
+                                                ),
+                                        )
+                                        .child(div().text_xs().text_color(t.text_muted).child("Ctrl+,"))
+                                )
                             })
                             // List Requests
                             .child(

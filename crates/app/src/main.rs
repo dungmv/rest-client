@@ -26,7 +26,7 @@ use state::*;
 use std::sync::Arc;
 use theme::theme;
 
-actions!(restclient, [SendRequest, ToggleCommandPalette, ToggleSidebar]);
+actions!(restclient, [SendRequest, ToggleCommandPalette, ToggleSidebar, ToggleSettings]);
 
 pub enum HttpSendEvent {
     Progress(String),
@@ -704,6 +704,7 @@ impl Render for AppView {
         let is_vertical_split = self.workspace_state.read(cx).split_layout_vertical;
         let show_env_modal = self.workspace_state.read(cx).show_env_modal;
         let show_cookies_modal = self.workspace_state.read(cx).show_cookies_modal;
+        let show_settings_modal = self.workspace_state.read(cx).show_settings_modal;
         let show_command_palette = self.workspace_state.read(cx).show_command_palette;
 
         let active_tab_kind = self.editor_state.read(cx).active_tab_kind;
@@ -825,6 +826,14 @@ impl Render for AppView {
                 move |_: &ToggleSidebar, _, cx| {
                     ws_c.update(cx, |state, cx| {
                         state.toggle_sidebar(cx);
+                    });
+                }
+            })
+            .on_action({
+                let ws_c = ws_entity.clone();
+                move |_: &ToggleSettings, _, cx| {
+                    ws_c.update(cx, |state, cx| {
+                        state.toggle_settings_modal(cx);
                     });
                 }
             })
@@ -955,15 +964,28 @@ impl Render for AppView {
                                                                 });
                                                             })
                                                     })
+                                                    .child(div().flex_1())
                                                     .child({
-                                                        let ed_c = ed_entity.clone();
-                                                        TabItem::new("tab-settings", "Settings")
-                                                            .active(active_tab_kind == RequestTabKind::Settings)
+                                                        let ws_s = ws_entity.clone();
+                                                        div()
+                                                            .id("btn-open-request-settings")
+                                                            .cursor_pointer()
+                                                            .px(px(6.))
+                                                            .py(px(3.))
+                                                            .rounded(px(4.))
+                                                            .text_color(t.text_muted)
+                                                            .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
+                                                            .flex()
+                                                            .items_center()
+                                                            .gap(px(4.))
+                                                            .text_xs()
                                                             .on_click(move |_, _, cx| {
-                                                                ed_c.update(cx, |state, cx| {
-                                                                    state.set_active_tab_kind(RequestTabKind::Settings, cx);
+                                                                ws_s.update(cx, |state, cx| {
+                                                                    state.toggle_settings_modal(cx);
                                                                 });
                                                             })
+                                                            .child("⚙")
+                                                            .child("Settings")
                                                     }),
                                             )
                                             // Request Tab Content
@@ -1306,102 +1328,7 @@ impl Render for AppView {
                                                                             }
                                                                         }
                                                                     })
-                                                            }
-                                                            RequestTabKind::Settings => {
-                                                                let ed_s = ed_entity.clone();
-                                                                let settings = active_req.as_ref().map(|r| r.settings.clone()).unwrap_or_default();
-
-                                                                div()
-                                                                    .p(px(16.))
-                                                                    .flex()
-                                                                    .flex_col()
-                                                                    .gap(px(14.))
-                                                                    .child(div().text_sm().font_weight(gpui::FontWeight::SEMIBOLD).child("Request Configuration & Network Settings"))
-                                                                    // Timeout presets
-                                                                    .child(
-                                                                        div()
-                                                                            .flex()
-                                                                            .flex_col()
-                                                                            .gap(px(6.))
-                                                                            .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.text_muted).child("Request Timeout:"))
-                                                                            .child(
-                                                                                div()
-                                                                                    .flex()
-                                                                                    .gap(px(6.))
-                                                                                    .children([10, 30, 60, 120].into_iter().map(|s| {
-                                                                                        let is_cur = settings.timeout_secs == s;
-                                                                                        let ed_set = ed_s.clone();
-                                                                                        div()
-                                                                                            .id(format!("timeout-{}s", s))
-                                                                                            .px(px(8.))
-                                                                                            .py(px(4.))
-                                                                                            .rounded(px(4.))
-                                                                                            .bg(if is_cur { t.primary } else { t.bg_card })
-                                                                                            .text_color(if is_cur { t.primary_foreground } else { t.text_secondary })
-                                                                                            .cursor_pointer()
-                                                                                            .text_xs()
-                                                                                            .on_click(move |_, _, cx| {
-                                                                                                ed_set.update(cx, |st, cx| {
-                                                                                                    st.set_timeout_secs(s, cx);
-                                                                                                });
-                                                                                            })
-                                                                                            .child(format!("{}s", s))
-                                                                                    }))
-                                                                            )
-                                                                    )
-                                                                    // Follow Redirects toggle
-                                                                    .child({
-                                                                        let ed_set = ed_s.clone();
-                                                                        let cur_follow = settings.follow_redirects;
-                                                                        div()
-                                                                            .flex()
-                                                                            .items_center()
-                                                                            .gap(px(8.))
-                                                                            .child(
-                                                                                div()
-                                                                                    .id("toggle-follow-redirects")
-                                                                                    .px(px(8.))
-                                                                                    .py(px(4.))
-                                                                                    .rounded(px(4.))
-                                                                                    .bg(if cur_follow { t.primary } else { t.bg_card })
-                                                                                    .text_color(if cur_follow { t.primary_foreground } else { t.text_secondary })
-                                                                                    .cursor_pointer()
-                                                                                    .text_xs()
-                                                                                    .on_click(move |_, _, cx| {
-                                                                                        ed_set.update(cx, |st, cx| {
-                                                                                            st.set_follow_redirects(!cur_follow, cx);
-                                                                                        });
-                                                                                    })
-                                                                                    .child(if cur_follow { "✓ Follow Redirects Enabled" } else { "Follow Redirects Disabled" })
-                                                                            )
-                                                                    })
-                                                                    // Validate TLS Certificates toggle
-                                                                    .child({
-                                                                        let ed_set = ed_s.clone();
-                                                                        let cur_tls = settings.validate_tls;
-                                                                        div()
-                                                                            .flex()
-                                                                            .items_center()
-                                                                            .gap(px(8.))
-                                                                            .child(
-                                                                                div()
-                                                                                    .id("toggle-validate-tls")
-                                                                                    .px(px(8.))
-                                                                                    .py(px(4.))
-                                                                                    .rounded(px(4.))
-                                                                                    .bg(if cur_tls { t.primary } else { t.bg_card })
-                                                                                    .text_color(if cur_tls { t.primary_foreground } else { t.text_secondary })
-                                                                                    .cursor_pointer()
-                                                                                    .text_xs()
-                                                                                    .on_click(move |_, _, cx| {
-                                                                                        ed_set.update(cx, |st, cx| {
-                                                                                            st.set_validate_tls(!cur_tls, cx);
-                                                                                        });
-                                                                                    })
-                                                                                    .child(if cur_tls { "✓ Validate TLS Certificates Enabled" } else { "Validate TLS Certificates Disabled" })
-                                                                            )
-                                                                    })
-                                                            }
+                                                              }
                                                             RequestTabKind::PreRequestScript => {
                                                                 let pre_txt = self.pre_script_editor.clone();
                                                                 let script_err = ed_entity.read(cx).script_error.clone();
@@ -1551,6 +1478,9 @@ impl Render for AppView {
             .when(show_cookies_modal, |this| {
                 this.child(CookiesModal::new(ws_entity.clone()))
             })
+            .when(show_settings_modal, |this| {
+                this.child(SettingsModal::new(ws_entity.clone(), ed_entity.clone()))
+            })
             .when(show_command_palette, |this| {
                 let view_handle = app_view_entity.clone();
                 this.child(CommandPalette::new(ws_entity.clone(), ed_entity.clone(), move |_, cx| {
@@ -1579,6 +1509,8 @@ fn main() {
             KeyBinding::new("cmd-k", ToggleCommandPalette, None),
             KeyBinding::new("ctrl-b", ToggleSidebar, None),
             KeyBinding::new("cmd-b", ToggleSidebar, None),
+            KeyBinding::new("ctrl-,", ToggleSettings, None),
+            KeyBinding::new("cmd-,", ToggleSettings, None),
         ]);
 
         cx.on_window_closed(|cx, _window_id| {

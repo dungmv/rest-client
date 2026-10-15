@@ -13,7 +13,6 @@ pub enum RequestTabKind {
     Params,
     Headers,
     Auth,
-    Settings,
     PreRequestScript,
     Tests,
 }
