@@ -1003,6 +1003,7 @@ impl Render for AppView {
                                                                         self.raw_textarea.clone(),
                                                                     )
                                                                     .workspace_state(ws_entity.clone())
+                                                                    .toast_state(self.toast_state.clone())
                                                                 )
                                                             }
                                                             RequestTabKind::Params => {

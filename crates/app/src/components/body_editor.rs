@@ -1,6 +1,6 @@
 use std::ops::Range;
 use crate::components::kv_table::KvTable;
-use crate::state::{EditorState, WorkspaceState};
+use crate::state::{EditorState, ToastState, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -8,10 +8,12 @@ use gpui::{
     IntoElement, ParentElement, RenderOnce, SharedString, StatefulInteractiveElement as _,
     Styled, Window,
 };
+use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{
     Editor, EditorState as CodeEditorState, FoldRange, HighlightStyleResolver, InputEdit,
     InputHighlighter, Rope, Textarea, TextareaState,
 };
+use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::scroll::ScrollableElement as _;
 use restclient_core::models::{KeyValuePair, MultipartItem, RequestBody};
 
@@ -337,12 +339,43 @@ fn format_file_size(path_str: &str) -> String {
     }
 }
 
+pub fn format_xml(xml: &str) -> Result<String, String> {
+    use quick_xml::reader::Reader;
+    use quick_xml::writer::Writer;
+    use std::io::Cursor;
+
+    let trimmed = xml.trim();
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut reader = Reader::from_str(trimmed);
+    reader.config_mut().trim_text(true);
+
+    let mut writer = Writer::new_with_indent(Cursor::new(Vec::new()), b' ', 2);
+    loop {
+        match reader.read_event() {
+            Ok(quick_xml::events::Event::Eof) => break,
+            Ok(event) => {
+                writer
+                    .write_event(event)
+                    .map_err(|e| format!("XML write error: {}", e))?;
+            }
+            Err(e) => return Err(format!("XML syntax error: {}", e)),
+        }
+    }
+
+    let result = writer.into_inner().into_inner();
+    String::from_utf8(result).map_err(|e| format!("UTF-8 conversion error: {}", e))
+}
+
 #[derive(IntoElement)]
 pub struct BodyEditor {
     editor_state: Entity<EditorState>,
     json_editor: Entity<CodeEditorState>,
     raw_textarea: Entity<TextareaState>,
     workspace_state: Option<Entity<WorkspaceState>>,
+    toast_state: Option<Entity<ToastState>>,
 }
 
 impl BodyEditor {
@@ -356,11 +389,17 @@ impl BodyEditor {
             json_editor,
             raw_textarea,
             workspace_state: None,
+            toast_state: None,
         }
     }
 
     pub fn workspace_state(mut self, ws: Entity<WorkspaceState>) -> Self {
         self.workspace_state = Some(ws);
+        self
+    }
+
+    pub fn toast_state(mut self, ts: Entity<ToastState>) -> Self {
+        self.toast_state = Some(ts);
         self
     }
 }
@@ -374,20 +413,43 @@ impl RenderOnce for BodyEditor {
         let active_req = ed.active_request.clone();
         let body = active_req.as_ref().map(|r| r.body.clone()).unwrap_or(RequestBody::None);
 
-        let body_kind_label = match &body {
-            RequestBody::None => "none",
-            RequestBody::Json(_) => "json",
-            RequestBody::FormUrlEncoded(_) => "form",
-            RequestBody::Multipart(_) => "multipart",
-            RequestBody::Raw { .. } => "raw",
-            RequestBody::Binary { .. } => "binary",
+        let (is_none, is_json, is_xml, is_text, is_multipart, is_form, is_binary) = match &body {
+            RequestBody::None => (true, false, false, false, false, false, false),
+            RequestBody::Json(_) => (false, true, false, false, false, false, false),
+            RequestBody::Raw { content_type, .. }
+                if content_type == "application/xml" || content_type == "text/xml" =>
+            {
+                (false, false, true, false, false, false, false)
+            }
+            RequestBody::Raw { .. } => (false, false, false, true, false, false, false),
+            RequestBody::Multipart(_) => (false, false, false, false, true, false, false),
+            RequestBody::FormUrlEncoded(_) => (false, false, false, false, false, true, false),
+            RequestBody::Binary { .. } => (false, false, false, false, false, false, true),
+        };
+
+        let current_label = if is_none {
+            "None"
+        } else if is_json {
+            "JSON"
+        } else if is_xml {
+            "XML"
+        } else if is_text {
+            "Text"
+        } else if is_multipart {
+            "Multipart"
+        } else if is_form {
+            "Form URL-Encoded"
+        } else if is_binary {
+            "Binary Stream"
+        } else {
+            "None"
         };
 
         div()
             .size_full()
             .flex()
             .flex_col()
-            // Top format selector bar: None | JSON | Form | Multipart | Raw | Binary
+            // Top format selector bar: Dropdown [Body Type ▾] (left) and Format Button (right)
             .child(
                 div()
                     .h(px(32.))
@@ -398,80 +460,195 @@ impl RenderOnce for BodyEditor {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(3.))
-                            .children([
-                                ("none", "None"),
-                                ("json", "JSON"),
-                                ("form", "Form URL-Encoded"),
-                                ("multipart", "Multipart"),
-                                ("raw", "Raw"),
-                                ("binary", "Binary"),
-                            ].into_iter().map(|(key, label)| {
-                                let is_active = body_kind_label == key;
-                                let ed_c = ed_entity.clone();
-                                div()
-                                    .id(format!("body-format-{}", key))
-                                    .px(px(8.))
-                                    .py(px(2.))
-                                    .rounded(px(4.))
-                                    .border_1()
-                                    .border_color(if is_active { t.border } else { t.transparent })
-                                    .bg(if is_active { t.bg_selected } else { t.transparent })
-                                    .text_color(if is_active { t.text_primary } else { t.text_secondary })
-                                    .hover(|s| if is_active { s } else { s.text_color(t.text_primary).bg(t.bg_hover) })
-                                    .cursor_pointer()
-                                    .text_xs()
-                                    .font_weight(if is_active { gpui::FontWeight::SEMIBOLD } else { gpui::FontWeight::NORMAL })
-                                    .on_click(move |_, _, cx| {
-                                        ed_c.update(cx, |state, cx| {
-                                            let new_body = match key {
-                                                "none" => RequestBody::None,
-                                                "json" => RequestBody::Json("{\n  \n}".to_string()),
-                                                "form" => RequestBody::FormUrlEncoded(vec![KeyValuePair::new("", "")]),
-                                                "multipart" => RequestBody::Multipart(vec![MultipartItem::default()]),
-                                                "raw" => RequestBody::Raw {
-                                                    content: "".to_string(),
-                                                    content_type: "text/plain".to_string(),
-                                                },
-                                                "binary" => RequestBody::Binary { file_path: "".to_string() },
-                                                _ => RequestBody::None,
-                                            };
-                                            state.set_body_type(new_body, cx);
-                                        });
-                                    })
-                                    .child(label)
-                            }))
-                    )
-                    // Quick Action button in toolbar
                     .child({
-                        match &body {
-                            RequestBody::Json(_) => {
-                                let ed_c = ed_entity.clone();
-                                let j_text = self.json_editor.clone();
+                        let ed_menu = ed_entity.clone();
+                        Button::new("btn-body-type-dropdown")
+                            .ghost()
+                            .compact()
+                            .px(px(8.))
+                            .py(px(2.))
+                            .h(px(24.))
+                            .rounded(px(4.))
+                            .bg(t.bg_card)
+                            .border_1()
+                            .border_color(t.border)
+                            .child(
                                 div()
                                     .flex()
                                     .items_center()
                                     .gap(px(6.))
                                     .child(
                                         div()
-                                            .id("btn-format-json-body")
-                                            .px(px(6.))
-                                            .py(px(2.))
-                                            .rounded(px(4.))
-                                            .bg(t.bg_input)
-                                            .border_1()
-                                            .border_color(t.border)
-                                            .cursor_pointer()
-                                            .hover(|s| s.bg(t.bg_hover))
                                             .text_xs()
-                                            .text_color(t.text_secondary)
-                                            .on_click(move |_, window, cx| {
-                                                let raw = j_text.read(cx).value().to_string();
-                                                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                            .text_color(t.text_primary)
+                                            .child(current_label),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(t.text_muted)
+                                            .child("▾"),
+                                    ),
+                            )
+                            .dropdown_menu(move |menu, _window, _cx| {
+                                let mut m = menu;
+
+                                // 1. None
+                                let ed_none = ed_menu.clone();
+                                m = m.item(
+                                    PopupMenuItem::new("None")
+                                        .checked(is_none)
+                                        .on_click(move |_, _, cx| {
+                                            ed_none.update(cx, |state, cx| {
+                                                state.set_body_type(RequestBody::None, cx);
+                                            });
+                                        }),
+                                );
+
+                                // 2. Text group: JSON, XML, Text
+                                m = m.separator().label("Text");
+
+                                let ed_json = ed_menu.clone();
+                                m = m.item(
+                                    PopupMenuItem::new("JSON")
+                                        .checked(is_json)
+                                        .on_click(move |_, _, cx| {
+                                            ed_json.update(cx, |state, cx| {
+                                                let current_str = match &state.active_request.as_ref().map(|r| &r.body) {
+                                                    Some(RequestBody::Json(s)) if !s.trim().is_empty() => s.clone(),
+                                                    Some(RequestBody::Raw { content, .. }) if !content.trim().is_empty() => content.clone(),
+                                                    _ => "{\n  \n}".to_string(),
+                                                };
+                                                state.set_body_type(RequestBody::Json(current_str), cx);
+                                            });
+                                        }),
+                                );
+
+                                let ed_xml = ed_menu.clone();
+                                m = m.item(
+                                    PopupMenuItem::new("XML")
+                                        .checked(is_xml)
+                                        .on_click(move |_, _, cx| {
+                                            ed_xml.update(cx, |state, cx| {
+                                                let current_str = match &state.active_request.as_ref().map(|r| &r.body) {
+                                                    Some(RequestBody::Raw { content, .. }) if !content.trim().is_empty() => content.clone(),
+                                                    _ => "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<root>\n  \n</root>".to_string(),
+                                                };
+                                                state.set_body_type(
+                                                    RequestBody::Raw {
+                                                        content: current_str,
+                                                        content_type: "application/xml".to_string(),
+                                                    },
+                                                    cx,
+                                                );
+                                            });
+                                        }),
+                                );
+
+                                let ed_text = ed_menu.clone();
+                                m = m.item(
+                                    PopupMenuItem::new("Text")
+                                        .checked(is_text)
+                                        .on_click(move |_, _, cx| {
+                                            ed_text.update(cx, |state, cx| {
+                                                let current_str = match &state.active_request.as_ref().map(|r| &r.body) {
+                                                    Some(RequestBody::Raw { content, .. }) => content.clone(),
+                                                    Some(RequestBody::Json(s)) => s.clone(),
+                                                    _ => "".to_string(),
+                                                };
+                                                state.set_body_type(
+                                                    RequestBody::Raw {
+                                                        content: current_str,
+                                                        content_type: "text/plain".to_string(),
+                                                    },
+                                                    cx,
+                                                );
+                                            });
+                                        }),
+                                );
+
+                                // 3. Form Data group: Multipart, Form URL-Encoded
+                                m = m.separator().label("Form Data");
+
+                                let ed_mp = ed_menu.clone();
+                                m = m.item(
+                                    PopupMenuItem::new("Multipart")
+                                        .checked(is_multipart)
+                                        .on_click(move |_, _, cx| {
+                                            ed_mp.update(cx, |state, cx| {
+                                                let current_items = match &state.active_request.as_ref().map(|r| &r.body) {
+                                                    Some(RequestBody::Multipart(items)) if !items.is_empty() => items.clone(),
+                                                    _ => vec![MultipartItem::default()],
+                                                };
+                                                state.set_body_type(RequestBody::Multipart(current_items), cx);
+                                            });
+                                        }),
+                                );
+
+                                let ed_form = ed_menu.clone();
+                                m = m.item(
+                                    PopupMenuItem::new("Form URL-Encoded")
+                                        .checked(is_form)
+                                        .on_click(move |_, _, cx| {
+                                            ed_form.update(cx, |state, cx| {
+                                                let current_pairs = match &state.active_request.as_ref().map(|r| &r.body) {
+                                                    Some(RequestBody::FormUrlEncoded(pairs)) if !pairs.is_empty() => pairs.clone(),
+                                                    _ => vec![KeyValuePair::new("", "")],
+                                                };
+                                                state.set_body_type(RequestBody::FormUrlEncoded(current_pairs), cx);
+                                            });
+                                        }),
+                                );
+
+                                // 4. Binary group: Binary Stream
+                                m = m.separator().label("Binary");
+
+                                let ed_bin = ed_menu.clone();
+                                m = m.item(
+                                    PopupMenuItem::new("Binary Stream")
+                                        .checked(is_binary)
+                                        .on_click(move |_, _, cx| {
+                                            ed_bin.update(cx, |state, cx| {
+                                                let current_path = match &state.active_request.as_ref().map(|r| &r.body) {
+                                                    Some(RequestBody::Binary { file_path }) => file_path.clone(),
+                                                    _ => "".to_string(),
+                                                };
+                                                state.set_body_type(RequestBody::Binary { file_path: current_path }, cx);
+                                            });
+                                        }),
+                                );
+
+                                m
+                            })
+                    })
+                    // Quick Action button in toolbar (Right side)
+                    .child({
+                        if is_json {
+                            let ed_c = ed_entity.clone();
+                            let j_text = self.json_editor.clone();
+                            let toast_opt = self.toast_state.clone();
+                            div()
+                                .flex()
+                                .items_center()
+                                .child(
+                                    div()
+                                        .id("btn-format-json-body")
+                                        .px(px(8.))
+                                        .py(px(3.))
+                                        .rounded(px(4.))
+                                        .bg(t.bg_input)
+                                        .border_1()
+                                        .border_color(t.border)
+                                        .cursor_pointer()
+                                        .hover(|s| s.bg(t.bg_hover))
+                                        .text_xs()
+                                        .font_weight(gpui::FontWeight::MEDIUM)
+                                        .text_color(t.text_secondary)
+                                        .on_click(move |_, window, cx| {
+                                            let raw = j_text.read(cx).value().to_string();
+                                            match serde_json::from_str::<serde_json::Value>(&raw) {
+                                                Ok(val) => {
                                                     if let Ok(pretty) = serde_json::to_string_pretty(&val) {
                                                         j_text.update(cx, |txt, cx| {
                                                             txt.set_value(pretty.clone(), window, cx);
@@ -481,31 +658,62 @@ impl RenderOnce for BodyEditor {
                                                         });
                                                     }
                                                 }
-                                            })
-                                            .child("Format JSON")
-                                    )
-                                    .child({
-                                        let j_text = self.json_editor.clone();
-                                        div()
-                                            .id("btn-copy-json-body")
-                                            .px(px(6.))
-                                            .py(px(2.))
-                                            .rounded(px(4.))
-                                            .bg(t.bg_input)
-                                            .border_1()
-                                            .border_color(t.border)
-                                            .cursor_pointer()
-                                            .hover(|s| s.bg(t.bg_hover))
-                                            .text_xs()
-                                            .text_color(t.text_secondary)
-                                            .on_click(move |_, _, cx| {
-                                                let raw = j_text.read(cx).value().to_string();
-                                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(raw));
-                                            })
-                                            .child("Copy")
-                                    })
-                            }
-                            _ => div(),
+                                                Err(e) => {
+                                                    if let Some(ts) = &toast_opt {
+                                                        ts.update(cx, |toast, cx| {
+                                                            toast.push_error("JSON Format Error", e.to_string(), cx);
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        })
+                                        .child("Format JSON"),
+                                )
+                        } else if is_xml {
+                            let ed_c = ed_entity.clone();
+                            let raw_tx = self.raw_textarea.clone();
+                            let toast_opt = self.toast_state.clone();
+                            div()
+                                .flex()
+                                .items_center()
+                                .child(
+                                    div()
+                                        .id("btn-format-xml-body")
+                                        .px(px(8.))
+                                        .py(px(3.))
+                                        .rounded(px(4.))
+                                        .bg(t.bg_input)
+                                        .border_1()
+                                        .border_color(t.border)
+                                        .cursor_pointer()
+                                        .hover(|s| s.bg(t.bg_hover))
+                                        .text_xs()
+                                        .font_weight(gpui::FontWeight::MEDIUM)
+                                        .text_color(t.text_secondary)
+                                        .on_click(move |_, window, cx| {
+                                            let raw = raw_tx.read(cx).value().to_string();
+                                            match format_xml(&raw) {
+                                                Ok(pretty) => {
+                                                    raw_tx.update(cx, |txt, cx| {
+                                                        txt.set_value(pretty.clone(), window, cx);
+                                                    });
+                                                    ed_c.update(cx, |state, cx| {
+                                                        state.set_raw_body(pretty, "application/xml".to_string(), cx);
+                                                    });
+                                                }
+                                                Err(e) => {
+                                                    if let Some(ts) = &toast_opt {
+                                                        ts.update(cx, |toast, cx| {
+                                                            toast.push_error("XML Format Error", e, cx);
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        })
+                                        .child("Format XML"),
+                                )
+                        } else {
+                            div()
                         }
                     })
             )
@@ -891,68 +1099,15 @@ impl RenderOnce for BodyEditor {
                                     )
                                     .into_any_element()
                             }
-                            RequestBody::Raw { content_type, .. } => {
-                                let ed_c = ed_entity.clone();
-                                let raw_tx = self.raw_textarea.clone();
-
+                            RequestBody::Raw { .. } => {
                                 div()
                                     .size_full()
-                                    .flex()
-                                    .flex_col()
-                                    // Raw MIME sub-bar
+                                    .p(px(8.))
                                     .child(
-                                        div()
-                                            .h(px(30.))
-                                            .px(px(8.))
-                                            .border_b_1()
-                                            .border_color(t.border)
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(6.))
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(t.text_muted)
-                                                    .child("Content-Type:")
-                                            )
-                                            .children([
-                                                "text/plain",
-                                                "application/xml",
-                                                "text/html",
-                                                "application/javascript",
-                                                "application/graphql",
-                                            ].into_iter().map(|mime| {
-                                                let is_sel = content_type == mime;
-                                                let ed_mime = ed_c.clone();
-                                                let raw_tx_c = raw_tx.clone();
-                                                div()
-                                                    .id(format!("raw-mime-{}", mime))
-                                                    .px(px(6.))
-                                                    .py(px(2.))
-                                                    .rounded(px(4.))
-                                                    .bg(if is_sel { t.primary } else { t.bg_card })
-                                                    .text_color(if is_sel { t.primary_foreground } else { t.text_secondary })
-                                                    .cursor_pointer()
-                                                    .text_xs()
-                                                    .on_click(move |_, _, cx| {
-                                                        let r_c = raw_tx_c.read(cx).value().to_string();
-                                                        ed_mime.update(cx, |state, cx| {
-                                                            state.set_raw_body(r_c, mime.to_string(), cx);
-                                                        });
-                                                    })
-                                                    .child(mime)
-                                            }))
-                                    )
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .p(px(8.))
-                                            .child(
-                                                Textarea::new(&self.raw_textarea)
-                                                    .appearance(false)
-                                                    .bordered(false)
-                                                    .h(gpui::relative(1.))
-                                            )
+                                        Textarea::new(&self.raw_textarea)
+                                            .appearance(false)
+                                            .bordered(false)
+                                            .h(gpui::relative(1.))
                                     )
                                     .into_any_element()
                             }
@@ -1178,5 +1333,32 @@ mod tests {
         let first_line_range = 0..1;
         let styles = highlighter.styles(&first_line_range, &DummyResolver);
         assert!(!styles.is_empty());
+    }
+
+    #[test]
+    fn test_format_xml_valid() {
+        let raw = "<root><item id=\"1\"><name>Alice</name></item></root>";
+        let formatted = format_xml(raw).expect("should format valid XML");
+        assert!(formatted.contains("<root>\n"));
+        assert!(formatted.contains("  <item id=\"1\">\n"));
+        assert!(formatted.contains("    <name>Alice</name>\n"));
+        assert!(formatted.contains("  </item>\n"));
+        assert!(formatted.contains("</root>"));
+    }
+
+    #[test]
+    fn test_format_xml_with_declaration() {
+        let raw = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><root><val>123</val></root>";
+        let formatted = format_xml(raw).expect("should format XML with declaration");
+        assert!(formatted.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
+        assert!(formatted.contains("<root>\n"));
+        assert!(formatted.contains("  <val>123</val>\n"));
+    }
+
+    #[test]
+    fn test_format_xml_invalid_syntax() {
+        let raw = "<root><unclosed>test</root>";
+        let res = format_xml(raw);
+        assert!(res.is_err(), "Invalid unclosed tag should return error");
     }
 }

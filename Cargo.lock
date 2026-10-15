@@ -5575,6 +5575,7 @@ dependencies = [
  "gpui-kit",
  "gpui-pre",
  "lsp-types",
+ "quick-xml",
  "restclient-core",
  "rfd",
  "serde",
