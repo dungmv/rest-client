@@ -56,6 +56,10 @@ pub struct WorkspaceState {
     pub nav_index: usize,
     pub state_save_task: Option<Task<()>>,
     pub request_save_tasks: HashMap<String, Task<()>>,
+    pub conflicts: HashMap<String, String>,
+    pub corrupt_secrets_warning: Option<String>,
+    pub watcher: Option<restclient_core::storage::WorkspaceWatcher>,
+    pub watcher_task: Option<Task<()>>,
 }
 
 impl WorkspaceState {
@@ -122,6 +126,10 @@ impl WorkspaceState {
             nav_index: 0,
             state_save_task: None,
             request_save_tasks: HashMap::new(),
+            conflicts: HashMap::new(),
+            corrupt_secrets_warning: None,
+            watcher: None,
+            watcher_task: None,
         };
 
         state.reload_all();
@@ -139,12 +147,15 @@ impl WorkspaceState {
         self.workspace_path = path.clone();
         self.git_tracked_warning = git_tracked_warning;
         self.git_branch = detect_git_branch(Some(&path));
+        self.conflicts.clear();
+        self.corrupt_secrets_warning = None;
 
         let mut settings = AppSettings::load();
         settings.add_recent_workspace(&path.to_string_lossy());
         self.recent_workspaces = settings.recent_workspaces;
 
         self.reload_all();
+        self.start_watcher(cx);
         cx.notify();
     }
 
@@ -260,7 +271,13 @@ impl WorkspaceState {
 
         for name in &env_names {
             if let Ok(env_file) = self.store.load_environment(name) {
-                let secrets = self.store.load_secrets(name).unwrap_or_default();
+                let secrets = match self.store.load_secrets(name) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        self.corrupt_secrets_warning = Some(format!("{}", e));
+                        HashMap::new()
+                    }
+                };
                 let env = env_file.to_environment(name, &ws_name, name, &secrets);
                 envs.push(env);
             }
@@ -560,6 +577,97 @@ impl WorkspaceState {
     pub fn save_request_file(&mut self, req_id: &str, req_file: &RequestFile, cx: &mut Context<Self>) {
         let _ = self.store.write_request(req_id, req_file);
         self.reload_tree();
+        cx.notify();
+    }
+
+    pub fn start_watcher(&mut self, cx: &mut Context<Self>) {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<restclient_core::storage::FsEvent>();
+        let sup = self.store.suppressed_paths();
+        if let Ok(watcher) = restclient_core::storage::start_workspace_watcher(&self.workspace_path, sup, tx) {
+            self.watcher = Some(watcher);
+            let task = cx.spawn(async move |this, cx| {
+                while let Some(event) = rx.recv().await {
+                    if let Some(this) = this.upgrade() {
+                        this.update(cx, |ws, cx| {
+                            ws.handle_fs_event(event, cx);
+                        });
+                    }
+                }
+            });
+            self.watcher_task = Some(task);
+        }
+    }
+
+    pub fn handle_fs_event(&mut self, event: restclient_core::storage::FsEvent, cx: &mut Context<Self>) {
+        match event {
+            restclient_core::storage::FsEvent::RequestChanged(rel_path) => {
+                if self.unsaved_requests.contains(&rel_path) {
+                    self.conflicts.insert(
+                        rel_path,
+                        "File was modified externally while you have unsaved changes.".to_string(),
+                    );
+                    cx.notify();
+                } else {
+                    match self.store.read_request(&rel_path) {
+                        Ok(req_file) => {
+                            self.parse_errors.remove(&rel_path);
+                            let ws_name = self.workspace_meta.name.clone();
+                            if let Some(r) = self.requests.iter_mut().find(|r| r.id == rel_path) {
+                                *r = req_file.to_item(&r.id, &ws_name, r.folder_id.clone());
+                            }
+                            cx.notify();
+                        }
+                        Err(e) => {
+                            self.parse_errors.insert(rel_path, e.to_string());
+                            cx.notify();
+                        }
+                    }
+                }
+            }
+            restclient_core::storage::FsEvent::RequestDeleted(rel_path) => {
+                self.parse_errors.remove(&rel_path);
+                self.conflicts.remove(&rel_path);
+                self.requests.retain(|r| r.id != rel_path);
+                self.reload_tree();
+                cx.notify();
+            }
+            restclient_core::storage::FsEvent::EnvironmentChanged(_) => {
+                self.reload_environments();
+                cx.notify();
+            }
+            restclient_core::storage::FsEvent::TreeChanged => {
+                self.reload_tree();
+                cx.notify();
+            }
+        }
+    }
+
+    pub fn resolve_conflict_reload(&mut self, rel_path: &str, cx: &mut Context<Self>) {
+        self.conflicts.remove(rel_path);
+        self.unsaved_requests.remove(rel_path);
+        if let Ok(req_file) = self.store.read_request(rel_path) {
+            self.parse_errors.remove(rel_path);
+            let ws_name = self.workspace_meta.name.clone();
+            if let Some(r) = self.requests.iter_mut().find(|r| r.id == rel_path) {
+                *r = req_file.to_item(&r.id, &ws_name, r.folder_id.clone());
+            }
+        }
+        cx.notify();
+    }
+
+    pub fn resolve_conflict_keep(&mut self, rel_path: &str, cx: &mut Context<Self>) {
+        self.conflicts.remove(rel_path);
+        if let Some(r) = self.requests.iter().find(|r| r.id == rel_path).cloned() {
+            let mut req_file = self.store.read_request(rel_path).unwrap_or_else(|_| RequestFile {
+                name: r.name.clone(),
+                method: r.method,
+                url: r.url.clone(),
+                ..Default::default()
+            });
+            req_file.update_from_item(&r);
+            let _ = self.store.write_request(rel_path, &req_file);
+            self.unsaved_requests.remove(rel_path);
+        }
         cx.notify();
     }
 
@@ -1062,6 +1170,10 @@ mod tests {
             nav_index: 0,
             state_save_task: None,
             request_save_tasks: HashMap::new(),
+            conflicts: HashMap::new(),
+            corrupt_secrets_warning: None,
+            watcher: None,
+            watcher_task: None,
         };
 
         let effective = ws_state.effective_environment();
@@ -1075,6 +1187,96 @@ mod tests {
         assert_eq!(token_var.value, "token_123");
 
         assert!(effective.variables.iter().all(|v| v.key != "DISABLED_KEY"));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_conflict_detection_and_invalid_yaml_handling() {
+        let temp_dir = std::env::temp_dir().join(format!("test_ws_conflict_{}", uuid::Uuid::new_v4().simple()));
+        let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
+        store.init_workspace("Conflict WS").unwrap();
+
+        let (_slug, rel_path) = store.create_request(None, "Login", HttpMethod::Post, "https://api.example.com/login").unwrap();
+
+        let mut ws_state = WorkspaceState {
+            store: store.clone(),
+            workspace_path: temp_dir.clone(),
+            workspace_meta: WorkspaceMeta::default(),
+            active_workspace: Some(Workspace::new("Conflict WS")),
+            folders: Vec::new(),
+            requests: Vec::new(),
+            parse_errors: HashMap::new(),
+            pins: Vec::new(),
+            local_state: LocalState::default(),
+            environments: Vec::new(),
+            global_environment: Environment::new("default", "Globals"),
+            active_environment_id: None,
+            selected_env_modal_id: None,
+            env_filter_query: String::new(),
+            var_filter_query: String::new(),
+            git_branch: None,
+            git_tracked_warning: false,
+            filter_query: String::new(),
+            sidebar_collapsed: false,
+            sidebar_width: px(260.),
+            split_layout_vertical: false,
+            show_env_modal: false,
+            show_cookies_modal: false,
+            show_command_palette: false,
+            show_settings_modal: false,
+            renaming_request_id: None,
+            rename_input: None,
+            rename_subscription: None,
+            renaming_folder_id: None,
+            rename_folder_input: None,
+            rename_folder_subscription: None,
+            renaming_env_id: None,
+            rename_env_input: None,
+            rename_env_subscription: None,
+            collapsed_folders: HashSet::new(),
+            unsaved_requests: HashSet::new(),
+            running_request_id: None,
+            recent_workspaces: Vec::new(),
+            nav_history: Vec::new(),
+            nav_index: 0,
+            state_save_task: None,
+            request_save_tasks: HashMap::new(),
+            conflicts: HashMap::new(),
+            corrupt_secrets_warning: None,
+            watcher: None,
+            watcher_task: None,
+        };
+
+        ws_state.reload_tree();
+        assert_eq!(ws_state.requests.len(), 1);
+
+        // 1. External modification while dirty triggers conflict
+        ws_state.unsaved_requests.insert(rel_path.clone());
+        // Simulate external change event
+        if ws_state.unsaved_requests.contains(&rel_path) {
+            ws_state.conflicts.insert(rel_path.clone(), "File was modified externally while you have unsaved changes.".to_string());
+        }
+        assert!(ws_state.conflicts.contains_key(&rel_path));
+
+        // Resolve keep mine
+        ws_state.conflicts.remove(&rel_path);
+        ws_state.unsaved_requests.remove(&rel_path);
+        assert!(!ws_state.conflicts.contains_key(&rel_path));
+
+        // 2. Invalid YAML: test parse error recording and keeping good version
+        let req_file_path = temp_dir.join("collections").join(&rel_path);
+        std::fs::write(&req_file_path, "invalid yaml : : :").unwrap();
+        match store.read_request(&rel_path) {
+            Ok(_) => panic!("Expected parse error"),
+            Err(e) => {
+                ws_state.parse_errors.insert(rel_path.clone(), e.to_string());
+            }
+        }
+        assert!(ws_state.parse_errors.contains_key(&rel_path));
+        // In-memory version is preserved
+        assert_eq!(ws_state.requests.len(), 1);
+        assert_eq!(ws_state.requests[0].name, "Login");
+
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

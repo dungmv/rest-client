@@ -70,4 +70,7 @@ pub trait WorkspaceStore: Send + Sync {
     fn save_state(&self, state: &LocalState) -> Result<()>;
     fn load_cookies(&self) -> Result<serde_json::Value>;
     fn save_cookies(&self, cookies: &serde_json::Value) -> Result<()>;
+
+    /// Thread-safe set of paths currently suppressed from watcher notifications
+    fn suppressed_paths(&self) -> std::sync::Arc<std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>>>;
 }

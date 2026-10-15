@@ -5,11 +5,13 @@ pub mod models;
 pub mod serialize;
 pub mod slug;
 pub mod traits;
+pub mod watcher;
 
 pub use fs::FsStorage;
 pub use fs_store::FsWorkspaceStore;
 pub use models::*;
 pub use traits::WorkspaceStore;
+pub use watcher::{start_workspace_watcher, FsEvent, WorkspaceWatcher};
 
 #[cfg(test)]
 mod tests {
@@ -374,6 +376,57 @@ mod tests {
         store.save_pins(&pins).unwrap();
         let loaded_pins = store.load_pins().unwrap();
         assert_eq!(loaded_pins, pins);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_invalid_yaml_handling_and_corrupt_secret_backup() {
+        let temp_dir = std::env::temp_dir().join(format!("test_invalid_yaml_{}", uuid::Uuid::new_v4().simple()));
+        let store = FsWorkspaceStore::new(&temp_dir);
+        store.init_workspace("Invalid Yaml Test").unwrap();
+
+        // 1. Write an invalid request YAML
+        let req_path = store.collections_dir().join("broken.yaml");
+        std::fs::write(&req_path, "name: Broken\nmethod: NOT_A_METHOD\nurl: ://broken\n  invalid_indent").unwrap();
+
+        let tree = store.scan_tree().unwrap();
+        assert_eq!(tree.root_requests.len(), 1);
+        let node = &tree.root_requests[0];
+        assert_eq!(node.rel_path, "broken.yaml");
+        assert!(node.parse_error.is_some(), "Node must contain parse error message");
+
+        // 2. Corrupt secret file: should rename to *.bak and return Err
+        let secret_path = store.secrets_dir().join("local.yaml");
+        std::fs::create_dir_all(store.secrets_dir()).unwrap();
+        std::fs::write(&secret_path, "invalid: : yaml content").unwrap();
+
+        let load_res = store.load_secrets("local");
+        assert!(load_res.is_err(), "Must return error for corrupt secret file");
+
+        let bak_path = store.secrets_dir().join("local.yaml.bak");
+        assert!(bak_path.exists(), "Corrupt secret file must be backed up to .bak");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_gitignore_management() {
+        let temp_dir = std::env::temp_dir().join(format!("test_gitignore_{}", uuid::Uuid::new_v4().simple()));
+        let store = FsWorkspaceStore::new(&temp_dir);
+        store.init_workspace("Gitignore Test").unwrap();
+
+        let gitignore = temp_dir.join(".gitignore");
+        assert!(gitignore.exists());
+        let content = std::fs::read_to_string(&gitignore).unwrap();
+        assert!(content.contains(".local/"));
+        assert!(content.contains("*.loc"));
+
+        // Running ensure_gitignore again is idempotent
+        let tracked = store.ensure_gitignore().unwrap();
+        assert!(!tracked);
+        let content2 = std::fs::read_to_string(&gitignore).unwrap();
+        assert_eq!(content, content2);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

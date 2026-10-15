@@ -60,7 +60,11 @@ pub struct AppView {
 
 impl AppView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let workspace_state = cx.new(|_| WorkspaceState::new());
+        let workspace_state = cx.new(|cx| {
+            let mut s = WorkspaceState::new();
+            s.start_watcher(cx);
+            s
+        });
         let editor_state = cx.new(|_| EditorState::new());
         let response_state = cx.new(|_| ResponseState::new());
         let toast_state = cx.new(|_| ToastState::new());
@@ -789,6 +793,10 @@ impl Render for AppView {
 
         let app_view_entity = cx.entity().clone();
         let req_id_str = active_req.as_ref().map(|r| r.id.clone()).unwrap_or_else(|| "scratch".to_string());
+        let ws_read = ws_entity.read(cx);
+        let active_conflict = ws_read.conflicts.get(&req_id_str).cloned();
+        let active_parse_err = ws_read.parse_errors.get(&req_id_str).cloned();
+        let corrupt_sec_err = ws_read.corrupt_secrets_warning.clone();
 
         div()
             .size_full()
@@ -868,6 +876,122 @@ impl Render for AppView {
                                             .relative()
                                             .flex()
                                             .flex_col()
+                                            // Conflict banner
+                                            .when_some(active_conflict, |this, msg| {
+                                                let ws_rel = ws_entity.clone();
+                                                let ws_keep = ws_entity.clone();
+                                                let cid = req_id_str.clone();
+                                                let cid_k = req_id_str.clone();
+                                                this.child(
+                                                    div()
+                                                        .px(px(12.))
+                                                        .py(px(6.))
+                                                        .bg(gpui::Hsla { a: 0.15, ..t.status_4xx })
+                                                        .border_b_1()
+                                                        .border_color(t.status_4xx)
+                                                        .flex()
+                                                        .items_center()
+                                                        .justify_between()
+                                                        .text_xs()
+                                                        .child(
+                                                            div()
+                                                                .flex()
+                                                                .items_center()
+                                                                .gap(px(8.))
+                                                                .child(
+                                                                    div()
+                                                                        .font_weight(gpui::FontWeight::BOLD)
+                                                                        .text_color(t.status_4xx)
+                                                                        .child("⚠️ Conflict:")
+                                                                )
+                                                                .child(
+                                                                    div()
+                                                                        .text_color(t.text_primary)
+                                                                        .child(msg)
+                                                                )
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .flex()
+                                                                .items_center()
+                                                                .gap(px(6.))
+                                                                .child(
+                                                                    div()
+                                                                        .id("btn-conflict-reload")
+                                                                        .cursor_pointer()
+                                                                        .px(px(8.))
+                                                                        .py(px(2.))
+                                                                        .rounded(px(4.))
+                                                                        .bg(t.primary)
+                                                                        .text_color(t.primary_foreground)
+                                                                        .on_click(move |_, _, cx| {
+                                                                            ws_rel.update(cx, |ws, cx| {
+                                                                                ws.resolve_conflict_reload(&cid, cx);
+                                                                            });
+                                                                        })
+                                                                        .child("Reload")
+                                                                )
+                                                                .child(
+                                                                    div()
+                                                                        .id("btn-conflict-keep")
+                                                                        .cursor_pointer()
+                                                                        .px(px(8.))
+                                                                        .py(px(2.))
+                                                                        .rounded(px(4.))
+                                                                        .bg(t.bg_card)
+                                                                        .border_1()
+                                                                        .border_color(t.border)
+                                                                        .text_color(t.text_primary)
+                                                                        .on_click(move |_, _, cx| {
+                                                                            ws_keep.update(cx, |ws, cx| {
+                                                                                ws.resolve_conflict_keep(&cid_k, cx);
+                                                                            });
+                                                                        })
+                                                                        .child("Keep mine")
+                                                                )
+                                                        )
+                                                )
+                                            })
+                                            // Parse error banner
+                                            .when_some(active_parse_err, |this, err| {
+                                                this.child(
+                                                    div()
+                                                        .px(px(12.))
+                                                        .py(px(6.))
+                                                        .bg(gpui::Hsla { a: 0.12, ..t.status_5xx })
+                                                        .border_b_1()
+                                                        .border_color(t.status_5xx)
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap(px(8.))
+                                                        .text_xs()
+                                                        .text_color(t.status_5xx)
+                                                        .child("⚠️ Parse error on disk (showing last good in-memory version):")
+                                                        .child(
+                                                            div()
+                                                                .font_family("monospace")
+                                                                .text_color(t.text_primary)
+                                                                .child(err)
+                                                        )
+                                                )
+                                            })
+                                            // Corrupt secrets banner
+                                            .when_some(corrupt_sec_err, |this, msg| {
+                                                this.child(
+                                                    div()
+                                                        .px(px(12.))
+                                                        .py(px(6.))
+                                                        .bg(gpui::Hsla { a: 0.15, ..t.status_4xx })
+                                                        .border_b_1()
+                                                        .border_color(t.status_4xx)
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap(px(8.))
+                                                        .text_xs()
+                                                        .text_color(t.status_4xx)
+                                                        .child(format!("⚠️ Sensitive Data Warning: {}", msg))
+                                                )
+                                            })
                                             // Top Request Bar: Method + URL + Send
                                             .child({
                                                 let view_handle = app_view_entity.clone();

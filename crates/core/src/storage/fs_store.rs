@@ -11,18 +11,35 @@ use crate::storage::serialize::{atomic_write_str, to_yaml_string, with_retry};
 use crate::storage::slug::loc_path_for_yaml;
 use crate::storage::traits::WorkspaceStore;
 use anyhow::{Context, Result};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 pub struct FsWorkspaceStore {
     root_dir: PathBuf,
+    pub suppressed_paths: Arc<Mutex<HashSet<PathBuf>>>,
 }
 
 impl FsWorkspaceStore {
     pub fn new(root_dir: impl Into<PathBuf>) -> Self {
         Self {
             root_dir: root_dir.into(),
+            suppressed_paths: Arc::new(Mutex::new(HashSet::new())),
         }
+    }
+
+    pub fn suppress_path(&self, path: &Path) {
+        if let Ok(mut set) = self.suppressed_paths.lock() {
+            set.insert(path.to_path_buf());
+        }
+        let sup = self.suppressed_paths.clone();
+        let p = path.to_path_buf();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            if let Ok(mut set) = sup.lock() {
+                set.remove(&p);
+            }
+        });
     }
 
     pub fn collections_dir(&self) -> PathBuf {
@@ -441,6 +458,7 @@ impl WorkspaceStore for FsWorkspaceStore {
 
     fn write_request(&self, rel_path: &str, req: &RequestFile) -> Result<()> {
         let path = self.collections_dir().join(rel_path);
+        self.suppress_path(&path);
         let yaml = to_yaml_string(req)?;
         atomic_write_str(&path, &yaml)?;
         Ok(())
@@ -460,20 +478,29 @@ impl WorkspaceStore for FsWorkspaceStore {
             ..Default::default()
         };
         let (slug, path) = create_request(&self.collections_dir(), folder_rel, name, req)?;
+        self.suppress_path(&path);
         Ok((slug, path_to_forward_slash(&path)))
     }
 
     fn delete_request(&self, rel_path: &str) -> Result<()> {
+        let path = self.collections_dir().join(rel_path);
+        self.suppress_path(&path);
         delete_request(&self.collections_dir(), Path::new(rel_path))
     }
 
     fn rename_request(&self, rel_path: &str, new_name: &str) -> Result<String> {
+        let old_p = self.collections_dir().join(rel_path);
+        self.suppress_path(&old_p);
         let new_path = rename_request(&self.collections_dir(), Path::new(rel_path), new_name)?;
+        self.suppress_path(&new_path);
         Ok(path_to_forward_slash(&new_path))
     }
 
     fn move_request(&self, rel_path: &str, target_folder_rel: Option<&str>) -> Result<String> {
+        let old_p = self.collections_dir().join(rel_path);
+        self.suppress_path(&old_p);
         let new_path = move_request(&self.collections_dir(), Path::new(rel_path), target_folder_rel)?;
+        self.suppress_path(&new_path);
         Ok(path_to_forward_slash(&new_path))
     }
 
@@ -562,6 +589,7 @@ impl WorkspaceStore for FsWorkspaceStore {
         }
 
         let path = self.environments_dir().join(format!("{}.yaml", name));
+        self.suppress_path(&path);
         let yaml = to_yaml_string(&committed_env)?;
         atomic_write_str(&path, &yaml)?;
 
@@ -572,6 +600,7 @@ impl WorkspaceStore for FsWorkspaceStore {
 
     fn delete_environment(&self, name: &str) -> Result<()> {
         let path = self.environments_dir().join(format!("{}.yaml", name));
+        self.suppress_path(&path);
         if path.exists() {
             let _ = with_retry(|| std::fs::remove_file(&path));
         }
@@ -585,6 +614,8 @@ impl WorkspaceStore for FsWorkspaceStore {
     fn rename_environment(&self, old_name: &str, new_name: &str) -> Result<()> {
         let old_path = self.environments_dir().join(format!("{}.yaml", old_name));
         let new_path = self.environments_dir().join(format!("{}.yaml", new_name));
+        self.suppress_path(&old_path);
+        self.suppress_path(&new_path);
         if old_path.exists() {
             with_retry(|| std::fs::rename(&old_path, &new_path))?;
         }
@@ -609,11 +640,11 @@ impl WorkspaceStore for FsWorkspaceStore {
 
         match serde_yaml::from_str::<HashMap<String, String>>(&raw) {
             Ok(map) => Ok(map),
-            Err(_) => {
+            Err(e) => {
                 // Corrupt .local/secrets/*.yaml: rename to *.bak, user data that cannot be regenerated
                 let bak_path = self.secrets_dir().join(format!("{}.yaml.bak", env_name));
                 let _ = with_retry(|| std::fs::rename(&path, &bak_path));
-                Ok(HashMap::new())
+                Err(anyhow::anyhow!("Corrupt secret file for environment '{}' ({}), backed up to {}.yaml.bak", env_name, e, env_name))
             }
         }
     }
@@ -732,5 +763,9 @@ impl WorkspaceStore for FsWorkspaceStore {
         let json = serde_json::to_string_pretty(cookies)?;
         atomic_write_str(&path, &json)?;
         Ok(())
+    }
+
+    fn suppressed_paths(&self) -> std::sync::Arc<std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>>> {
+        self.suppressed_paths.clone()
     }
 }
