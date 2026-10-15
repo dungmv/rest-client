@@ -313,6 +313,7 @@ impl EditorState {
     }
 
     // Multipart
+    #[allow(clippy::too_many_arguments)]
     pub fn update_multipart_item(&mut self, index: usize, key: String, val: String, is_file: bool, file_path: Option<String>, enabled: bool, cx: &mut Context<Self>) {
         if let Some(req) = &mut self.active_request {
             if let RequestBody::Multipart(items) = &mut req.body {

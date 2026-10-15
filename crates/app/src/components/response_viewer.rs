@@ -840,8 +840,6 @@ impl RenderOnce for ResponseViewer {
                                             .child(
                                                 uniform_list("response-lines-virtual", lines.len(), {
                                                     let lines = lines.clone();
-                                                    let is_json = is_json;
-                                                    let t = t;
                                                     move |range, _window, _cx| {
                                                         range
                                                             .map(|idx| {
@@ -871,7 +869,7 @@ impl RenderOnce for ResponseViewer {
                                                                             .child(if line.is_empty() {
                                                                                 div().child(" ")
                                                                             } else if is_json {
-                                                                                div().child(highlight_json_line(line, &t))
+                                                                                div().child(highlight_json_line(line, t))
                                                                             } else {
                                                                                 div().child(line.clone())
                                                                             }),
@@ -976,9 +974,8 @@ impl RenderOnce for ResponseViewer {
                                                                     .size_full()
                                                                     .overflow_hidden()
                                                                     .child(
-                                                                        uniform_list("request-sent-preview-lines", p_count, {
+                                                                         uniform_list("request-sent-preview-lines", p_count, {
                                                                             let p_lines = p_lines.clone();
-                                                                            let t = t;
                                                                             move |range, _window, _cx| {
                                                                                 range
                                                                                     .map(|idx| {
@@ -986,7 +983,7 @@ impl RenderOnce for ResponseViewer {
                                                                                         div().h(px(20.)).child(if line.is_empty() {
                                                                                             div().child(" ")
                                                                                         } else if is_preview_json {
-                                                                                            div().child(highlight_json_line(line, &t))
+                                                                                            div().child(highlight_json_line(line, t))
                                                                                         } else {
                                                                                             div().child(line.clone())
                                                                                         })
@@ -1006,7 +1003,7 @@ impl RenderOnce for ResponseViewer {
                                                                         div().h(px(20.)).child(if line.is_empty() {
                                                                             div().child(" ")
                                                                         } else if is_preview_json {
-                                                                            div().child(highlight_json_line(line, &t))
+                                                                            div().child(highlight_json_line(line, t))
                                                                         } else {
                                                                             div().child(line.clone())
                                                                         })

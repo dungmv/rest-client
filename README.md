@@ -1,8 +1,8 @@
 # RestClient: High-Performance Desktop REST API Client in Rust
 
-A fast, lightweight, and Git-friendly desktop REST API client (inspired by Yaak, Insomnia, and Bruno) built in **Rust** using Zed's **GPUI** UI framework and the `gpui-component` crate.
+A fast, lightweight, and Git-friendly desktop REST API client (inspired by Yaak, Insomnia, and Bruno) built in **Rust** using Zed's **GPUI** UI framework and `gpui-component`.
 
-Targeted for **macOS** and **Windows** with real HTTP request execution from the ground up.
+Targeted for **macOS** and **Windows** with real HTTP request execution from the ground up and plain-text filesystem persistence designed for seamless Git collaboration.
 
 ---
 
@@ -15,9 +15,72 @@ Targeted for **macOS** and **Windows** with real HTTP request execution from the
 
 ---
 
-## 🧱 Architecture
+## 💾 Filesystem-First Architecture (100% Plain Text)
 
-The project is structured as a Cargo virtual workspace with strict separation between UI and business logic:
+The filesystem is the **only source of truth** for collections, environments, and workspace configurations. There is no hidden database or proprietary cache holding collection data.
+
+### On-Disk Workspace Layout
+
+```
+my-workspace/
+  workspace.yaml                 # version, name, default_environment
+  .gitignore                     # auto-managed: contains `.local/` and `*.loc`
+  environments/
+    local.yaml                   # COMMIT: variables; secret variables store NAME only
+    staging.yaml
+  collections/
+    auth/                        # group = directory
+      _folder.yaml               # name, order: [login, refresh, logout] (stems)
+      login.yaml                 # COMMIT: request + examples
+      login.loc                  # GITIGNORE: last response cache (same stem as the yaml)
+      refresh.yaml
+    health/
+      _folder.yaml
+      healthz.yaml
+  .local/                        # GITIGNORE: personal machine data
+    secrets/local.yaml           # secret variable VALUES per environment
+    cookies.json                 # cookie jar; expired cookies dropped on save
+    pins.yaml                    # ordered relative request paths
+    state.yaml                   # active request, environment, layout, recents
+```
+
+App-level global settings (recent workspace paths, theme, window geometry) live in a single JSON file in the OS config directory (`dirs::config_dir()`), never inside the workspace repository.
+
+---
+
+## 🤝 Git Collaboration Workflow
+
+### What to Commit vs What to Gitignore
+- **Committed Files:**
+  - `workspace.yaml`: Workspace metadata and default environment.
+  - `environments/*.yaml`: Environment variable declarations. Variables flagged as `secret: true` store **names only** without values.
+  - `collections/**/<slug>.yaml`: Requests, settings, scripts, and saved examples.
+  - `collections/**/_folder.yaml`: Folder display names and manual request ordering.
+- **Gitignored Files (`.local/` and `*.loc`):**
+  - `.local/secrets/<env>.yaml`: Actual secret variable values. Never committed.
+  - `.local/cookies.json`: Personal cookie jars.
+  - `.local/pins.yaml` and `.local/state.yaml`: Individual window, selection, and UI preferences.
+  - `*.loc`: Last response caches (JSON format, truncated at 512KB for large payloads; binary bodies store metadata only).
+
+### Deterministic Serialization
+To prevent noisy diffs and merge conflicts when working in teams:
+1. **Deterministic YAML:** 2-space indentation, trailing newline, strictly Unix LF line endings (even on Windows).
+2. **Fixed Key Ordering:** `name`, `method`, `url`, `params`, `headers`, `auth`, `body`, `settings`, `script`, with `examples` **always last**.
+3. **No Random IDs:** Request file paths use slugs (`login.yaml`, `login-2.yaml`). Pairing with `.loc` response cache is by exact stem match only.
+4. **Unknown Key Preservation:** Preserves unknown keys when saving (flattened map), ensuring newer teammates' schema extensions are never stripped.
+5. **Atomic Writes:** All filesystem mutations write to a temporary file in the same directory first, then perform an atomic rename with a 5x retry loop on Windows sharing violations.
+
+### Automatic Protection & Conflict Handling
+- **Auto-managed `.gitignore`:** Upon opening a workspace, `.gitignore` is created or verified to ensure `.local/` and `*.loc` are present.
+- **Tracked Secret Warning:** If a Git repository is detected and sensitive paths (`.local/` or `*.loc`) are tracked by Git, a persistent warning toast alerts the user.
+- **External Change Detection:** Background `notify` watcher automatically reloads changed files. If an external change modifies a file while the user has unsaved edits in memory, a conflict banner allows choosing **"Reload"** or **"Keep mine"**.
+- **Parse Error Resilience:** Invalid YAML syntax from Git merge conflicts or edits does not crash the app. The sidebar displays an error icon, the editor presents an error banner with the exact line number, and the last good in-memory version is retained.
+
+---
+
+## 🧱 Codebase Structure
+
+The project is structured as a Cargo virtual workspace with clean separation between UI and the storage trait:
 
 ```
 restclient/
@@ -26,73 +89,30 @@ restclient/
 │   │   ├── src/
 │   │   │   ├── curl/          # cURL CLI importer and exporter
 │   │   │   ├── http/          # HttpExecutor trait & ReqwestExecutor with timing breakdowns
-│   │   │   ├── interpolation.rs # Pure {{var}} interpolation & syntax scanning
-│   │   │   ├── models.rs      # Data types (HttpRequestItem, HttpMethod, Auth, etc.)
+│   │   │   ├── interpolation.rs # {{var}} interpolation & syntax scanning
+│   │   │   ├── models.rs      # Data models (HttpRequestItem, HttpMethod, Auth, etc.)
 │   │   │   ├── scripting/     # Embedded QuickJS (rquickjs) sandbox, API bridge, faker
-│   │   │   │   ├── api.rs         # Pre/Post scripting context & mutation models
-│   │   │   │   ├── fake_vars.rs   # Dynamic faker macros ({{$uuid}}, {{$timestamp}}, etc.)
-│   │   │   │   └── sandbox.rs     # rquickjs Runtime, client.* & pm.* sandbox bindings
-│   │   │   └── storage/
-│   │   │       └── fs.rs      # Plain-file collection storage (Git-friendly, stable JSON)
+│   │   │   └── storage/       # Filesystem persistence implementation
+│   │   │       ├── fs_ops.rs      # Single-code-path filesystem CRUD operations
+│   │   │       ├── fs_store.rs    # FsWorkspaceStore implementing WorkspaceStore trait
+│   │   │       ├── models.rs      # Plain serde YAML/JSON models
+│   │   │       ├── serialize.rs   # Deterministic LF serialization & atomic write with retry
+│   │   │       ├── slug.rs        # Slugs, stem matching, collisions
+│   │   │       ├── traits.rs      # WorkspaceStore trait
+│   │   │       └── watcher.rs     # Debounced notify filesystem watcher & path suppression
 │   │   └── Cargo.toml
-│   └── app/                   # GPUI UI application
+│   └── app/                   # GPUI desktop application
 │       ├── src/
 │       │   ├── components/    # Reusable UI widgets
-│       │   │   ├── body_editor.rs     # JSON / Raw / Form body editor with line numbers
-│       │   │   ├── command_palette.rs # Cmd/Ctrl+K fast actions
-│       │   │   ├── cookies_modal.rs   # Cookie jar manager
-│       │   │   ├── env_modal.rs       # Environment variable editor
-│       │   │   ├── kv_table.rs        # Headers / Query params key-value table
-│       │   │   ├── request_bar.rs     # Method dropdown, URL bar, Send/Cancel button
-│       │   │   ├── response_viewer.rs # Status metrics, timing breakdown, headers & body
-│       │   │   ├── script_editor.rs   # Pre-request / Tests code editor with snippets
-│       │   │   ├── sidebar_tree.rs    # Folders & requests tree with search
-│       │   │   ├── status_badge.rs    # Color-coded method and status badges
-│       │   │   ├── tabs_with_badge.rs # Tabs with counter badges
-│       │   │   ├── test_results_panel.rs # Test pass/fail viewer & console logs
-│       │   │   ├── titlebar.rs        # Custom borderless titlebar with traffic lights / caption buttons
-│       │   │   └── toast.rs           # Toast notification system
-│       │   ├── platform/      # macOS traffic lights vs Windows caption buttons & git branch chip
+│       │   ├── platform/      # macOS vs Windows caption buttons & git branch chip
+│       │   ├── settings.rs    # OS config directory AppSettings
 │       │   ├── state/         # Fine-grained entity states (WorkspaceState, EditorState, ResponseState)
-│       │   ├── theme.rs       # Central token catalog & color palettes
-│       │   └── main.rs        # GPUI application entry point & Tokio executor bridge
+│       │   ├── theme.rs       # Theme tokens & palettes
+│       │   └── main.rs        # App entry point, menu, keyboard shortcuts, split layouts
 │       └── Cargo.toml
 ├── Cargo.toml                 # Workspace root
 └── README.md
 ```
-
-### Decoupled HTTP & Tokio Threading
-GPUI runs its UI event loop on the main thread. All HTTP execution runs on a dedicated multi-threaded `tokio::runtime::Runtime`. In-flight requests can be cancelled cleanly, progress is streamed over unbounded channels, and results are dispatched back to GPUI entities without freezing or stuttering the UI.
-
----
-
-## 📌 Pinned Dependencies
-
-To ensure 100% reproducible builds with GPUI, versions are strictly pinned:
-
-| Crate | Pinned Version | Notes |
-|---|---|---|
-| `gpui-pre` | `=0.3.9` | Zed's UI framework |
-| `gpui-component` | `=0.7.3` | High-level widgets & resizable dock panels |
-| `gpui-kit` | `=0.7.3` | System assets and icons |
-| `reqwest` | `=0.13.5` | `rustls`, `gzip`, `brotli`, `cookies`, `stream`, `multipart` |
-| `reqwest_cookie_store` | `=0.10.0` | In-memory and persistent cookie jars |
-| `cookie_store` | `=0.22.1` | RFC 6265 cookie jar |
-| `rquickjs` | `=0.8.1` | Embedded QuickJS JavaScript engine for Pre-request/Test scripting |
-| `tokio` | `=1.53.2` | Full async runtime for networking |
-
----
-
-## 💾 Storage Design
-
-- **Git-Friendly Plain Files:**
-  - Workspaces are stored as plain text files designed for Git sharing.
-  - Folders represent request groups.
-  - Each request is saved as an individual human-readable YAML file with sorted keys. Diffs cleanly in Git pull requests with zero binary merge conflicts.
-- **Environments & Variables:**
-  - Named variable sets (e.g., `local`, `staging`, `production`).
-  - Interpolation supports `{{variable_name}}` in URLs, headers, query params, auth, and bodies.
-  - Unresolved variables are highlighted in red.
 
 ---
 
@@ -102,8 +122,9 @@ To ensure 100% reproducible builds with GPUI, versions are strictly pinned:
 |---|---|
 | `Ctrl + Enter` (or `Cmd + Enter`) | Send active request (or Cancel if in-flight) |
 | `Ctrl + K` (or `Cmd + K`) | Toggle Command Palette |
+| `Ctrl + [` (or `Cmd + [`) | Navigate back in history |
+| `Ctrl + ]` (or `Cmd + ]`) | Navigate forward in history |
 | `Ctrl + F` (or `Cmd + F`) | Focus search / filter |
-| `Double Click` (Sidebar) | Pin request tab |
 | `Escape` | Dismiss modal / Command Palette |
 
 ---
@@ -111,7 +132,7 @@ To ensure 100% reproducible builds with GPUI, versions are strictly pinned:
 ## 🚀 Building & Running
 
 ### Requirements
-- Rust stable (edition 2021)
+- Rust stable (2021 edition)
 - Windows 10/11 or macOS 12+
 
 ### Run Development
@@ -123,7 +144,6 @@ cargo run -p restclient
 ```bash
 cargo build --release -p restclient
 ```
-The binary will be located at `target/release/restclient.exe` (Windows) or `target/release/restclient` (macOS).
 
 ### Run Test Suite
 ```bash
@@ -132,19 +152,19 @@ cargo test --workspace
 
 ### Run Linter
 ```bash
-cargo clippy --workspace -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 ---
 
-## ⚠️ Known Gaps & Future Roadmap
+## ⚠️ Known Gaps
 
-1. **AST Code-Folding in JSON Viewer:**
-   - *Current status:* Renders lines virtualized with line numbering and syntax styling.
-   - *Future work:* Integration with tree-sitter syntax folding when `gpui-component` editor AST folding stabilizes.
-2. **Native Drag-and-Drop Sidebar Reordering:**
-   - *Current status:* Requests and folders are reordered via context actions and search filters.
-   - *Future work:* Pointer drag-and-drop handles once cross-platform mouse grab overlays are finalized.
+1. **AST Code-Folding in Response Body Viewer:**
+   - *Current status:* Renders response lines virtualized with high performance, line numbering, and syntax styling.
+   - *Future work:* Integration with tree-sitter AST syntax folding when `gpui-component` editor AST folding stabilizes.
+2. **Native Pointer Drag-and-Drop Sidebar Reordering:**
+   - *Current status:* Requests are reordered via `_folder.yaml`, context menus, and alphabetized fallback. Pinned requests and examples support menu-based reordering.
+   - *Future work:* Interactive pointer drag handles once cross-platform mouse grab overlays are finalized.
 3. **OpenAPI & Postman Importers:**
    - *Current status:* Full bidirectional cURL command import & export is supported.
-   - *Future work:* OpenAPI 3.1 schema and Postman v2.1 collection JSON parsers.
+   - *Future work:* Direct import from OpenAPI 3.1 specifications and Postman v2.1 collection files.

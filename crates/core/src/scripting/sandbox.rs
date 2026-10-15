@@ -13,6 +13,8 @@ use crate::scripting::api::{
     PostResponseContext, PostResponseOutput, PreRequestContext, PreRequestOutput,
 };
 
+type EnvMutations = Rc<RefCell<Vec<(String, Option<String>)>>>;
+
 pub struct ScriptSandbox;
 
 impl ScriptSandbox {
@@ -38,7 +40,7 @@ impl ScriptSandbox {
             }
         };
 
-        let env_mutations: Rc<RefCell<Vec<(String, Option<String>)>>> = Default::default();
+        let env_mutations: EnvMutations = Default::default();
         let header_mutations: Rc<RefCell<Vec<(String, String)>>> = Default::default();
         let body_override: Rc<RefCell<Option<String>>> = Default::default();
         let console_entries: Rc<RefCell<Vec<ConsoleLogEntry>>> = Default::default();
@@ -161,7 +163,7 @@ impl ScriptSandbox {
             }
         };
 
-        let env_mutations: Rc<RefCell<Vec<(String, Option<String>)>>> = Default::default();
+        let env_mutations: EnvMutations = Default::default();
         let test_results: Rc<RefCell<Vec<TestResult>>> = Default::default();
         let console_entries: Rc<RefCell<Vec<ConsoleLogEntry>>> = Default::default();
 
@@ -282,7 +284,7 @@ impl ScriptSandbox {
 fn build_environment_object<'js>(
     ctx: &rquickjs::Ctx<'js>,
     env_vars: &[EnvironmentVariable],
-    mutations: Rc<RefCell<Vec<(String, Option<String>)>>>,
+    mutations: EnvMutations,
 ) -> rquickjs::Result<Object<'js>> {
     let mut initial_map = HashMap::new();
     for v in env_vars {
@@ -619,13 +621,12 @@ mod tests {
 
     #[test]
     fn test_pre_request_env_and_headers() {
-        let mut env_vars = Vec::new();
-        env_vars.push(EnvironmentVariable {
+        let env_vars = vec![EnvironmentVariable {
             enabled: true,
             key: "token".to_string(),
             value: "old_token".to_string(),
             secret: false,
-        });
+        }];
 
         let ctx_data = PreRequestContext {
             env_vars,

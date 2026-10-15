@@ -68,10 +68,9 @@ impl WorkspaceState {
         let ws_dir = if let Some(curr) = &settings.current_workspace {
             PathBuf::from(curr)
         } else {
-            let default_dir = dirs::data_local_dir()
+            dirs::data_local_dir()
                 .map(|d| d.join("restclient").join("workspaces").join("my-workspace"))
-                .unwrap_or_else(|| PathBuf::from("./my-workspace"));
-            default_dir
+                .unwrap_or_else(|| PathBuf::from("./my-workspace"))
         };
 
         let store: Arc<dyn WorkspaceStore> = Arc::new(FsWorkspaceStore::new(&ws_dir));

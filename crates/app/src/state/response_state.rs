@@ -194,7 +194,7 @@ impl ResponseState {
 
             let display_text = if matches!(self.view_mode, ResponseViewMode::Pretty) {
                 if let Some(parsed) = &parsed_json {
-                    serde_json::to_string_pretty(parsed).unwrap_or_else(|_| raw_str)
+                    serde_json::to_string_pretty(parsed).unwrap_or(raw_str)
                 } else {
                     raw_str
                 }

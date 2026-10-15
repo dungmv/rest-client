@@ -367,8 +367,7 @@ impl RenderOnce for SidebarTree {
                         .gap(px(6.))
                         .overflow_hidden()
                         .child(MethodBadge::new(req.method))
-                        .child(if is_renaming && rename_input.is_some() {
-                            let inp = rename_input.as_ref().unwrap();
+                        .child(if let (true, Some(inp)) = (is_renaming, rename_input.as_ref()) {
                             let ws_esc = ws_clone.clone();
                             div()
                                 .flex_1()
@@ -780,8 +779,7 @@ impl RenderOnce for SidebarTree {
                                                     .child(if is_collapsed { "›" } else { "⌄" }),
                                             )
                                             .child(div().child("📁"))
-                                            .child(if is_renaming_folder && rename_folder_input.is_some() {
-                                                let inp = rename_folder_input.as_ref().unwrap();
+                                            .child(if let (true, Some(inp)) = (is_renaming_folder, rename_folder_input.as_ref()) {
                                                 let ws_esc = ws_clone.clone();
                                                 div()
                                                     .flex_1()

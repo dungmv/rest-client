@@ -489,8 +489,7 @@ impl RenderOnce for EnvironmentModal {
                                                                     .text_color(if is_act { t.status_2xx } else { t.text_muted })
                                                                     .child(if is_act { "●" } else { "○" }),
                                                             )
-                                                            .child(if is_renaming && rename_env_input.is_some() {
-                                                                let inp = rename_env_input.as_ref().unwrap();
+                                                            .child(if let (true, Some(inp)) = (is_renaming, rename_env_input.as_ref()) {
                                                                 let ws_esc = ws_clone.clone();
                                                                 div()
                                                                     .flex_1()
