@@ -114,13 +114,14 @@ impl ResolvedRequest {
         let raw_url = item.url.trim();
         let interpolated_url = interpolate(raw_url, env).text;
 
-        // Parse and assemble query params
-        let mut full_url = if interpolated_url.starts_with("http://")
-            || interpolated_url.starts_with("https://")
+        // Base URL (strip any residual query string from URL if params are provided, or use parse_query_from_url)
+        let (base_interpolated, raw_url_params) = parse_query_from_url(&interpolated_url);
+        let mut full_url = if base_interpolated.starts_with("http://")
+            || base_interpolated.starts_with("https://")
         {
-            interpolated_url
+            base_interpolated
         } else {
-            format!("http://{}", interpolated_url)
+            format!("http://{}", base_interpolated)
         };
 
         // Append query params
@@ -130,6 +131,17 @@ impl ResolvedRequest {
                 let k = interpolate(&p.key, env).text;
                 let v = interpolate(&p.value, env).text;
                 enabled_params.push((k, v));
+            }
+        }
+
+        // If item.params had no entries, use raw_url_params from URL
+        if enabled_params.is_empty() {
+            for p in raw_url_params {
+                if p.enabled && !p.key.trim().is_empty() {
+                    let k = interpolate(&p.key, env).text;
+                    let v = interpolate(&p.value, env).text;
+                    enabled_params.push((k, v));
+                }
             }
         }
 
@@ -601,5 +613,21 @@ mod tests {
         assert!(parts[1].is_file);
         assert_eq!(parts[1].key, "file");
         assert!(resolved.sent_info.body_preview.is_some());
+    }
+
+    #[test]
+    fn test_resolved_request_no_duplicate_query() {
+        // Even if item.url has query params and item.params also has them, they shouldn't duplicate
+        let mut item = HttpRequestItem::new("ws-1", "Test Dedupe", HttpMethod::Get, "https://api.example.com/search?q=rust");
+        item.params = vec![KeyValuePair::new("q", "rust"), KeyValuePair::new("page", "2")];
+
+        let resolved = ResolvedRequest::from_item(&item, None).unwrap();
+        assert_eq!(resolved.url, "https://api.example.com/search?q=rust&page=2");
+
+        // When item.url is clean base and params are defined
+        let mut item_clean = HttpRequestItem::new("ws-1", "Test Clean", HttpMethod::Get, "https://api.example.com/search");
+        item_clean.params = vec![KeyValuePair::new("q", "rust")];
+        let resolved_clean = ResolvedRequest::from_item(&item_clean, None).unwrap();
+        assert_eq!(resolved_clean.url, "https://api.example.com/search?q=rust");
     }
 }

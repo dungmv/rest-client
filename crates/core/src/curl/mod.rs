@@ -103,7 +103,9 @@ pub fn curl_to_request(workspace_id: &str, curl_str: &str) -> Result<HttpRequest
         .unwrap_or("Imported Request")
         .to_string();
 
-    let mut req = HttpRequestItem::new(workspace_id, name, method, url);
+    let (clean_url, parsed_params) = crate::http::parse_query_from_url(&url);
+    let mut req = HttpRequestItem::new(workspace_id, name, method, clean_url);
+    req.params = parsed_params;
     req.headers = headers;
     req.auth = auth;
     req.body = body;
@@ -120,7 +122,8 @@ pub fn request_to_curl(item: &HttpRequestItem, env: Option<&Environment>) -> Str
     parts.push(item.method.as_str().to_string());
 
     // URL
-    let url = interpolate(&item.url, env).text;
+    let full_url = crate::http::build_url_with_query(&item.url, &item.params);
+    let url = interpolate(&full_url, env).text;
     parts.push(format!("'{}'", url.replace('\'', "'\\''")));
 
     // Headers

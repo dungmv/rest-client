@@ -1,5 +1,5 @@
 use gpui::Context;
-use restclient_core::http::{build_url_with_query, parse_query_from_url};
+use restclient_core::http::parse_query_from_url;
 use restclient_core::models::{
     Auth, HttpMethod, HttpRequestItem, KeyValuePair, MultipartItem, RequestBody, RequestSettings,
 };
@@ -69,13 +69,20 @@ impl EditorState {
         self.active_request.as_mut().unwrap()
     }
 
-    pub fn set_active_request(&mut self, req: HttpRequestItem, pin: bool, cx: &mut Context<Self>) {
+    pub fn set_active_request(&mut self, mut req: HttpRequestItem, pin: bool, cx: &mut Context<Self>) {
         let req_id = req.id.clone();
         if !self.open_tabs.contains(&req_id) {
             self.open_tabs.push(req_id.clone());
         }
         if pin {
             self.pinned_tabs.insert(req_id);
+        }
+        if req.url.contains('?') {
+            let (base, parsed) = parse_query_from_url(&req.url);
+            req.url = base;
+            if req.params.is_empty() && !parsed.is_empty() {
+                req.params = parsed;
+            }
         }
         self.active_request = Some(req);
         self.is_dirty = false;
@@ -130,20 +137,33 @@ impl EditorState {
         }
     }
 
-    /// Sets URL and synchronizes query parameters to params table (Bi-directional sync)
-    pub fn set_url(&mut self, url: String, cx: &mut Context<Self>) {
+    /// Core logic to update URL and synchronize query parameters to params table.
+    /// When query parameters are present in the URL, they are extracted to `req.params`,
+    /// and stripped from `req.url` to keep the URL input clean and prevent duplication.
+    pub fn apply_url(&mut self, url: String) {
         if let Some(req) = &mut self.active_request {
-            let (_, parsed_params) = parse_query_from_url(&url);
-            req.url = url.clone();
             if url.contains('?') {
-                req.params = parsed_params;
+                let (base, parsed_params) = parse_query_from_url(&url);
+                req.url = base;
+                if !parsed_params.is_empty() {
+                    let mut disabled: Vec<KeyValuePair> =
+                        req.params.iter().filter(|p| !p.enabled).cloned().collect();
+                    let mut final_params = parsed_params;
+                    final_params.append(&mut disabled);
+                    req.params = final_params;
+                    self.active_tab_kind = RequestTabKind::Params;
+                }
             } else {
-                // Keep any disabled params, remove enabled ones that were in the URL
-                req.params.retain(|p| !p.enabled);
+                req.url = url;
             }
             self.is_dirty = true;
-            cx.notify();
         }
+    }
+
+    /// Sets URL and synchronizes query parameters to params table.
+    pub fn set_url(&mut self, url: String, cx: &mut Context<Self>) {
+        self.apply_url(url);
+        cx.notify();
     }
 
     pub fn set_active_tab_kind(&mut self, kind: RequestTabKind, cx: &mut Context<Self>) {
@@ -166,19 +186,21 @@ impl EditorState {
         cx.notify();
     }
 
-    // Params with Bi-directional URL sync
-    pub fn update_param(&mut self, index: usize, key: String, val: String, enabled: bool, cx: &mut Context<Self>) {
+    // Params
+    pub fn apply_update_param(&mut self, index: usize, key: String, val: String, enabled: bool) {
         if let Some(req) = &mut self.active_request {
             if index < req.params.len() {
                 req.params[index].key = key;
                 req.params[index].value = val;
                 req.params[index].enabled = enabled;
-                let (base, _) = parse_query_from_url(&req.url);
-                req.url = build_url_with_query(&base, &req.params);
                 self.is_dirty = true;
-                cx.notify();
             }
         }
+    }
+
+    pub fn update_param(&mut self, index: usize, key: String, val: String, enabled: bool, cx: &mut Context<Self>) {
+        self.apply_update_param(index, key, val, enabled);
+        cx.notify();
     }
 
     pub fn add_param(&mut self, cx: &mut Context<Self>) {
@@ -189,16 +211,18 @@ impl EditorState {
         }
     }
 
-    pub fn remove_param(&mut self, index: usize, cx: &mut Context<Self>) {
+    pub fn apply_remove_param(&mut self, index: usize) {
         if let Some(req) = &mut self.active_request {
             if index < req.params.len() {
                 req.params.remove(index);
-                let (base, _) = parse_query_from_url(&req.url);
-                req.url = build_url_with_query(&base, &req.params);
                 self.is_dirty = true;
-                cx.notify();
             }
         }
+    }
+
+    pub fn remove_param(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.apply_remove_param(index);
+        cx.notify();
     }
 
     // Headers
@@ -578,6 +602,59 @@ mod tests {
 
         req.name = "   ".to_string();
         assert_eq!(effective_request_name(&req), "Untitled Request");
+    }
+
+    #[test]
+    fn test_apply_url_with_query_params() {
+        let mut editor = EditorState::new();
+        editor.apply_url("https://api.example.com/search?q=rust&limit=10".to_string());
+
+        let req = editor.active_request.as_ref().unwrap();
+        // Query must be removed from URL to prevent duplication
+        assert_eq!(req.url, "https://api.example.com/search");
+        // Params must be extracted
+        assert_eq!(req.params.len(), 2);
+        assert_eq!(req.params[0].key, "q");
+        assert_eq!(req.params[0].value, "rust");
+        assert_eq!(req.params[1].key, "limit");
+        assert_eq!(req.params[1].value, "10");
+        assert_eq!(editor.active_tab_kind, RequestTabKind::Params);
+    }
+
+    #[test]
+    fn test_apply_url_without_query_preserves_params() {
+        let mut editor = EditorState::new();
+        editor.apply_url("https://api.example.com/search?q=rust".to_string());
+        assert_eq!(editor.active_request.as_ref().unwrap().params.len(), 1);
+
+        // User edits base URL path without '?'
+        editor.apply_url("https://api.example.com/search_v2".to_string());
+        let req = editor.active_request.as_ref().unwrap();
+        assert_eq!(req.url, "https://api.example.com/search_v2");
+        // Existing query params should NOT be wiped out
+        assert_eq!(req.params.len(), 1);
+        assert_eq!(req.params[0].key, "q");
+        assert_eq!(req.params[0].value, "rust");
+    }
+
+    #[test]
+    fn test_update_param_does_not_append_to_url() {
+        let mut editor = EditorState::new();
+        editor.apply_url("https://api.example.com/items?page=1".to_string());
+        assert_eq!(editor.active_request.as_ref().unwrap().url, "https://api.example.com/items");
+
+        // Update param in params table
+        editor.apply_update_param(0, "page".to_string(), "2".to_string(), true);
+        let req = editor.active_request.as_ref().unwrap();
+        // URL should still remain the clean base URL, avoiding duplicate
+        assert_eq!(req.url, "https://api.example.com/items");
+        assert_eq!(req.params[0].value, "2");
+
+        // Remove param
+        editor.apply_remove_param(0);
+        let req = editor.active_request.as_ref().unwrap();
+        assert_eq!(req.url, "https://api.example.com/items");
+        assert_eq!(req.params.len(), 0);
     }
 }
 
