@@ -398,7 +398,7 @@ impl AppView {
                 return;
             }
 
-            let (last_renamed, matching_req, saved_name_for_active) = {
+            let (last_renamed, matching_req, saved_name_for_active, saved_examples_for_active) = {
                 let ws_ref = ws.read(cx);
                 let last_renamed = ws_ref.last_renamed_request.clone();
                 let matching_req = if let Some((_, new_id)) = &last_renamed {
@@ -407,12 +407,13 @@ impl AppView {
                     None
                 };
                 let active_id = ed_sync.read(cx).active_request.as_ref().map(|r| r.id.clone());
-                let saved_name_for_active = if let Some(a_id) = active_id {
-                    ws_ref.requests.iter().find(|r| r.id == a_id).map(|r| r.name.clone())
+                let (saved_name_for_active, saved_examples_for_active) = if let Some(ref a_id) = active_id {
+                    let req = ws_ref.requests.iter().find(|r| &r.id == a_id);
+                    (req.map(|r| r.name.clone()), req.map(|r| r.examples.clone()))
                 } else {
-                    None
+                    (None, None)
                 };
-                (last_renamed, matching_req, saved_name_for_active)
+                (last_renamed, matching_req, saved_name_for_active, saved_examples_for_active)
             };
 
             if let Some((old_id, new_id)) = last_renamed {
@@ -435,6 +436,17 @@ impl AppView {
                     if let Some(curr) = &ed.active_request {
                         if curr.name != saved {
                             ed.set_name(saved, cx);
+                        }
+                    }
+                });
+            }
+
+            if let Some(examples) = saved_examples_for_active {
+                ed_sync.update(cx, |ed, cx| {
+                    if let Some(curr) = &mut ed.active_request {
+                        if curr.examples != examples {
+                            curr.examples = examples;
+                            cx.notify();
                         }
                     }
                 });
@@ -1686,7 +1698,7 @@ impl Render for AppView {
                                     resizable_panel()
                                         .size(sidebar_width)
                                         .size_range(px(200.)..px(480.))
-                                        .child(SidebarTree::new(ws_entity.clone(), ed_entity.clone())),
+                                        .child(SidebarTree::new(ws_entity.clone(), ed_entity.clone(), resp_entity.clone())),
                                 )
                                 .child(resizable_panel().child(main_content))
                                 .on_resize({

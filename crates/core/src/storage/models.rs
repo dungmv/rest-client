@@ -407,6 +407,7 @@ impl RequestFile {
             sort_order: 0,
             last_status_code: None,
             script: self.script.clone().map(Into::into),
+            examples: self.examples.clone(),
         }
     }
 
@@ -420,6 +421,7 @@ impl RequestFile {
         self.body = item.body.clone().into();
         self.settings = item.settings.clone().into();
         self.script = item.script.clone().map(Into::into);
+        self.examples = item.examples.clone();
     }
 }
 

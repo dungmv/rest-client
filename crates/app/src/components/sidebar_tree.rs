@@ -1,5 +1,5 @@
 use crate::components::status_badge::{MethodBadge, StatusCodeBadge};
-use crate::state::{EditorState, WorkspaceState};
+use crate::state::{EditorState, ResponseState, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -101,16 +101,19 @@ impl Render for DragFolderItem {
 pub struct SidebarTree {
     workspace_state: Entity<WorkspaceState>,
     editor_state: Entity<EditorState>,
+    response_state: Entity<ResponseState>,
 }
 
 impl SidebarTree {
     pub fn new(
         workspace_state: Entity<WorkspaceState>,
         editor_state: Entity<EditorState>,
+        response_state: Entity<ResponseState>,
     ) -> Self {
         Self {
             workspace_state,
             editor_state,
+            response_state,
         }
     }
 }
@@ -118,7 +121,7 @@ impl SidebarTree {
 impl RenderOnce for SidebarTree {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
-        let (git_branch, query, filter_query_raw, folders, requests, renaming_req_id, rename_input, renaming_folder_id, rename_folder_input, collapsed_folders, pins, parse_errors, unsaved_requests, running_request_id) = {
+        let (git_branch, query, filter_query_raw, folders, requests, renaming_req_id, rename_input, renaming_folder_id, rename_folder_input, collapsed_folders, collapsed_requests, pins, parse_errors, unsaved_requests, running_request_id) = {
             let ws = self.workspace_state.read(cx);
             (
                 ws.git_branch.clone().unwrap_or_else(|| "main".to_string()),
@@ -131,6 +134,7 @@ impl RenderOnce for SidebarTree {
                 ws.renaming_folder_id.clone(),
                 ws.rename_folder_input.clone(),
                 ws.collapsed_folders.clone(),
+                ws.collapsed_requests.clone(),
                 ws.pins.clone(),
                 ws.parse_errors.clone(),
                 ws.unsaved_requests.clone(),
@@ -138,10 +142,12 @@ impl RenderOnce for SidebarTree {
             )
         };
         let active_req_id = self.editor_state.read(cx).active_request.as_ref().map(|r| r.id.clone());
+        let active_example_name = self.response_state.read(cx).active_example_name.clone();
         let has_nothing = folders.is_empty() && requests.is_empty();
 
         let ws_clone = self.workspace_state.clone();
         let ed_clone = self.editor_state.clone();
+        let resp_clone = self.response_state.clone();
 
         let ws_search = ws_clone.clone();
         let search_holder = window.use_keyed_state(
@@ -172,14 +178,19 @@ impl RenderOnce for SidebarTree {
         }
 
         let render_req_item = |req: &HttpRequestItem, in_folder: bool| -> AnyElement {
-            let is_selected = active_req_id.as_ref() == Some(&req.id);
+            let is_req_active = active_req_id.as_ref() == Some(&req.id);
+            let is_viewing_example = is_req_active && active_example_name.is_some();
+            let is_selected = is_req_active && !is_viewing_example;
             let is_renaming = renaming_req_id.as_deref() == Some(&req.id);
+            let has_examples = !req.examples.is_empty();
+            let is_req_collapsed = collapsed_requests.contains(&req.id) && query.is_empty();
             let req_for_click = req.clone();
             let req_for_right = req.clone();
             let req_for_menu = req.clone();
             let ed_s = ed_clone.clone();
             let ed_right = ed_clone.clone();
             let ws_click = ws_clone.clone();
+            let resp_click = resp_clone.clone();
 
             let initial_name = {
                 let eff = crate::state::effective_request_name(req);
@@ -200,7 +211,7 @@ impl RenderOnce for SidebarTree {
             let ws_req_drop = ws_clone.clone();
             let target_req_id = req.id.clone();
 
-            div()
+            let parent_row = div()
                 .id(format!("req-item-{}", req.id))
                 .when(in_folder, |s| s.ml(px(14.)))
                 .px(px(6.))
@@ -214,6 +225,8 @@ impl RenderOnce for SidebarTree {
                 })
                 .bg(if is_selected {
                     t.bg_selected
+                } else if is_viewing_example {
+                    t.bg_card
                 } else {
                     t.transparent
                 })
@@ -261,6 +274,10 @@ impl RenderOnce for SidebarTree {
                         });
                         ed_s.update(cx, |state, cx| {
                             state.set_active_request(req_for_click.clone(), false, cx);
+                        });
+                        let ws_store = ws_click.read(cx).store.clone();
+                        resp_click.update(cx, |state, cx| {
+                            state.load_for_request(&r_id, ws_store.as_ref(), cx);
                         });
                     }
                 })
@@ -366,6 +383,27 @@ impl RenderOnce for SidebarTree {
                         .items_center()
                         .gap(px(6.))
                         .overflow_hidden()
+                        .child(if has_examples {
+                            let ws_toggle = ws_clone.clone();
+                            let r_id = req.id.clone();
+                            div()
+                                .id(format!("req-toggle-{}", r_id))
+                                .w(px(10.))
+                                .text_center()
+                                .cursor_pointer()
+                                .hover(|s| s.text_color(t.text_primary))
+                                .text_color(t.text_muted)
+                                .child(if is_req_collapsed { "›" } else { "⌄" })
+                                .on_click(move |_, _, cx| {
+                                    cx.stop_propagation();
+                                    ws_toggle.update(cx, |ws, cx| {
+                                        ws.toggle_request_collapsed(&r_id, cx);
+                                    });
+                                })
+                                .into_any_element()
+                        } else {
+                            div().w(px(10.)).into_any_element()
+                        })
                         .child(MethodBadge::new(req.method))
                         .child(if let (true, Some(inp)) = (is_renaming, rename_input.as_ref()) {
                             let ws_esc = ws_clone.clone();
@@ -403,7 +441,7 @@ impl RenderOnce for SidebarTree {
                             div()
                                 .text_xs()
                                 .font_family(".SystemMonoFont")
-                                .text_color(if is_selected { t.text_primary } else { t.text_secondary })
+                                .text_color(if is_selected || is_viewing_example { t.text_primary } else { t.text_secondary })
                                 .truncate()
                                 .child(crate::state::effective_request_name(req))
                                 .into_any_element()
@@ -442,8 +480,200 @@ impl RenderOnce for SidebarTree {
                         .when_some(req.last_status_code, |this, code| {
                             this.child(StatusCodeBadge::new(code))
                         }),
-                )
-                .into_any_element()
+                );
+
+            if !has_examples {
+                parent_row.into_any_element()
+            } else {
+                let examples_list = req.examples.clone();
+                let parent_id = req.id.clone();
+                let req_for_children = req.clone();
+
+                div()
+                    .id(format!("req-group-{}", parent_id))
+                    .flex()
+                    .flex_col()
+                    .child(parent_row)
+                    .when(!is_req_collapsed, |this| {
+                        this.children(examples_list.into_iter().enumerate().map(|(idx, ex)| {
+                            let is_this_ex_active = is_req_active && active_example_name.as_deref() == Some(&ex.name);
+                            let ed_ex_click = ed_clone.clone();
+                            let resp_ex_click = resp_clone.clone();
+                            let ws_ex_click = ws_clone.clone();
+                            let req_for_click = req_for_children.clone();
+                            let ex_for_click = ex.clone();
+                            let r_id_for_click = parent_id.clone();
+
+                            div()
+                                .id(format!("req-{}-ex-{}", parent_id, idx))
+                                .when(in_folder, |s| s.ml(px(14.)))
+                                .ml(px(14.))
+                                .mr(px(2.))
+                                .my(px(1.))
+                                .px(px(6.))
+                                .py(px(3.))
+                                .rounded(px(5.))
+                                .border_1()
+                                .border_color(if is_this_ex_active {
+                                    t.border
+                                } else {
+                                    t.transparent
+                                })
+                                .bg(if is_this_ex_active {
+                                    t.bg_selected
+                                } else {
+                                    t.transparent
+                                })
+                                .hover(|s| s.bg(t.bg_hover))
+                                .cursor_pointer()
+                                .flex()
+                                .items_center()
+                                .justify_between()
+                                .on_click(move |_, _window, cx| {
+                                    ws_ex_click.update(cx, |state, cx| {
+                                        state.record_navigation(&r_id_for_click, cx);
+                                    });
+                                    ed_ex_click.update(cx, |state, cx| {
+                                        state.set_active_request(req_for_click.clone(), false, cx);
+                                    });
+                                    resp_ex_click.update(cx, |state, cx| {
+                                        state.view_example(&ex_for_click, cx);
+                                    });
+                                })
+                                .context_menu({
+                                    let ws_ctx = ws_clone.clone();
+                                    let resp_ctx = resp_clone.clone();
+                                    let r_id_ctx = parent_id.clone();
+                                    let ex_ctx = ex.clone();
+                                    let total_ex = req_for_children.examples.len();
+
+                                    move |menu, _window, _cx| {
+                                        let ws_dup = ws_ctx.clone();
+                                        let r_id_dup = r_id_ctx.clone();
+                                        let ex_dup = ex_ctx.clone();
+
+                                        let ws_del = ws_ctx.clone();
+                                        let resp_del = resp_ctx.clone();
+                                        let r_id_del = r_id_ctx.clone();
+                                        let ex_del_name = ex_ctx.name.clone();
+
+                                        let mut m = menu
+                                            .item(
+                                                gpui_component::menu::PopupMenuItem::new("Duplicate")
+                                                    .on_click(move |_, _, cx| {
+                                                        ws_dup.update(cx, |ws, cx| {
+                                                            if let Some(mut rf) = ws.get_request_file(&r_id_dup) {
+                                                                let base_name = ex_dup.name.clone();
+                                                                let mut name = format!("{}-copy", base_name);
+                                                                let mut i = 2;
+                                                                while rf.examples.iter().any(|e| e.name == name) {
+                                                                    name = format!("{}-copy-{}", base_name, i);
+                                                                    i += 1;
+                                                                }
+                                                                let mut new_ex = ex_dup.clone();
+                                                                new_ex.name = name;
+                                                                rf.examples.push(new_ex);
+                                                                ws.save_request_file(&r_id_dup, &rf, cx);
+                                                            }
+                                                        });
+                                                    }),
+                                            );
+
+                                        if idx > 0 {
+                                            let ws_up = ws_ctx.clone();
+                                            let r_id_up = r_id_ctx.clone();
+                                            m = m.item(
+                                                gpui_component::menu::PopupMenuItem::new("Move Up")
+                                                    .on_click(move |_, _, cx| {
+                                                        ws_up.update(cx, |ws, cx| {
+                                                            if let Some(mut rf) = ws.get_request_file(&r_id_up) {
+                                                                if idx < rf.examples.len() {
+                                                                    rf.examples.swap(idx, idx - 1);
+                                                                    ws.save_request_file(&r_id_up, &rf, cx);
+                                                                }
+                                                            }
+                                                        });
+                                                    }),
+                                            );
+                                        }
+
+                                        if idx + 1 < total_ex {
+                                            let ws_down = ws_ctx.clone();
+                                            let r_id_down = r_id_ctx.clone();
+                                            m = m.item(
+                                                gpui_component::menu::PopupMenuItem::new("Move Down")
+                                                    .on_click(move |_, _, cx| {
+                                                        ws_down.update(cx, |ws, cx| {
+                                                            if let Some(mut rf) = ws.get_request_file(&r_id_down) {
+                                                                if idx + 1 < rf.examples.len() {
+                                                                    rf.examples.swap(idx, idx + 1);
+                                                                    ws.save_request_file(&r_id_down, &rf, cx);
+                                                                }
+                                                            }
+                                                        });
+                                                    }),
+                                            );
+                                        }
+
+                                        m.separator()
+                                            .item(
+                                                gpui_component::menu::PopupMenuItem::new("Delete")
+                                                    .on_click(move |_, _, cx| {
+                                                        ws_del.update(cx, |ws, cx| {
+                                                            if let Some(mut rf) = ws.get_request_file(&r_id_del) {
+                                                                rf.examples.retain(|e| e.name != ex_del_name);
+                                                                ws.save_request_file(&r_id_del, &rf, cx);
+                                                            }
+                                                            if is_this_ex_active {
+                                                                let store = ws.store.clone();
+                                                                resp_del.update(cx, |s, cx| {
+                                                                    s.load_for_request(&r_id_del, store.as_ref(), cx);
+                                                                });
+                                                            }
+                                                        });
+                                                    }),
+                                            )
+                                    }
+                                })
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w(px(0.))
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(6.))
+                                        .overflow_hidden()
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(t.text_muted)
+                                                .child("↳"),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .font_family(".SystemMonoFont")
+                                                .text_color(if is_this_ex_active {
+                                                    t.text_primary
+                                                } else {
+                                                    t.text_secondary
+                                                })
+                                                .truncate()
+                                                .child(ex.name.clone()),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .flex_shrink_0()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(4.))
+                                        .child(StatusCodeBadge::new(ex.status)),
+                                )
+                        }))
+                    })
+                    .into_any_element()
+            }
         };
 
         div()
@@ -637,7 +867,8 @@ impl RenderOnce for SidebarTree {
                                 r.folder_id.as_deref() == Some(&f_id)
                                     && (query.is_empty()
                                         || r.name.to_lowercase().contains(&query)
-                                        || r.url.to_lowercase().contains(&query))
+                                        || r.url.to_lowercase().contains(&query)
+                                        || r.examples.iter().any(|e| e.name.to_lowercase().contains(&query)))
                             })
                             .cloned()
                             .collect();
@@ -837,7 +1068,8 @@ impl RenderOnce for SidebarTree {
                                 r.folder_id.is_none()
                                     && (query.is_empty()
                                         || r.name.to_lowercase().contains(&query)
-                                        || r.url.to_lowercase().contains(&query))
+                                        || r.url.to_lowercase().contains(&query)
+                                        || r.examples.iter().any(|e| e.name.to_lowercase().contains(&query)))
                             })
                             .map(|req| render_req_item(req, false)),
                     )

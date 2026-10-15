@@ -250,6 +250,8 @@ pub struct HttpRequestItem {
     pub last_status_code: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub script: Option<ScriptConfig>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub examples: Vec<crate::storage::models::RequestExampleFile>,
 }
 
 impl HttpRequestItem {
@@ -274,6 +276,7 @@ impl HttpRequestItem {
             sort_order: 0,
             last_status_code: None,
             script: None,
+            examples: Vec::new(),
         }
     }
 }

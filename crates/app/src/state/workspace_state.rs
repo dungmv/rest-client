@@ -49,6 +49,7 @@ pub struct WorkspaceState {
     pub rename_env_input: Option<Entity<InputState>>,
     pub rename_env_subscription: Option<gpui::Subscription>,
     pub collapsed_folders: HashSet<String>,
+    pub collapsed_requests: HashSet<String>,
     pub unsaved_requests: HashSet<String>,
     pub running_request_id: Option<String>,
     pub recent_workspaces: Vec<String>,
@@ -119,6 +120,7 @@ impl WorkspaceState {
             rename_env_input: None,
             rename_env_subscription: None,
             collapsed_folders: HashSet::new(),
+            collapsed_requests: HashSet::new(),
             unsaved_requests: HashSet::new(),
             running_request_id: None,
             recent_workspaces: settings.recent_workspaces,
@@ -743,6 +745,15 @@ impl WorkspaceState {
         cx.notify();
     }
 
+    pub fn toggle_request_collapsed(&mut self, req_id: &str, cx: &mut Context<Self>) {
+        if self.collapsed_requests.contains(req_id) {
+            self.collapsed_requests.remove(req_id);
+        } else {
+            self.collapsed_requests.insert(req_id.to_string());
+        }
+        cx.notify();
+    }
+
     pub fn start_renaming_folder(
         &mut self,
         folder_id: String,
@@ -1198,6 +1209,7 @@ mod tests {
             rename_env_input: None,
             rename_env_subscription: None,
             collapsed_folders: HashSet::new(),
+            collapsed_requests: HashSet::new(),
             unsaved_requests: HashSet::new(),
             running_request_id: None,
             recent_workspaces: Vec::new(),
@@ -1270,6 +1282,7 @@ mod tests {
             rename_env_input: None,
             rename_env_subscription: None,
             collapsed_folders: HashSet::new(),
+            collapsed_requests: HashSet::new(),
             unsaved_requests: HashSet::new(),
             running_request_id: None,
             recent_workspaces: Vec::new(),
