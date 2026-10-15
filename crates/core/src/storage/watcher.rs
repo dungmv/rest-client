@@ -2,9 +2,9 @@ use anyhow::Result;
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FsEvent {
@@ -23,7 +23,7 @@ pub fn start_workspace_watcher(
     suppressed_paths: Arc<Mutex<HashSet<PathBuf>>>,
     event_sender: UnboundedSender<FsEvent>,
 ) -> Result<WorkspaceWatcher> {
-    let (raw_tx, mut raw_rx) = unbounded_channel::<Event>();
+    let (raw_tx, raw_rx) = mpsc::channel::<Event>();
 
     let mut watcher = RecommendedWatcher::new(
         move |res: notify::Result<Event>| {
@@ -37,13 +37,38 @@ pub fn start_workspace_watcher(
     watcher.watch(root_dir, RecursiveMode::Recursive)?;
 
     let root_buf = root_dir.to_path_buf();
-    tokio::spawn(async move {
-        let mut debounce_timer = tokio::time::interval(Duration::from_millis(200));
-        let mut pending_events: HashSet<FsEvent> = HashSet::new();
+    std::thread::Builder::new()
+        .name("workspace-watcher-debouncer".to_string())
+        .spawn(move || {
+            let mut pending_events: HashSet<FsEvent> = HashSet::new();
 
-        loop {
-            tokio::select! {
-                Some(event) = raw_rx.recv() => {
+            loop {
+                let next_event = if pending_events.is_empty() {
+                    match raw_rx.recv() {
+                        Ok(event) => Some(event),
+                        Err(_) => break,
+                    }
+                } else {
+                    match raw_rx.recv_timeout(Duration::from_millis(200)) {
+                        Ok(event) => Some(event),
+                        Err(mpsc::RecvTimeoutError::Timeout) => {
+                            for ev in pending_events.drain() {
+                                if event_sender.send(ev).is_err() {
+                                    return;
+                                }
+                            }
+                            None
+                        }
+                        Err(mpsc::RecvTimeoutError::Disconnected) => {
+                            for ev in pending_events.drain() {
+                                let _ = event_sender.send(ev);
+                            }
+                            break;
+                        }
+                    }
+                };
+
+                if let Some(event) = next_event {
                     for path in &event.paths {
                         // Check if path is in suppressed set
                         if let Ok(set) = suppressed_paths.lock() {
@@ -92,16 +117,8 @@ pub fn start_workspace_watcher(
                         }
                     }
                 }
-                _ = debounce_timer.tick() => {
-                    if !pending_events.is_empty() {
-                        for ev in pending_events.drain() {
-                            let _ = event_sender.send(ev);
-                        }
-                    }
-                }
             }
-        }
-    });
+        })?;
 
     Ok(WorkspaceWatcher { _watcher: watcher })
 }

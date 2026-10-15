@@ -316,7 +316,7 @@ impl WorkspaceState {
 
     pub fn schedule_state_save(&mut self, cx: &mut Context<Self>) {
         self.state_save_task = Some(cx.spawn(async move |this, cx| {
-            tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+            cx.background_executor().timer(std::time::Duration::from_millis(1500)).await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |ws, _| {
                     let _ = ws.store.save_state(&ws.local_state);
@@ -543,7 +543,7 @@ impl WorkspaceState {
 
         let req_id = req.id.clone();
         let task = cx.spawn(async move |this, cx| {
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            cx.background_executor().timer(std::time::Duration::from_millis(500)).await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |ws, cx| {
                     if let Some(r) = ws.requests.iter().find(|r| r.id == req_id) {
