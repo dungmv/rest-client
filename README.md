@@ -33,8 +33,7 @@ restclient/
 │   │   │   │   ├── fake_vars.rs   # Dynamic faker macros ({{$uuid}}, {{$timestamp}}, etc.)
 │   │   │   │   └── sandbox.rs     # rquickjs Runtime, client.* & pm.* sandbox bindings
 │   │   │   └── storage/
-│   │   │       ├── fs.rs      # Plain-file collection storage (Git-friendly, stable JSON)
-│   │   │       └── history.rs # SQLite response history with automatic pruning
+│   │   │       └── fs.rs      # Plain-file collection storage (Git-friendly, stable JSON)
 │   │   └── Cargo.toml
 │   └── app/                   # GPUI UI application
 │       ├── src/
@@ -80,7 +79,6 @@ To ensure 100% reproducible builds with GPUI, versions are strictly pinned:
 | `reqwest_cookie_store` | `=0.10.0` | In-memory and persistent cookie jars |
 | `cookie_store` | `=0.22.1` | RFC 6265 cookie jar |
 | `rquickjs` | `=0.8.1` | Embedded QuickJS JavaScript engine for Pre-request/Test scripting |
-| `rusqlite` | `=0.32.1` | SQLite backend for response history |
 | `tokio` | `=1.53.2` | Full async runtime for networking |
 
 ---
@@ -88,13 +86,9 @@ To ensure 100% reproducible builds with GPUI, versions are strictly pinned:
 ## 💾 Storage Design
 
 - **Git-Friendly Plain Files:**
-  - Workspaces are stored under `.restclient/workspaces/<workspace_name>/`.
+  - Workspaces are stored as plain text files designed for Git sharing.
   - Folders represent request groups.
-  - Each request is saved as an individual human-readable JSON file with sorted keys. Diffs cleanly in Git pull requests with zero binary merge conflicts.
-- **SQLite Response History:**
-  - Located at `.restclient/history.db`.
-  - Automatically records response status, headers, body, and timing metrics.
-  - Keeps the last $N$ runs per request (configurable, default: 20) with automatic pruning.
+  - Each request is saved as an individual human-readable YAML file with sorted keys. Diffs cleanly in Git pull requests with zero binary merge conflicts.
 - **Environments & Variables:**
   - Named variable sets (e.g., `local`, `staging`, `production`).
   - Interpolation supports `{{variable_name}}` in URLs, headers, query params, auth, and bodies.

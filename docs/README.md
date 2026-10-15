@@ -14,7 +14,7 @@ Thư mục `docs/` này bao gồm toàn bộ thiết kế chi tiết, kiến tr�
 | Tài liệu | Nội dung chính |
 |---|---|
 | [**roadmap.md**](./roadmap.md) | Lộ trình phát triển 7 giai đoạn từ Phase 0 (Foundation) đến Phase 6 (Automation Suite) |
-| [**specs/00-core-http-foundation.md**](./specs/00-core-http-foundation.md) | Giai đoạn 0: Nền tảng cốt lõi — Gửi HTTP Request, timing breakdown, xem response, SQLite |
+| [**specs/00-core-http-foundation.md**](./specs/00-core-http-foundation.md) | Giai đoạn 0: Nền tảng cốt lõi — Gửi HTTP Request, timing breakdown, xem response, File storage |
 | [**specs/01-import-export-compatibility.md**](./specs/01-import-export-compatibility.md) | Chuẩn tương thích: Import/Export Postman v2.1, Insomnia v4, OpenAPI 3.0/3.1, HAR, Bruno |
 | [**specs/02-scripting-and-testing-engine.md**](./specs/02-scripting-and-testing-engine.md) | Pre-request Script, Test Script, Request Chaining (lấy token nhét vào env), JS Sandbox |
 | [**specs/03-protocols-graphql-websocket-grpc.md**](./specs/03-protocols-graphql-websocket-grpc.md) | Mở rộng giao thức: GraphQL (Introspection, Explorer), WebSocket (real-time stream), SSE, gRPC |
@@ -38,7 +38,7 @@ Thư mục `docs/` này bao gồm toàn bộ thiết kế chi tiết, kiến tr�
 | **HTTP Methods & Headers** | Đầy đủ | Đầy đủ | Đầy đủ | Đầy đủ |
 | **Biến môi trường `{{var}}`** | Đầy đủ | Đầy đủ | **Đầy đủ + Dynamic Fake Vars (`{{$uuid}}`, `{{$timestamp}}`,...)** | **Đầy đủ + Dynamic Fake Vars** |
 | **Timing Breakdown** | DNS, TLS, TTFB | TTFB, Total | DNS, TCP, TLS, TTFB, Download | DNS, TCP, TLS, TTFB, Download |
-| **History (Lịch sử gửi)** | Cloud sync | Local SQLite | Local SQLite | Local SQLite + Diff view |
+| **Response Cache & Examples** | Cloud sync | Local Storage | Local Response Cache (.loc) | Examples & Response Cache |
 | **Import Postman / Insomnia** | N/A | Postman | Đang lập kế hoạch | **1-Click Import hoàn chỉnh** |
 | **Import OpenAPI 3.0 / 3.1** | Có | Có | Đang lập kế hoạch | **Full Spec Tree Generator** |
 | **Code Generator** | 15+ languages | 12+ languages | cURL | **16+ languages & frameworks** |

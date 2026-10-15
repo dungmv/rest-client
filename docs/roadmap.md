@@ -5,7 +5,7 @@ Tài liệu này xác định lộ trình phát triển toàn diện của **Res
 ---
 
 ## 🎯 Giai đoạn 0: Nền Tảng Cốt Lõi — Gửi HTTP Request & Xem Phản Hồi (Core HTTP Foundation)
-*Mục tiêu: Xây dựng nền móng vững chắc cho ứng dụng: bộ soạn thảo request đa định dạng, tầng mạng async decoupled từ luồng UI, đo lường thời gian chính xác, trình xem phản hồi đa năng và hệ thống lưu trữ file phẳng / SQLite.*
+*Mục tiêu: Xây dựng nền móng vững chắc cho ứng dụng: bộ soạn thảo request đa định dạng, tầng mạng async decoupled từ luồng UI, đo lường thời gian chính xác, trình xem phản hồi đa năng và hệ thống lưu trữ file phẳng Git-native.*
 
 1. **Bộ Soạn Thảo HTTP Request Đa Dạng (Request Builder):**
    - Hỗ trợ đầy đủ phương thức: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`.
@@ -23,10 +23,10 @@ Tài liệu này xác định lộ trình phát triển toàn diện của **Res
    - Thanh trạng thái trực quan: Status Code phân màu (2xx/3xx/4xx/5xx), Thời gian ms, Dung lượng byte/KB/MB.
    - Các tab kiểm tra: Response Body (`Pretty` / `Raw`), Request Sent (request thực tế gửi qua mạng), Headers, Cookies.
    - Xử lý mượt mà payload lớn (10MB+) bằng cơ chế dòng ảo hóa (virtualized line rendering), không gây đơ lag giao diện.
-5. **Hệ Thống Lưu Trữ File Phẳng & Lịch Sử SQLite (Storage Foundation):**
-   - Lưu trữ collections và requests dưới dạng file JSON phẳng trong thư mục `.restclient/workspaces/` (Git-friendly, không lock-in).
+5. **Hệ Thống Lưu Trữ File Phẳng Git-Native (Storage Foundation):**
+   - Lưu trữ collections và requests dưới dạng file YAML phẳng (Git-friendly, không lock-in).
    - Biến môi trường cơ bản với cơ chế thay thế `{{var}}` trong URL, headers, params, auth, body.
-   - Lưu lịch sử phản hồi vào SQLite cục bộ (`.restclient/history.db`), tự động prune chỉ giữ $N$ bản ghi gần nhất.
+   - Lưu response cache vào file `.loc` cạnh file request.
 
 ---
 

@@ -2,13 +2,12 @@ use crate::platform::detect_git_branch;
 use gpui::{AppContext as _, Context, Entity, Pixels, Window, px};
 use gpui_component::input::InputState;
 use restclient_core::models::{Environment, Folder, HttpMethod, HttpRequestItem, Workspace};
-use restclient_core::storage::{FsStorage, HistoryStorage};
+use restclient_core::storage::FsStorage;
 use std::collections::HashSet;
 use std::sync::Arc;
 
 pub struct WorkspaceState {
     pub fs_storage: Arc<FsStorage>,
-    pub history_storage: Arc<HistoryStorage>,
     pub workspaces: Vec<Workspace>,
     pub active_workspace: Option<Workspace>,
     pub folders: Vec<Folder>,
@@ -44,17 +43,10 @@ impl WorkspaceState {
     pub fn new() -> Self {
         let storage_dir = FsStorage::default_storage_dir();
         let fs_storage = Arc::new(FsStorage::new(&storage_dir));
-        let history_path = storage_dir.join("history.db");
-        let history_storage = Arc::new(
-            HistoryStorage::new(&history_path)
-                .unwrap_or_else(|_| HistoryStorage::new_in_memory().unwrap()),
-        );
-
         let git_branch = detect_git_branch(None);
 
         let mut state = Self {
             fs_storage,
-            history_storage,
             workspaces: Vec::new(),
             active_workspace: None,
             folders: Vec::new(),
@@ -726,7 +718,6 @@ mod tests {
 
         let ws_state = WorkspaceState {
             fs_storage: Arc::new(FsStorage::new(std::env::temp_dir())),
-            history_storage: Arc::new(HistoryStorage::new_in_memory().unwrap()),
             workspaces: Vec::new(),
             active_workspace: Some(Workspace::new("Test")),
             folders: Vec::new(),
@@ -794,7 +785,6 @@ mod tests {
 
         let mut ws_state = WorkspaceState {
             fs_storage: fs_storage.clone(),
-            history_storage: Arc::new(HistoryStorage::new_in_memory().unwrap()),
             workspaces: vec![ws.clone()],
             active_workspace: Some(ws),
             folders: Vec::new(),
@@ -858,13 +848,11 @@ mod tests {
     fn test_update_request_does_not_resurrect_deleted_request() {
         let temp_dir = std::env::temp_dir().join(format!("restclient_test_{}", uuid::Uuid::new_v4()));
         let fs_storage = Arc::new(FsStorage::new(&temp_dir));
-        let history_storage = Arc::new(HistoryStorage::new_in_memory().unwrap());
         let ws_id = "test-ws";
         let req1 = HttpRequestItem::new(ws_id, "Req 1", HttpMethod::Get, "https://api.example.com");
 
         let mut ws_state = WorkspaceState {
             fs_storage: fs_storage.clone(),
-            history_storage,
             workspaces: Vec::new(),
             active_workspace: None,
             folders: Vec::new(),
@@ -915,7 +903,6 @@ mod tests {
     fn test_folder_reorder_and_request_drag_move() {
         let temp_dir = std::env::temp_dir().join(format!("restclient_test_{}", uuid::Uuid::new_v4()));
         let fs_storage = Arc::new(FsStorage::new(&temp_dir));
-        let history_storage = Arc::new(HistoryStorage::new_in_memory().unwrap());
         let ws_id = "test-ws";
         let mut f1 = Folder::new(ws_id, "Folder 1");
         f1.sort_order = 0;
@@ -931,7 +918,6 @@ mod tests {
 
         let mut ws_state = WorkspaceState {
             fs_storage: fs_storage.clone(),
-            history_storage,
             workspaces: Vec::new(),
             active_workspace: None,
             folders: vec![f1.clone(), f2.clone()],

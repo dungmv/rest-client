@@ -1,5 +1,5 @@
 pub mod fs;
-pub mod history;
+pub mod traits;
 
 pub use fs::FsStorage;
-pub use history::HistoryStorage;
+pub use traits::WorkspaceStore;

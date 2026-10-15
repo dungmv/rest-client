@@ -42,12 +42,12 @@ pub enum ResponseViewMode {
 
 pub struct ResponseState {
     pub current_response: Option<HttpResponseRecord>,
-    pub history: Vec<HttpResponseRecord>,
+    pub previous_response: Option<HttpResponseRecord>,
     pub active_tab: ResponseTabKind,
     pub view_mode: ResponseViewMode,
     pub search_query: String,
     pub is_searching: bool,
-    pub show_history_dropdown: bool,
+    pub show_examples_dropdown: bool,
     pub show_timing_popover: bool,
     pub test_results: Vec<TestResult>,
     pub console_logs: Vec<ConsoleLogEntry>,
@@ -60,12 +60,12 @@ impl ResponseState {
     pub fn new() -> Self {
         Self {
             current_response: None,
-            history: Vec::new(),
+            previous_response: None,
             active_tab: ResponseTabKind::Response,
             view_mode: ResponseViewMode::Pretty,
             search_query: String::new(),
             is_searching: false,
-            show_history_dropdown: false,
+            show_examples_dropdown: false,
             show_timing_popover: false,
             test_results: Vec::new(),
             console_logs: Vec::new(),
@@ -108,30 +108,17 @@ impl ResponseState {
     pub fn set_response(
         &mut self,
         response: Option<HttpResponseRecord>,
-        history: Vec<HttpResponseRecord>,
         cx: &mut Context<Self>,
     ) {
         if let Some(r) = &response {
             self.test_results = r.test_results.clone();
             self.console_logs = r.console_logs.clone();
         }
+        self.previous_response = self.current_response.take();
         self.current_response = response;
-        self.history = history;
         self.scroll_handle = gpui::UniformListScrollHandle::new();
         self.refresh_formatted_body();
         cx.notify();
-    }
-
-    pub fn select_history_record(&mut self, record_id: &str, cx: &mut Context<Self>) {
-        if let Some(rec) = self.history.iter().find(|r| r.id == record_id).cloned() {
-            self.test_results = rec.test_results.clone();
-            self.console_logs = rec.console_logs.clone();
-            self.current_response = Some(rec);
-            self.show_history_dropdown = false;
-            self.scroll_handle = gpui::UniformListScrollHandle::new();
-            self.refresh_formatted_body();
-            cx.notify();
-        }
     }
 
     pub fn set_active_tab(&mut self, tab: ResponseTabKind, cx: &mut Context<Self>) {
@@ -145,8 +132,8 @@ impl ResponseState {
         cx.notify();
     }
 
-    pub fn toggle_history_dropdown(&mut self, cx: &mut Context<Self>) {
-        self.show_history_dropdown = !self.show_history_dropdown;
+    pub fn toggle_examples_dropdown(&mut self, cx: &mut Context<Self>) {
+        self.show_examples_dropdown = !self.show_examples_dropdown;
         cx.notify();
     }
 

@@ -171,15 +171,8 @@ impl AppView {
                 }
             }
 
-            // Load initial history
-            let history = workspace_state
-                .read(cx)
-                .history_storage
-                .get_responses(&req.id, 20)
-                .unwrap_or_default();
-            let latest = history.first().cloned();
             response_state.update(cx, |resp, cx| {
-                resp.set_response(latest, history, cx);
+                resp.set_response(None, cx);
             });
         }
 
@@ -332,14 +325,8 @@ impl AppView {
                 let req_id = req.id.clone();
                 if last_req_id.as_ref() != Some(&req_id) {
                     last_req_id = Some(req_id.clone());
-                    let history = ws_clone
-                        .read(cx)
-                        .history_storage
-                        .get_responses(&req_id, 20)
-                        .unwrap_or_default();
-                    let latest = history.first().cloned();
                     resp_clone.update(cx, |r_state, cx| {
-                        r_state.set_response(latest, history, cx);
+                        r_state.set_response(None, cx);
                     });
                 }
 
@@ -649,13 +636,9 @@ impl AppView {
                                 let mut final_record = *record;
                                 final_record.console_logs = combined_console_logs.clone();
 
-                                let history_storage = this.workspace_state.read(cx).history_storage.clone();
-                                let _ = history_storage.save_response(&final_record, 20);
-                                let history = history_storage.get_responses(&req_id, 20).unwrap_or_default();
-
                                 this.response_state.update(cx, |resp, cx| {
                                     resp.set_test_results(post_output.test_results, combined_console_logs, cx);
-                                    resp.set_response(Some(final_record), history, cx);
+                                    resp.set_response(Some(final_record), cx);
                                 });
 
                                 this.workspace_state.update(cx, |ws, _cx| {

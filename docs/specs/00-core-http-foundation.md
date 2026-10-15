@@ -91,16 +91,15 @@ Sử dụng các hook socket để đo lường chính xác từng giai đoạn 
 
 ---
 
-## 5. Lưu Trữ File Cục Bộ & Lịch Sử SQLite (Storage Foundation)
+## 5. Lưu Trữ File Cục Bộ Git-Native (Storage Foundation)
 
 ### 5.1 Lưu Trữ Collection Dạng File Phẳng (Git-Friendly File Storage)
-- Lưu trữ trong thư mục `.restclient/workspaces/<workspace_id>/`.
+- Lưu trữ trong thư mục workspace dưới dạng các file plain text (YAML).
 - Mỗi thư mục con là một Folder API.
-- Mỗi request là một file JSON riêng biệt với các keys được sắp xếp ổn định (`BTreeMap`).
+- Mỗi request là một file YAML riêng biệt với các keys được sắp xếp ổn định.
 - Dữ liệu hoàn toàn độc lập, dễ dàng commit vào Git repo của dự án.
 
-### 5.2 Lưu Trữ Lịch Sử Phản Hồi (SQLite History Storage)
-- File SQLite cục bộ `.restclient/history.db`.
-- Tự động ghi lại: `id`, `request_id`, `status_code`, `duration_ms`, `headers`, `body_bytes`, `timing_json`, `created_at`.
-- Thuật toán tự động dọn dẹp (Pruning): Chỉ giữ lại $N$ bản ghi gần nhất cho mỗi request (mặc định: 20 bản ghi) để tránh phình to dung lượng ổ đĩa.
-- Dropdown lịch sử trong Response Viewer cho phép xem lại các lần phản hồi trước đó chỉ bằng 1 cú nhấp chuột.
+### 5.2 Lưu Trữ Bộ Nhớ Đệm Phản Hồi (.loc Cache)
+- File cache cục bộ `<slug>.loc` nằm cạnh file request (được gitignore).
+- Tự động ghi lại: `sent_at`, `request`, `response` (status, duration_ms, size, headers, body, truncated, binary).
+- Lưu response gần nhất của mỗi request để xem lại ngay khi mở request.
