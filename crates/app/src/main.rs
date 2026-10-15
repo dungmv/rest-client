@@ -138,7 +138,16 @@ impl AppView {
         );
 
         // Select initial request from workspace if the user has saved requests
-        let initial_req = workspace_state.read(cx).requests.first().cloned();
+        let (initial_req, ws_store) = {
+            let ws_read = workspace_state.read(cx);
+            let req = ws_read
+                .local_state
+                .active_request
+                .as_ref()
+                .and_then(|act_id| ws_read.requests.iter().find(|r| &r.id == act_id).cloned())
+                .or_else(|| ws_read.requests.first().cloned());
+            (req, ws_read.store.clone())
+        };
         if let Some(req) = &initial_req {
             editor_state.update(cx, |ed, cx| {
                 ed.set_active_request(req.clone(), true, cx);
@@ -176,8 +185,9 @@ impl AppView {
                 }
             }
 
+            let req_id = req.id.clone();
             response_state.update(cx, |resp, cx| {
-                resp.set_response(None, cx);
+                resp.load_for_request(&req_id, ws_store.as_ref(), cx);
             });
         }
 
@@ -342,13 +352,52 @@ impl AppView {
                         ws.update_request(req, cx);
                     });
                 }
+            } else if last_req_id.is_some() {
+                last_req_id = None;
+                resp_clone.update(cx, |r_state, cx| {
+                    r_state.set_response(None, cx);
+                });
             }
         }));
 
-        // 5. Observe workspace_state: synchronize renamed request to editor_state.active_request & response_state
+        // 5. Observe workspace_state: synchronize workspace changes, renamed request to editor_state.active_request & response_state
         let ed_sync = editor_state.clone();
         let resp_sync = response_state.clone();
+        let mut last_workspace_path = workspace_state.read(cx).workspace_path.clone();
         _subscriptions.push(cx.observe(&workspace_state, move |_, ws, cx| {
+            let current_ws_path = ws.read(cx).workspace_path.clone();
+            if current_ws_path != last_workspace_path {
+                last_workspace_path = current_ws_path;
+                let (next_req, ws_store) = {
+                    let ws_ref = ws.read(cx);
+                    let req = ws_ref
+                        .local_state
+                        .active_request
+                        .as_ref()
+                        .and_then(|act_id| ws_ref.requests.iter().find(|r| &r.id == act_id).cloned())
+                        .or_else(|| ws_ref.requests.first().cloned());
+                    (req, ws_ref.store.clone())
+                };
+                if let Some(req) = next_req {
+                    ed_sync.update(cx, |ed, cx| {
+                        ed.set_active_request(req.clone(), true, cx);
+                    });
+                    let req_id = req.id.clone();
+                    resp_sync.update(cx, |resp, cx| {
+                        resp.load_for_request(&req_id, ws_store.as_ref(), cx);
+                    });
+                } else {
+                    ed_sync.update(cx, |ed, cx| {
+                        ed.active_request = None;
+                        cx.notify();
+                    });
+                    resp_sync.update(cx, |resp, cx| {
+                        resp.set_response(None, cx);
+                    });
+                }
+                return;
+            }
+
             let (last_renamed, matching_req, saved_name_for_active) = {
                 let ws_ref = ws.read(cx);
                 let last_renamed = ws_ref.last_renamed_request.clone();

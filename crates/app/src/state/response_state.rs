@@ -86,28 +86,42 @@ impl ResponseState {
         }
     }
 
+    pub fn load_for_request_internal(
+        &mut self,
+        req_id: &str,
+        store: &dyn WorkspaceStore,
+    ) {
+        self.active_example_name = None;
+        self.comparing_with_previous = false;
+        if let Some(cached) = self.session_responses.get(req_id).cloned() {
+            self.test_results = cached.test_results.clone();
+            self.console_logs = cached.console_logs.clone();
+            self.current_response = Some(cached);
+            self.previous_response = self.previous_responses.get(req_id).cloned();
+        } else if let Ok(Some(loc)) = store.load_response_cache(req_id) {
+            let record = loc.to_record(req_id);
+            self.test_results = record.test_results.clone();
+            self.console_logs = record.console_logs.clone();
+            self.session_responses.insert(req_id.to_string(), record.clone());
+            self.current_response = Some(record);
+            self.previous_response = None;
+        } else {
+            self.test_results.clear();
+            self.console_logs.clear();
+            self.current_response = None;
+            self.previous_response = None;
+        }
+        self.scroll_handle = gpui::UniformListScrollHandle::new();
+        self.refresh_formatted_body();
+    }
+
     pub fn load_for_request(
         &mut self,
         req_id: &str,
         store: &dyn WorkspaceStore,
         cx: &mut Context<Self>,
     ) {
-        self.active_example_name = None;
-        self.comparing_with_previous = false;
-        if let Some(cached) = self.session_responses.get(req_id).cloned() {
-            self.current_response = Some(cached);
-            self.previous_response = self.previous_responses.get(req_id).cloned();
-        } else if let Ok(Some(loc)) = store.load_response_cache(req_id) {
-            let record = loc.to_record(req_id);
-            self.session_responses.insert(req_id.to_string(), record.clone());
-            self.current_response = Some(record);
-            self.previous_response = None;
-        } else {
-            self.current_response = None;
-            self.previous_response = None;
-        }
-        self.scroll_handle = gpui::UniformListScrollHandle::new();
-        self.refresh_formatted_body();
+        self.load_for_request_internal(req_id, store);
         cx.notify();
     }
 
@@ -417,6 +431,47 @@ mod tests {
         state.refresh_formatted_body();
         let fmt_raw = state.formatted_body.as_ref().unwrap();
         assert!(!fmt_raw.lines.is_empty());
+    }
+
+    #[test]
+    fn test_load_for_request_from_cache() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = restclient_core::storage::FsWorkspaceStore::new(temp.path());
+        store.init_workspace("Test WS").unwrap();
+        let (_, rel_path) = store
+            .create_request(None, "Login", restclient_core::models::HttpMethod::Post, "http://localhost:8000/login")
+            .unwrap();
+
+        let loc_file = restclient_core::storage::models::LocFile {
+            sent_at: "2026-10-15T12:00:00Z".to_string(),
+            request: restclient_core::storage::models::LocRequestInfo {
+                method: restclient_core::models::HttpMethod::Post,
+                url: "http://localhost:8000/login".to_string(),
+                headers: vec![],
+                body: Some(r#"{"user":"alice"}"#.to_string()),
+            },
+            response: restclient_core::storage::models::LocResponseInfo {
+                status: 200,
+                duration_ms: 42,
+                size: 15,
+                headers: vec![("content-type".to_string(), "application/json".to_string())],
+                body: Some(r#"{"token":"xyz"}"#.to_string()),
+                truncated: false,
+                binary: false,
+            },
+        };
+        store.save_response_cache(&rel_path, &loc_file).unwrap();
+
+        let mut state = ResponseState::new();
+        assert!(state.current_response.is_none());
+
+        state.load_for_request_internal(&rel_path, &store);
+        assert!(state.current_response.is_some());
+        let resp = state.current_response.as_ref().unwrap();
+        assert_eq!(resp.status_code, 200);
+        assert_eq!(resp.duration_ms, 42);
+        assert_eq!(String::from_utf8_lossy(&resp.body), r#"{"token":"xyz"}"#);
+        assert!(state.formatted_body.is_some());
     }
 }
 
