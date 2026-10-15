@@ -41,8 +41,6 @@ impl RenderOnce for ResponseViewer {
         let ws = self.workspace_state.read(cx);
 
         let active_id = ws.local_state.active_request.clone();
-        let active_req = active_id.as_ref().and_then(|id| ws.get_request_file(id));
-        let examples = active_req.as_ref().map(|r| r.examples.clone()).unwrap_or_default();
         let is_viewing_example = resp_s.active_example_name.is_some();
         let active_example_name = resp_s.active_example_name.clone();
         let comparing_with_prev = resp_s.comparing_with_previous;
@@ -261,110 +259,6 @@ impl RenderOnce for ResponseViewer {
                                             });
                                         })
                                         .child("★ Save as Example"),
-                                )
-                            })
-                            .when(!examples.is_empty(), |this| {
-                                let rs = resp_state_clone.clone();
-                                let ws_s = self.workspace_state.clone();
-                                let req_id = active_id.clone().unwrap_or_default();
-                                let examples_list = examples.clone();
-
-                                this.child(
-                                    Button::new("btn-examples-dropdown")
-                                        .ghost()
-                                        .compact()
-                                        .px(px(6.))
-                                        .py(px(2.))
-                                        .h(px(24.))
-                                        .rounded(px(4.))
-                                        .bg(t.bg_card)
-                                        .border_1()
-                                        .border_color(t.border)
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(t.text_secondary)
-                                                .child(format!("Examples ({}) ▾", examples_list.len())),
-                                        )
-                                        .dropdown_menu(move |menu, _window, _cx| {
-                                            let mut m = menu;
-                                            let rs_live = rs.clone();
-                                            let rid_live = req_id.clone();
-                                            m = m.item(
-                                                PopupMenuItem::new("📡 Live Response")
-                                                    .on_click(move |_, _, cx| {
-                                                        rs_live.update(cx, |s, cx| {
-                                                            s.restore_live_response(&rid_live, cx);
-                                                        });
-                                                    }),
-                                            );
-
-                                            for (idx, ex) in examples_list.iter().enumerate() {
-                                                let rs_view = rs.clone();
-                                                let ex_view = ex.clone();
-                                                m = m.item(
-                                                    PopupMenuItem::new(format!("★ {} ({})", ex.name, ex.status))
-                                                        .on_click(move |_, _, cx| {
-                                                            rs_view.update(cx, |s, cx| {
-                                                                s.view_example(&ex_view, cx);
-                                                            });
-                                                        }),
-                                                );
-
-                                                let ws_del = ws_s.clone();
-                                                let rid_del = req_id.clone();
-                                                let ex_name_del = ex.name.clone();
-                                                m = m.item(
-                                                    PopupMenuItem::new(format!("  🗑 Delete {}", ex.name))
-                                                        .on_click(move |_, _, cx| {
-                                                            ws_del.update(cx, |ws, cx| {
-                                                                if let Some(mut req) = ws.get_request_file(&rid_del) {
-                                                                    req.examples.retain(|e| e.name != ex_name_del);
-                                                                    ws.save_request_file(&rid_del, &req, cx);
-                                                                }
-                                                            });
-                                                        }),
-                                                );
-
-                                                if idx > 0 {
-                                                    let ws_up = ws_s.clone();
-                                                    let rid_up = req_id.clone();
-                                                    m = m.item(
-                                                        PopupMenuItem::new(format!("  ▲ Move Up {}", ex.name))
-                                                            .on_click(move |_, _, cx| {
-                                                                ws_up.update(cx, |ws, cx| {
-                                                                    if let Some(mut req) = ws.get_request_file(&rid_up) {
-                                                                        if idx < req.examples.len() {
-                                                                            req.examples.swap(idx, idx - 1);
-                                                                            ws.save_request_file(&rid_up, &req, cx);
-                                                                        }
-                                                                    }
-                                                                });
-                                                            }),
-                                                    );
-                                                }
-
-                                                if idx + 1 < examples_list.len() {
-                                                    let ws_down = ws_s.clone();
-                                                    let rid_down = req_id.clone();
-                                                    m = m.item(
-                                                        PopupMenuItem::new(format!("  ▼ Move Down {}", ex.name))
-                                                            .on_click(move |_, _, cx| {
-                                                                ws_down.update(cx, |ws, cx| {
-                                                                    if let Some(mut req) = ws.get_request_file(&rid_down) {
-                                                                        if idx + 1 < req.examples.len() {
-                                                                            req.examples.swap(idx, idx + 1);
-                                                                            ws.save_request_file(&rid_down, &req, cx);
-                                                                        }
-                                                                    }
-                                                                });
-                                                            }),
-                                                    );
-                                                }
-                                            }
-
-                                            m
-                                        }),
                                 )
                             }),
                     ),

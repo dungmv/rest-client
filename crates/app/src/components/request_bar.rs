@@ -7,13 +7,151 @@ use crate::state::{EditorState, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    deferred, div, px, App, AppContext as _, Entity, InteractiveElement as _, IntoElement,
-    ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Window,
+    deferred, div, px, App, AppContext as _, Entity, FocusHandle, Focusable as _, FontWeight,
+    InteractiveElement as _, IntoElement, ParentElement, RenderOnce,
+    StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::input::{Input, InputState};
 use gpui_component::scroll::ScrollableElement as _;
 use restclient_core::interpolation::scan_variables;
 use restclient_core::models::HttpMethod;
+
+struct UrlParts<'a> {
+    protocol: Option<&'a str>,
+    domain: &'a str,
+    path: Option<&'a str>,
+}
+
+fn parse_url_parts(url: &str) -> UrlParts<'_> {
+    let (protocol, rest) = if let Some(idx) = url.find("://") {
+        (Some(&url[..idx + 3]), &url[idx + 3..])
+    } else {
+        (None, url)
+    };
+
+    let mut split_idx = None;
+    let mut depth: usize = 0;
+    for (i, c) in rest.char_indices() {
+        if c == '{' {
+            depth += 1;
+        } else if c == '}' {
+            depth = depth.saturating_sub(1);
+        } else if depth == 0 && (c == '/' || c == '?' || c == '#') {
+            split_idx = Some(i);
+            break;
+        }
+    }
+
+    if let Some(idx) = split_idx {
+        UrlParts {
+            protocol,
+            domain: &rest[..idx],
+            path: Some(&rest[idx..]),
+        }
+    } else {
+        UrlParts {
+            protocol,
+            domain: rest,
+            path: None,
+        }
+    }
+}
+
+fn render_url_part_with_vars(
+    text: &str,
+    is_domain: bool,
+    text_color: gpui::Hsla,
+    t: &crate::theme::AppTheme,
+    var_map: &std::collections::HashMap<String, (String, String, bool)>,
+    ws_modal: Entity<WorkspaceState>,
+    hover_token_state: Entity<Option<(String, gpui::Bounds<gpui::Pixels>)>>,
+) -> gpui::Div {
+    let mut container = div().flex().items_center();
+    let mut last_idx = 0;
+    let bytes = text.as_bytes();
+    let mut i = 0;
+
+    while i + 1 < text.len() {
+        if bytes[i] == b'{' && bytes[i + 1] == b'{' {
+            if i > last_idx {
+                let plain = &text[last_idx..i];
+                container = container.child(
+                    div()
+                        .text_xs()
+                        .font_family(".SystemMonoFont")
+                        .when(is_domain, |s| s.font_weight(FontWeight::BOLD).text_color(t.text_primary))
+                        .when(!is_domain, |s| s.text_color(text_color))
+                        .child(plain.to_string()),
+                );
+            }
+            if let Some(close_rel) = text[i + 2..].find("}}") {
+                let close_idx = i + 2 + close_rel;
+                let var_name = text[i + 2..close_idx].trim();
+                let (_val, scope, is_res) = var_map
+                    .get(var_name)
+                    .cloned()
+                    .unwrap_or_else(|| ("".to_string(), "".to_string(), false));
+                let (_kind, color, bg_tint) = get_variable_kind_and_color(&scope, is_res);
+
+                let ws_m = ws_modal.clone();
+                let h_t = hover_token_state.clone();
+                let v_name = var_name.to_string();
+                container = container.child(
+                    div()
+                        .id(gpui::SharedString::from(format!("preview-token-{}", var_name)))
+                        .flex()
+                        .items_center()
+                        .px(px(5.))
+                        .py(px(1.))
+                        .rounded(px(3.))
+                        .bg(bg_tint)
+                        .border_1()
+                        .border_color(color)
+                        .text_xs()
+                        .font_family(".SystemMonoFont")
+                        .text_color(color)
+                        .cursor_pointer()
+                        .on_hover(move |is_h, _, cx| {
+                            let name = v_name.clone();
+                            h_t.update(cx, |h, cx| {
+                                if *is_h {
+                                    *h = Some((name, gpui::Bounds::default()));
+                                } else {
+                                    *h = None;
+                                }
+                                cx.notify();
+                            });
+                        })
+                        .on_click(move |_, _, cx| {
+                            cx.stop_propagation();
+                            ws_m.update(cx, |state, cx| {
+                                state.toggle_env_modal(cx);
+                            });
+                        })
+                        .child(var_name.to_string()),
+                );
+                i = close_idx + 2;
+                last_idx = i;
+                continue;
+            }
+        }
+        i += 1;
+    }
+
+    if last_idx < text.len() {
+        let plain = &text[last_idx..];
+        container = container.child(
+            div()
+                .text_xs()
+                .font_family(".SystemMonoFont")
+                .when(is_domain, |s| s.font_weight(FontWeight::BOLD).text_color(t.text_primary))
+                .when(!is_domain, |s| s.text_color(text_color))
+                .child(plain.to_string()),
+        );
+    }
+
+    container
+}
 
 #[derive(IntoElement)]
 pub struct RequestBar {
@@ -42,6 +180,7 @@ impl RequestBar {
 impl RenderOnce for RequestBar {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
+        let is_focused = self.url_input.read(cx).focus_handle(cx).is_focused(window);
         let (active_req, is_sending) = {
             let ed = self.editor_state.read(cx);
             (ed.active_request.clone(), ed.is_sending)
@@ -123,20 +262,21 @@ impl RenderOnce for RequestBar {
                     .hover(|s| s.border_color(t.border_focus))
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(px(2.))
                     // Method dropdown trigger
                     .child({
                         let ed_s = ed_clone.clone();
                         div()
                             .id("method-dropdown-btn")
-                            .px(px(6.))
+                            .pl(px(6.))
+                            .pr(px(3.))
                             .py(px(3.))
                             .rounded(px(4.))
                             .cursor_pointer()
                             .hover(|s| s.bg(t.bg_hover))
                             .flex()
                             .items_center()
-                            .gap(px(4.))
+                            .gap(px(3.))
                             .on_click(move |_, _, cx| {
                                 ed_s.update(cx, |state, cx| {
                                     state.toggle_method_dropdown(cx);
@@ -154,8 +294,9 @@ impl RenderOnce for RequestBar {
                     .child(
                         div()
                             .w(px(1.))
-                            .h(px(18.))
-                            .bg(t.border),
+                            .h(px(16.))
+                            .bg(t.border)
+                            .mx(px(2.)),
                     )
                     // URL Input Box - with inline tokens for environment variables
                     .child(
@@ -163,59 +304,119 @@ impl RenderOnce for RequestBar {
                             .flex_1()
                             .min_w(px(0.))
                             .h_full()
+                            .relative()
                             .flex()
                             .items_center()
-                            .child({
-                                let ws_env = ws_clone.clone();
-                                let ws_modal = ws_clone.clone();
-                                let h_token = hover_token_state.clone();
+                            .pl(px(2.))
+                            .child(
+                                div()
+                                    .size_full()
+                                    .flex()
+                                    .items_center()
+                                    .when(!is_focused && !url.is_empty(), |this| this.opacity(0.))
+                                    .child({
+                                        let ws_env = ws_clone.clone();
+                                        let ws_modal = ws_clone.clone();
+                                        let h_token = hover_token_state.clone();
 
-                                Input::new(&self.url_input)
-                                    .id("url-input-field")
-                                    .appearance(false)
-                                    .bordered(false)
-                                    .focus_bordered(false)
-                                    .cleanable(true)
-                                    .token(move |token_ctx, _window, cx| {
-                                        let var_name = token_ctx.token().id().to_string();
-                                        let ws = ws_env.read(cx);
-                                        let (_val, scope, is_res) = get_variable_details(ws, &var_name);
-                                        let (_kind, color, bg_tint) = get_variable_kind_and_color(&scope, is_res);
+                                        Input::new(&self.url_input)
+                                            .id("url-input-field")
+                                            .appearance(false)
+                                            .bordered(false)
+                                            .focus_bordered(false)
+                                            .cleanable(true)
+                                            .px(px(2.))
+                                            .token(move |token_ctx, _window, cx| {
+                                                let var_name = token_ctx.token().id().to_string();
+                                                let ws = ws_env.read(cx);
+                                                let (_val, scope, is_res) = get_variable_details(ws, &var_name);
+                                                let (_kind, color, bg_tint) = get_variable_kind_and_color(&scope, is_res);
 
-                                        div()
-                                            .id(gpui::SharedString::from(format!("inline-token-{}", var_name)))
-                                            .flex()
-                                            .items_center()
-                                            .px(px(6.))
-                                            .py(px(1.))
-                                            .rounded(px(4.))
-                                            .bg(bg_tint)
-                                            .border_1()
-                                            .border_color(color)
-                                            .text_xs()
-                                            .font_family(".SystemMonoFont")
-                                            .text_color(color)
-                                            .cursor_pointer()
-                                            .child(var_name)
-                                    })
-                                    .on_token_hover(move |event, _window, cx| {
-                                        let is_h = event.is_hovered();
-                                        let name = event.token().id().to_string();
-                                        let bounds = event.bounds();
-                                        h_token.update(cx, |h, cx| {
-                                            if is_h {
-                                                *h = Some((name, bounds));
-                                            } else {
-                                                *h = None;
-                                            }
-                                            cx.notify();
-                                        });
-                                    })
-                                    .on_token_click(move |_, _window, cx| {
-                                        ws_modal.update(cx, |state, cx| {
-                                            state.toggle_env_modal(cx);
-                                        });
-                                    })
+                                                div()
+                                                    .id(gpui::SharedString::from(format!("inline-token-{}", var_name)))
+                                                    .flex()
+                                                    .items_center()
+                                                    .px(px(6.))
+                                                    .py(px(1.))
+                                                    .rounded(px(4.))
+                                                    .bg(bg_tint)
+                                                    .border_1()
+                                                    .border_color(color)
+                                                    .text_xs()
+                                                    .font_family(".SystemMonoFont")
+                                                    .text_color(color)
+                                                    .cursor_pointer()
+                                                    .child(var_name)
+                                            })
+                                            .on_token_hover(move |event, _window, cx| {
+                                                let is_h = event.is_hovered();
+                                                let name = event.token().id().to_string();
+                                                let bounds = event.bounds();
+                                                h_token.update(cx, |h, cx| {
+                                                    if is_h {
+                                                        *h = Some((name, bounds));
+                                                    } else {
+                                                        *h = None;
+                                                    }
+                                                    cx.notify();
+                                                });
+                                            })
+                                            .on_token_click(move |_, _window, cx| {
+                                                ws_modal.update(cx, |state, cx| {
+                                                    state.toggle_env_modal(cx);
+                                                });
+                                            })
+                                    }),
+                            )
+                            .when(!is_focused && !url.is_empty(), |this| {
+                                let url_parts = parse_url_parts(&url);
+                                let focus_h = self.url_input.read(cx).focus_handle(cx);
+                                let ws_modal_c = ws_clone.clone();
+                                let h_token_c = hover_token_state.clone();
+
+                                this.child(
+                                    div()
+                                        .id("url-formatted-preview")
+                                        .absolute()
+                                        .inset_0()
+                                        .pl(px(2.))
+                                        .flex()
+                                        .items_center()
+                                        .cursor_text()
+                                        .overflow_hidden()
+                                        .on_click(move |_, window, cx| {
+                                            focus_h.focus(window, cx);
+                                        })
+                                        .when_some(url_parts.protocol, |this, proto| {
+                                            this.child(
+                                                div()
+                                                    .text_xs()
+                                                    .font_family(".SystemMonoFont")
+                                                    .text_color(gpui::Hsla { a: 0.45, ..t.text_primary })
+                                                    .child(proto.to_string()),
+                                            )
+                                        })
+                                        .child(render_url_part_with_vars(
+                                            url_parts.domain,
+                                            true,
+                                            t.text_primary,
+                                            &t,
+                                            &var_map,
+                                            ws_modal_c.clone(),
+                                            h_token_c.clone(),
+                                        ))
+                                        .when_some(url_parts.path, |this, path| {
+                                            this.child(render_url_part_with_vars(
+                                                path,
+                                                false,
+                                                gpui::Hsla { a: 0.55, ..t.text_primary },
+                                                &t,
+                                                &var_map,
+                                                ws_modal_c.clone(),
+                                                h_token_c.clone(),
+                                            ))
+                                        }),
+                                )
                             }),
                     ),
             )
@@ -463,7 +664,7 @@ impl RenderOnce for RequestBar {
                             on_send_cb(window, cx);
                         }
                     })
-                    .child(if is_sending { "✕ Cancel" } else { "Send ✈" })
+                    .child(if is_sending { "Cancel" } else { "Send" })
             })
     }
 }

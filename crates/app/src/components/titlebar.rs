@@ -6,6 +6,7 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
+use gpui_component::{Icon, IconName};
 use std::sync::{Arc, OnceLock};
 
 fn app_icon_image() -> Arc<Image> {
@@ -39,7 +40,7 @@ impl AppTitleBar {
 }
 
 impl RenderOnce for AppTitleBar {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
         let ws = self.workspace_state.read(cx);
         let ed = self.editor_state.read(cx);
@@ -427,6 +428,9 @@ impl RenderOnce for AppTitleBar {
 
         #[cfg(not(target_os = "macos"))]
         {
+            let is_max = window.is_maximized();
+            let icon_color = t.text_primary;
+
             bar = bar.child(
                 div()
                     .h_full()
@@ -437,7 +441,7 @@ impl RenderOnce for AppTitleBar {
                         div()
                             .id("caption-min")
                             .occlude()
-                            .w(px(36.))
+                            .w(px(46.))
                             .h_full()
                             .flex()
                             .items_center()
@@ -445,19 +449,18 @@ impl RenderOnce for AppTitleBar {
                             .cursor_pointer()
                             .window_control_area(WindowControlArea::Min)
                             .hover(|s| s.bg(t.bg_hover))
-                            .text_color(t.text_secondary)
-                            .text_xs()
+                            .text_color(icon_color)
                             .on_click(|_, window, cx| {
                                 cx.stop_propagation();
                                 window.minimize_window();
                             })
-                            .child("─"),
+                            .child(Icon::new(IconName::WindowMinimize).size(px(16.))),
                     )
                     .child(
                         div()
                             .id("caption-max")
                             .occlude()
-                            .w(px(36.))
+                            .w(px(46.))
                             .h_full()
                             .flex()
                             .items_center()
@@ -465,19 +468,22 @@ impl RenderOnce for AppTitleBar {
                             .cursor_pointer()
                             .window_control_area(WindowControlArea::Max)
                             .hover(|s| s.bg(t.bg_hover))
-                            .text_color(t.text_secondary)
-                            .text_xs()
+                            .text_color(icon_color)
                             .on_click(|_, window, cx| {
                                 cx.stop_propagation();
                                 window.zoom_window();
                             })
-                            .child("□"),
+                            .child(if is_max {
+                                Icon::new(IconName::WindowRestore).size(px(16.))
+                            } else {
+                                Icon::new(IconName::WindowMaximize).size(px(16.))
+                            }),
                     )
                     .child(
                         div()
                             .id("caption-close")
                             .occlude()
-                            .w(px(36.))
+                            .w(px(46.))
                             .h_full()
                             .flex()
                             .items_center()
@@ -485,14 +491,13 @@ impl RenderOnce for AppTitleBar {
                             .cursor_pointer()
                             .window_control_area(WindowControlArea::Close)
                             .hover(|s| s.bg(hex_to_hsla(0xe81123)).text_color(hex_to_hsla(0xffffff)))
-                            .text_color(t.text_secondary)
-                            .text_xs()
+                            .text_color(icon_color)
                             .on_click(|_, window, cx| {
                                 cx.stop_propagation();
                                 window.remove_window();
                                 cx.quit();
                             })
-                            .child("✕"),
+                            .child(Icon::new(IconName::WindowClose).size(px(16.))),
                     ),
             );
         }

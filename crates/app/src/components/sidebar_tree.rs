@@ -8,6 +8,7 @@ use gpui::{
 };
 use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::scroll::ScrollableElement as _;
+use gpui_component::{Icon, IconName};
 use restclient_core::models::{HttpMethod, HttpRequestItem};
 use restclient_core::storage::models::RequestFile;
 use restclient_core::storage::serialize::to_yaml_string;
@@ -390,12 +391,23 @@ impl RenderOnce for SidebarTree {
                             let r_id = req.id.clone();
                             div()
                                 .id(format!("req-toggle-{}", r_id))
-                                .w(px(10.))
-                                .text_center()
+                                .w(px(14.))
+                                .h(px(14.))
+                                .flex_shrink_0()
+                                .flex()
+                                .items_center()
+                                .justify_center()
                                 .cursor_pointer()
                                 .hover(|s| s.text_color(t.text_primary))
                                 .text_color(t.text_muted)
-                                .child(if is_req_collapsed { "›" } else { "⌄" })
+                                .child(
+                                    Icon::new(if is_req_collapsed {
+                                        IconName::ChevronRight
+                                    } else {
+                                        IconName::ChevronDown
+                                    })
+                                    .size(px(11.))
+                                )
                                 .on_click(move |_, _, cx| {
                                     cx.stop_propagation();
                                     ws_toggle.update(cx, |ws, cx| {
@@ -404,7 +416,7 @@ impl RenderOnce for SidebarTree {
                                 })
                                 .into_any_element()
                         } else {
-                            div().w(px(10.)).into_any_element()
+                            div().w(px(14.)).h(px(14.)).flex_shrink_0().into_any_element()
                         })
                         .child(MethodBadge::new(req.method))
                         .child(if let (true, Some(inp)) = (is_renaming, rename_input.as_ref()) {
@@ -1071,9 +1083,21 @@ impl RenderOnce for SidebarTree {
                                             .gap(px(6.))
                                             .child(
                                                 div()
-                                                    .w(px(10.))
-                                                    .text_center()
-                                                    .child(if is_collapsed { "›" } else { "⌄" }),
+                                                    .w(px(14.))
+                                                    .h(px(14.))
+                                                    .flex_shrink_0()
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_center()
+                                                    .text_color(t.text_muted)
+                                                    .child(
+                                                        Icon::new(if is_collapsed {
+                                                            IconName::ChevronRight
+                                                        } else {
+                                                            IconName::ChevronDown
+                                                        })
+                                                        .size(px(11.))
+                                                    ),
                                             )
                                             .child(div().child("📁"))
                                             .child(if let (true, Some(inp)) = (is_renaming_folder, rename_folder_input.as_ref()) {

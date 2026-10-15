@@ -1214,29 +1214,6 @@ impl Render for AppView {
                                                                     state.set_active_tab_kind(RequestTabKind::Tests, cx);
                                                                 });
                                                             })
-                                                    })
-                                                    .child(div().flex_1())
-                                                    .child({
-                                                        let ws_s = ws_entity.clone();
-                                                        div()
-                                                            .id("btn-open-request-settings")
-                                                            .cursor_pointer()
-                                                            .px(px(6.))
-                                                            .py(px(3.))
-                                                            .rounded(px(4.))
-                                                            .text_color(t.text_muted)
-                                                            .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
-                                                            .flex()
-                                                            .items_center()
-                                                            .gap(px(4.))
-                                                            .text_xs()
-                                                            .on_click(move |_, _, cx| {
-                                                                ws_s.update(cx, |state, cx| {
-                                                                    state.toggle_settings_modal(cx);
-                                                                });
-                                                            })
-                                                            .child("⚙")
-                                                            .child("Settings")
                                                     }),
                                             )
                                             // Request Tab Content
