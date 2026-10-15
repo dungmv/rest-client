@@ -87,7 +87,11 @@ impl Render for DragFolderItem {
             .flex()
             .items_center()
             .gap(px(6.))
-            .child(div().child("📁"))
+            .child(
+                Icon::new(IconName::Folder)
+                    .size(px(14.))
+                    .text_color(t.text_secondary),
+            )
             .child(
                 div()
                     .text_xs()
@@ -817,7 +821,11 @@ impl RenderOnce for SidebarTree {
                                     });
                                 }
                             })
-                            .child("📁+")
+                            .child(
+                                Icon::new(IconName::Folder)
+                                    .size(px(15.))
+                                    .text_color(t.text_secondary),
+                            )
                     }),
             )
             // Middle section: Folders & Requests tree
@@ -1288,7 +1296,15 @@ fn render_folder_node(
                                     .size(px(11.))
                                 ),
                         )
-                        .child(div().child("📁"))
+                        .child(
+                            Icon::new(if is_collapsed {
+                                IconName::FolderClosed
+                            } else {
+                                IconName::FolderOpen
+                            })
+                            .size(px(14.))
+                            .text_color(t.text_secondary),
+                        )
                         .child(if let (true, Some(inp)) = (is_renaming_folder, rename_folder_input.as_ref()) {
                             let ws_esc = ws_clone.clone();
                             div()
@@ -1329,35 +1345,6 @@ fn render_folder_node(
                                 .child(folder.name.clone())
                                 .into_any_element()
                         }),
-                )
-                // Add subfolder button
-                .child(
-                    div()
-                        .id(format!("btn-folder-add-{}", f_id))
-                        .occlude()
-                        .px(px(4.))
-                        .py(px(1.))
-                        .rounded(px(3.))
-                        .cursor_pointer()
-                        .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
-                        .text_color(t.text_muted)
-                        .text_xs()
-                        .on_click({
-                            let ws_f_new = ws_clone.clone();
-                            let f_id_new = f_id.clone();
-                            move |_, window, cx| {
-                                cx.stop_propagation();
-                                let created = ws_f_new.update(cx, |state, cx| {
-                                    state.create_folder(Some(f_id_new.clone()), "new-folder".to_string(), cx)
-                                });
-                                if let Some(new_id) = created {
-                                    ws_f_new.update(cx, |state, cx| {
-                                        state.start_renaming_folder(new_id, "new-folder".to_string(), window, cx);
-                                    });
-                                }
-                            }
-                        })
-                        .child("📁+")
                 ),
         )
         // Folder items
