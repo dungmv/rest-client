@@ -796,13 +796,21 @@ impl WorkspaceState {
         cx.notify();
     }
 
-    pub fn create_folder(&mut self, name: String, cx: &mut Context<Self>) {
+    pub fn create_folder(&mut self, parent_id: Option<String>, name: String, cx: &mut Context<Self>) -> Option<String> {
         let trimmed = name.trim();
         if !trimmed.is_empty() {
-            let _ = self.store.create_group(None, trimmed);
+            if let Some(ref p_id) = parent_id {
+                self.collapsed_folders.remove(p_id);
+            }
+            if let Ok((_dir_name, rel_path)) = self.store.create_group(parent_id.as_deref(), trimmed) {
+                self.reload_tree();
+                cx.notify();
+                return Some(rel_path);
+            }
             self.reload_tree();
             cx.notify();
         }
+        None
     }
 
     pub fn delete_folder(&mut self, folder_id: &str, cx: &mut Context<Self>) {
@@ -1524,6 +1532,84 @@ mod tests {
         assert!(renamed2);
         assert_eq!(ws_state.requests[0].examples[1].name, "Auth OK-2");
         assert_eq!(ws_state.last_renamed_example, Some((rel_path.clone(), "Error".to_string(), "Auth OK-2".to_string())));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_create_and_reload_subfolder() {
+        let temp_dir = std::env::temp_dir().join(format!("restclient-test-subfolder-{}", uuid::Uuid::new_v4().simple()));
+        let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
+        store.init_workspace("Test Workspace").unwrap();
+
+        let (_parent_slug, parent_rel) = store.create_group(None, "Parent Folder").unwrap();
+        let (_child_slug, child_rel) = store.create_group(Some(&parent_rel), "Child Folder").unwrap();
+
+        let mut ws_state = WorkspaceState {
+            store: store.clone(),
+            workspace_path: temp_dir.clone(),
+            workspace_meta: WorkspaceMeta::default(),
+            active_workspace: Some(Workspace::new("Test Workspace")),
+            folders: Vec::new(),
+            requests: Vec::new(),
+            parse_errors: HashMap::new(),
+            pins: Vec::new(),
+            local_state: LocalState::default(),
+            environments: Vec::new(),
+            global_environment: Environment::new("default", "Globals"),
+            active_environment_id: None,
+            selected_env_modal_id: None,
+            env_filter_query: String::new(),
+            var_filter_query: String::new(),
+            git_branch: None,
+            git_tracked_warning: false,
+            filter_query: String::new(),
+            sidebar_collapsed: false,
+            sidebar_width: px(260.),
+            split_layout_vertical: false,
+            show_env_modal: false,
+            show_cookies_modal: false,
+            show_command_palette: false,
+            show_settings_modal: false,
+            renaming_request_id: None,
+            rename_input: None,
+            rename_subscription: None,
+            renaming_folder_id: None,
+            rename_folder_input: None,
+            rename_folder_subscription: None,
+            renaming_env_id: None,
+            rename_env_input: None,
+            rename_env_subscription: None,
+            renaming_example: None,
+            rename_example_input: None,
+            rename_example_subscription: None,
+            last_renamed_example: None,
+            collapsed_folders: HashSet::new(),
+            collapsed_requests: HashSet::new(),
+            unsaved_requests: HashSet::new(),
+            running_request_id: None,
+            recent_workspaces: Vec::new(),
+            nav_history: Vec::new(),
+            nav_index: 0,
+            state_save_task: None,
+            request_save_tasks: HashMap::new(),
+            conflicts: HashMap::new(),
+            corrupt_secrets_warning: None,
+            last_renamed_request: None,
+            watcher: None,
+            watcher_task: None,
+        };
+
+        ws_state.reload_tree();
+
+        assert_eq!(ws_state.folders.len(), 2);
+        let parent = ws_state.folders.iter().find(|f| f.id == parent_rel).expect("Parent folder should exist");
+        assert_eq!(parent.name, "Parent Folder");
+        assert!(parent.parent_id.is_none());
+
+        let child = ws_state.folders.iter().find(|f| f.id == child_rel).expect("Child folder should exist");
+        assert_eq!(child.name, "Child Folder");
+        assert_eq!(child.parent_id.as_deref(), Some(parent_rel.as_str()));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

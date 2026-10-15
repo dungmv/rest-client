@@ -63,7 +63,6 @@ impl RenderOnce for AppTitleBar {
             .unwrap_or_default();
 
         let ws_clone = self.workspace_state.clone();
-        let ed_clone = self.editor_state.clone();
 
         #[cfg(target_os = "macos")]
         let left_padding = px(78.);
@@ -298,29 +297,6 @@ impl RenderOnce for AppTitleBar {
                         });
                     })
                     .child("🍪")
-            })
-            // New request (+) button
-            .child({
-                let ws_s = ws_clone.clone();
-                let ed_s = ed_clone.clone();
-                div()
-                    .id("btn-new-request")
-                    .occlude()
-                    .px(px(6.))
-                    .py(px(3.))
-                    .rounded(px(4.))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(t.bg_hover))
-                    .text_color(t.text_secondary)
-                    .on_click(move |_, _, cx| {
-                        let new_req = ws_s.update(cx, |state, cx| {
-                            state.create_request(None, cx)
-                        });
-                        ed_s.update(cx, |state, cx| {
-                            state.set_active_request(new_req, true, cx);
-                        });
-                    })
-                    .child("+")
             });
 
         // Center section: current request title (truncated domain / custom name)

@@ -9,7 +9,7 @@ use gpui::{
 use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::{Icon, IconName};
-use restclient_core::models::{HttpMethod, HttpRequestItem};
+use restclient_core::models::{Folder, HttpMethod, HttpRequestItem};
 use restclient_core::storage::models::RequestFile;
 use restclient_core::storage::serialize::to_yaml_string;
 
@@ -780,13 +780,6 @@ impl RenderOnce for SidebarTree {
                             .border_color(t.border_subtle)
                             .flex()
                             .items_center()
-                            .gap(px(4.))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(t.text_muted)
-                                    .child("🔍"),
-                            )
                             .child(
                                 div()
                                     .flex_1()
@@ -814,10 +807,15 @@ impl RenderOnce for SidebarTree {
                             .cursor_pointer()
                             .hover(|s| s.bg(t.bg_hover))
                             .text_color(t.text_secondary)
-                            .on_click(move |_, _, cx| {
-                                ws_s.update(cx, |state, cx| {
-                                    state.create_folder("new-folder".to_string(), cx);
+                            .on_click(move |_, window, cx| {
+                                let created = ws_s.update(cx, |state, cx| {
+                                    state.create_folder(None, "new-folder".to_string(), cx)
                                 });
+                                if let Some(new_id) = created {
+                                    ws_s.update(cx, |state, cx| {
+                                        state.start_renaming_folder(new_id, "new-folder".to_string(), window, cx);
+                                    });
+                                }
                             })
                             .child("📁+")
                     }),
@@ -932,229 +930,32 @@ impl RenderOnce for SidebarTree {
                                 }))
                         )
                     })
-                    .children(folders.iter().map(|folder| {
-                        let f_id = folder.id.clone();
-                        let is_renaming_folder = renaming_folder_id.as_deref() == Some(&f_id);
-                        let is_collapsed = collapsed_folders.contains(&f_id);
-                        let folder_name = folder.name.clone();
-
-                        let folder_requests: Vec<_> = requests
+                    .children({
+                        let root_folders: Vec<_> = folders
                             .iter()
-                            .filter(|r| {
-                                r.folder_id.as_deref() == Some(&f_id)
-                                    && (query.is_empty()
-                                        || r.name.to_lowercase().contains(&query)
-                                        || r.url.to_lowercase().contains(&query)
-                                        || r.examples.iter().any(|e| e.name.to_lowercase().contains(&query)))
-                            })
-                            .cloned()
+                            .filter(|f| f.parent_id.is_none() || !folders.iter().any(|p| Some(&p.id) == f.parent_id.as_ref()))
                             .collect();
-
-                        let drag_folder_payload = DragFolderItem {
-                            id: f_id.clone(),
-                            name: folder_name.clone(),
-                        };
-                        let ws_drop_req = ws_clone.clone();
-                        let f_id_target_req = f_id.clone();
-                        let ws_drop_folder = ws_clone.clone();
-                        let f_id_target_folder = f_id.clone();
-
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(px(2.))
-                            // Folder header
-                            .child(
-                                div()
-                                    .id(format!("folder-header-{}", f_id))
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .px(px(6.))
-                                    .py(px(4.))
-                                    .rounded(px(4.))
-                                    .text_color(t.text_secondary)
-                                    .text_xs()
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(t.bg_hover))
-                                    .when(!is_renaming_folder, move |this| {
-                                        this.on_drag(drag_folder_payload, |item, _, _, cx| {
-                                            cx.new(|_| item.clone())
-                                        })
-                                    })
-                                    .drag_over::<DragRequestItem>(|style, _, _, _| {
-                                        let t = theme();
-                                        style.bg(t.bg_hover).border_1().border_color(t.border_focus)
-                                    })
-                                    .on_drop(move |drag: &DragRequestItem, _, cx| {
-                                        ws_drop_req.update(cx, |state, cx| {
-                                            state.move_request_to_folder(&drag.id, Some(f_id_target_req.clone()), cx);
-                                        });
-                                    })
-                                    .drag_over::<DragFolderItem>(|style, _, _, _| {
-                                        let t = theme();
-                                        style.bg(t.bg_hover).border_t_2().border_color(t.border_focus)
-                                    })
-                                    .on_drop(move |drag: &DragFolderItem, _, cx| {
-                                        ws_drop_folder.update(cx, |state, cx| {
-                                            state.move_folder(&drag.id, &f_id_target_folder, cx);
-                                        });
-                                    })
-                                    .on_click({
-                                        let ws_f_click = ws_clone.clone();
-                                        let f_id_click = f_id.clone();
-                                        let f_name_click = folder_name.clone();
-                                        move |ev, window, cx| {
-                                            if is_renaming_folder {
-                                                return;
-                                            }
-                                            if ev.click_count() > 1 {
-                                                ws_f_click.update(cx, |state, cx| {
-                                                    state.start_renaming_folder(f_id_click.clone(), f_name_click.clone(), window, cx);
-                                                });
-                                            } else {
-                                                ws_f_click.update(cx, |state, cx| {
-                                                    state.toggle_folder_collapsed(&f_id_click, cx);
-                                                });
-                                            }
-                                        }
-                                    })
-                                    .context_menu({
-                                        let ws_new = ws_clone.clone();
-                                        let ed_new = ed_clone.clone();
-                                        let f_id_new = f_id.clone();
-
-                                        let ws_ren = ws_clone.clone();
-                                        let f_id_ren = f_id.clone();
-                                        let f_name_ren = folder_name.clone();
-
-                                        let ws_del = ws_clone.clone();
-                                        let f_id_del = f_id.clone();
-
-                                        move |menu, _window, _cx| {
-                                            let ws_n = ws_new.clone();
-                                            let ed_n = ed_new.clone();
-                                            let f_id_n = f_id_new.clone();
-
-                                            let ws_r = ws_ren.clone();
-                                            let f_id_r = f_id_ren.clone();
-                                            let f_name_r = f_name_ren.clone();
-
-                                            let ws_d = ws_del.clone();
-                                            let f_id_d = f_id_del.clone();
-
-                                            menu
-                                                .item(
-                                                    gpui_component::menu::PopupMenuItem::new("New Request")
-                                                        .on_click(move |_, _, cx| {
-                                                            let req = ws_n.update(cx, |state, cx| {
-                                                                state.create_request(Some(f_id_n.clone()), cx)
-                                                            });
-                                                            ed_n.update(cx, |state, cx| {
-                                                                state.set_active_request(req, true, cx);
-                                                            });
-                                                        }),
-                                                )
-                                                .item(
-                                                    gpui_component::menu::PopupMenuItem::new("Rename")
-                                                        .on_click(move |_, window, cx| {
-                                                            ws_r.update(cx, |state, cx| {
-                                                                state.start_renaming_folder(f_id_r.clone(), f_name_r.clone(), window, cx);
-                                                            });
-                                                        }),
-                                                )
-                                                .separator()
-                                                .item(
-                                                    gpui_component::menu::PopupMenuItem::new("Delete")
-                                                        .on_click(move |_, _, cx| {
-                                                            ws_d.update(cx, |state, cx| {
-                                                                state.delete_folder(&f_id_d, cx);
-                                                            });
-                                                        }),
-                                                )
-                                        }
-                                    })
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w(px(0.))
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(6.))
-                                            .child(
-                                                div()
-                                                    .w(px(14.))
-                                                    .h(px(14.))
-                                                    .flex_shrink_0()
-                                                    .flex()
-                                                    .items_center()
-                                                    .justify_center()
-                                                    .text_color(t.text_muted)
-                                                    .child(
-                                                        Icon::new(if is_collapsed {
-                                                            IconName::ChevronRight
-                                                        } else {
-                                                            IconName::ChevronDown
-                                                        })
-                                                        .size(px(11.))
-                                                    ),
-                                            )
-                                            .child(div().child("📁"))
-                                            .child(if let (true, Some(inp)) = (is_renaming_folder, rename_folder_input.as_ref()) {
-                                                let ws_esc = ws_clone.clone();
-                                                div()
-                                                    .flex_1()
-                                                    .min_w(px(0.))
-                                                    .h(px(22.))
-                                                    .px(px(4.))
-                                                    .rounded(px(4.))
-                                                    .bg(t.bg_input)
-                                                    .border_1()
-                                                    .border_color(t.border_focus)
-                                                    .flex()
-                                                    .items_center()
-                                                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
-                                                        cx.stop_propagation();
-                                                    })
-                                                    .on_key_down(move |event, _, cx| {
-                                                        if event.keystroke.key.as_str() == "escape" {
-                                                            ws_esc.update(cx, |state, cx| {
-                                                                state.cancel_renaming_folder(cx);
-                                                            });
-                                                        }
-                                                    })
-                                                    .child(
-                                                        gpui_component::input::Input::new(inp)
-                                                            .id(format!("rename-folder-field-{}", folder.id))
-                                                            .appearance(false)
-                                                            .bordered(false)
-                                                            .focus_bordered(false)
-                                                            .cleanable(false),
-                                                    )
-                                                    .into_any_element()
-                                            } else {
-                                                div()
-                                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                                    .text_color(t.text_primary)
-                                                    .truncate()
-                                                    .child(folder.name.clone())
-                                                    .into_any_element()
-                                            }),
-                                    ),
+                        root_folders.into_iter().filter_map(|folder| {
+                            render_folder_node(
+                                folder,
+                                &folders,
+                                &requests,
+                                &query,
+                                renaming_folder_id.as_deref(),
+                                &rename_folder_input,
+                                &collapsed_folders,
+                                &ws_clone,
+                                &ed_clone,
+                                &render_req_item,
                             )
-                            // Folder items
-                            .when(!is_collapsed, |this| {
-                                this.children(folder_requests.iter().map(|req| {
-                                    render_req_item(req, true)
-                                }))
-                            })
-                    }))
+                        })
+                    })
                     // Top-level requests without folder
                     .children(
                         requests
                             .iter()
                             .filter(|r| {
-                                r.folder_id.is_none()
+                                (r.folder_id.is_none() || !folders.iter().any(|f| Some(&f.id) == r.folder_id.as_ref()))
                                     && (query.is_empty()
                                         || r.name.to_lowercase().contains(&query)
                                         || r.url.to_lowercase().contains(&query)
@@ -1249,5 +1050,355 @@ fn delete_request_item(
             });
         }
     }
+}
+
+fn folder_has_matches(
+    folder_id: &str,
+    folders: &[Folder],
+    requests: &[HttpRequestItem],
+    query: &str,
+) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    if let Some(f) = folders.iter().find(|f| f.id == folder_id) {
+        if f.name.to_lowercase().contains(query) {
+            return true;
+        }
+    }
+    if requests.iter().any(|r| {
+        r.folder_id.as_deref() == Some(folder_id)
+            && (r.name.to_lowercase().contains(query)
+                || r.url.to_lowercase().contains(query)
+                || r.examples.iter().any(|e| e.name.to_lowercase().contains(query)))
+    }) {
+        return true;
+    }
+    for child in folders.iter().filter(|f| f.parent_id.as_deref() == Some(folder_id)) {
+        if folder_has_matches(&child.id, folders, requests, query) {
+            return true;
+        }
+    }
+    false
+}
+
+fn render_folder_node(
+    folder: &Folder,
+    folders: &[Folder],
+    requests: &[HttpRequestItem],
+    query: &str,
+    renaming_folder_id: Option<&str>,
+    rename_folder_input: &Option<Entity<gpui_component::input::InputState>>,
+    collapsed_folders: &std::collections::HashSet<String>,
+    ws_clone: &Entity<WorkspaceState>,
+    ed_clone: &Entity<EditorState>,
+    render_req_item: &dyn Fn(&HttpRequestItem, bool) -> AnyElement,
+) -> Option<AnyElement> {
+    if !folder_has_matches(&folder.id, folders, requests, query) {
+        return None;
+    }
+
+    let t = theme();
+    let f_id = folder.id.clone();
+    let is_renaming_folder = renaming_folder_id == Some(f_id.as_str());
+    let is_collapsed = collapsed_folders.contains(&f_id) && query.is_empty();
+    let folder_name = folder.name.clone();
+
+    let folder_requests: Vec<_> = requests
+        .iter()
+        .filter(|r| {
+            r.folder_id.as_deref() == Some(&f_id)
+                && (query.is_empty()
+                    || r.name.to_lowercase().contains(query)
+                    || r.url.to_lowercase().contains(query)
+                    || r.examples.iter().any(|e| e.name.to_lowercase().contains(query)))
+        })
+        .collect();
+
+    let child_folders: Vec<_> = folders
+        .iter()
+        .filter(|f| f.parent_id.as_deref() == Some(&f_id))
+        .collect();
+
+    let drag_folder_payload = DragFolderItem {
+        id: f_id.clone(),
+        name: folder_name.clone(),
+    };
+    let ws_drop_req = ws_clone.clone();
+    let f_id_target_req = f_id.clone();
+    let ws_drop_folder = ws_clone.clone();
+    let f_id_target_folder = f_id.clone();
+
+    let node = div()
+        .flex()
+        .flex_col()
+        .gap(px(2.))
+        // Folder header
+        .child(
+            div()
+                .id(format!("folder-header-{}", f_id))
+                .flex()
+                .items_center()
+                .justify_between()
+                .px(px(6.))
+                .py(px(4.))
+                .rounded(px(4.))
+                .text_color(t.text_secondary)
+                .text_xs()
+                .cursor_pointer()
+                .hover(|s| s.bg(t.bg_hover))
+                .when(!is_renaming_folder, move |this| {
+                    this.on_drag(drag_folder_payload, |item, _, _, cx| {
+                        cx.new(|_| item.clone())
+                    })
+                })
+                .drag_over::<DragRequestItem>(|style, _, _, _| {
+                    let t = theme();
+                    style.bg(t.bg_hover).border_1().border_color(t.border_focus)
+                })
+                .on_drop(move |drag: &DragRequestItem, _, cx| {
+                    ws_drop_req.update(cx, |state, cx| {
+                        state.move_request_to_folder(&drag.id, Some(f_id_target_req.clone()), cx);
+                    });
+                })
+                .drag_over::<DragFolderItem>(|style, _, _, _| {
+                    let t = theme();
+                    style.bg(t.bg_hover).border_t_2().border_color(t.border_focus)
+                })
+                .on_drop(move |drag: &DragFolderItem, _, cx| {
+                    ws_drop_folder.update(cx, |state, cx| {
+                        state.move_folder(&drag.id, &f_id_target_folder, cx);
+                    });
+                })
+                .on_click({
+                    let ws_f_click = ws_clone.clone();
+                    let f_id_click = f_id.clone();
+                    let f_name_click = folder_name.clone();
+                    move |ev, window, cx| {
+                        if is_renaming_folder {
+                            return;
+                        }
+                        if ev.click_count() > 1 {
+                            ws_f_click.update(cx, |state, cx| {
+                                state.start_renaming_folder(f_id_click.clone(), f_name_click.clone(), window, cx);
+                            });
+                        } else {
+                            ws_f_click.update(cx, |state, cx| {
+                                state.toggle_folder_collapsed(&f_id_click, cx);
+                            });
+                        }
+                    }
+                })
+                .context_menu({
+                    let ws_new = ws_clone.clone();
+                    let ed_new = ed_clone.clone();
+                    let f_id_new = f_id.clone();
+
+                    let ws_new_sub = ws_clone.clone();
+                    let f_id_new_sub = f_id.clone();
+
+                    let ws_ren = ws_clone.clone();
+                    let f_id_ren = f_id.clone();
+                    let f_name_ren = folder_name.clone();
+
+                    let ws_del = ws_clone.clone();
+                    let f_id_del = f_id.clone();
+
+                    move |menu, _window, _cx| {
+                        let ws_n = ws_new.clone();
+                        let ed_n = ed_new.clone();
+                        let f_id_n = f_id_new.clone();
+
+                        let ws_ns = ws_new_sub.clone();
+                        let f_id_ns = f_id_new_sub.clone();
+
+                        let ws_r = ws_ren.clone();
+                        let f_id_r = f_id_ren.clone();
+                        let f_name_r = f_name_ren.clone();
+
+                        let ws_d = ws_del.clone();
+                        let f_id_d = f_id_del.clone();
+
+                        menu
+                            .item(
+                                gpui_component::menu::PopupMenuItem::new("New Request")
+                                    .on_click(move |_, _, cx| {
+                                        let req = ws_n.update(cx, |state, cx| {
+                                            state.create_request(Some(f_id_n.clone()), cx)
+                                        });
+                                        ed_n.update(cx, |state, cx| {
+                                            state.set_active_request(req, true, cx);
+                                        });
+                                    }),
+                            )
+                            .item(
+                                gpui_component::menu::PopupMenuItem::new("New Folder")
+                                    .on_click(move |_, window, cx| {
+                                        let created = ws_ns.update(cx, |state, cx| {
+                                            state.create_folder(Some(f_id_ns.clone()), "new-folder".to_string(), cx)
+                                        });
+                                        if let Some(new_id) = created {
+                                            ws_ns.update(cx, |state, cx| {
+                                                state.start_renaming_folder(new_id, "new-folder".to_string(), window, cx);
+                                            });
+                                        }
+                                    }),
+                            )
+                            .item(
+                                gpui_component::menu::PopupMenuItem::new("Rename")
+                                    .on_click(move |_, window, cx| {
+                                        ws_r.update(cx, |state, cx| {
+                                            state.start_renaming_folder(f_id_r.clone(), f_name_r.clone(), window, cx);
+                                        });
+                                    }),
+                            )
+                            .separator()
+                            .item(
+                                gpui_component::menu::PopupMenuItem::new("Delete")
+                                    .on_click(move |_, _, cx| {
+                                        ws_d.update(cx, |state, cx| {
+                                            state.delete_folder(&f_id_d, cx);
+                                        });
+                                    }),
+                            )
+                    }
+                })
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.))
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .child(
+                            div()
+                                .w(px(14.))
+                                .h(px(14.))
+                                .flex_shrink_0()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_color(t.text_muted)
+                                .child(
+                                    Icon::new(if is_collapsed {
+                                        IconName::ChevronRight
+                                    } else {
+                                        IconName::ChevronDown
+                                    })
+                                    .size(px(11.))
+                                ),
+                        )
+                        .child(div().child("📁"))
+                        .child(if let (true, Some(inp)) = (is_renaming_folder, rename_folder_input.as_ref()) {
+                            let ws_esc = ws_clone.clone();
+                            div()
+                                .flex_1()
+                                .min_w(px(0.))
+                                .h(px(22.))
+                                .px(px(4.))
+                                .rounded(px(4.))
+                                .bg(t.bg_input)
+                                .border_1()
+                                .border_color(t.border_focus)
+                                .flex()
+                                .items_center()
+                                .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                    cx.stop_propagation();
+                                })
+                                .on_key_down(move |event, _, cx| {
+                                    if event.keystroke.key.as_str() == "escape" {
+                                        ws_esc.update(cx, |state, cx| {
+                                            state.cancel_renaming_folder(cx);
+                                        });
+                                    }
+                                })
+                                .child(
+                                    gpui_component::input::Input::new(inp)
+                                        .id(format!("rename-folder-field-{}", folder.id))
+                                        .appearance(false)
+                                        .bordered(false)
+                                        .focus_bordered(false)
+                                        .cleanable(false),
+                                )
+                                .into_any_element()
+                        } else {
+                            div()
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .text_color(t.text_primary)
+                                .truncate()
+                                .child(folder.name.clone())
+                                .into_any_element()
+                        }),
+                )
+                // Add subfolder button
+                .child(
+                    div()
+                        .id(format!("btn-folder-add-{}", f_id))
+                        .occlude()
+                        .px(px(4.))
+                        .py(px(1.))
+                        .rounded(px(3.))
+                        .cursor_pointer()
+                        .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
+                        .text_color(t.text_muted)
+                        .text_xs()
+                        .on_click({
+                            let ws_f_new = ws_clone.clone();
+                            let f_id_new = f_id.clone();
+                            move |_, window, cx| {
+                                cx.stop_propagation();
+                                let created = ws_f_new.update(cx, |state, cx| {
+                                    state.create_folder(Some(f_id_new.clone()), "new-folder".to_string(), cx)
+                                });
+                                if let Some(new_id) = created {
+                                    ws_f_new.update(cx, |state, cx| {
+                                        state.start_renaming_folder(new_id, "new-folder".to_string(), window, cx);
+                                    });
+                                }
+                            }
+                        })
+                        .child("📁+")
+                ),
+        )
+        // Folder items
+        .when(!is_collapsed, |this| {
+            let mut child_elements = Vec::new();
+
+            for child_folder in child_folders {
+                if let Some(child_el) = render_folder_node(
+                    child_folder,
+                    folders,
+                    requests,
+                    query,
+                    renaming_folder_id,
+                    rename_folder_input,
+                    collapsed_folders,
+                    ws_clone,
+                    ed_clone,
+                    render_req_item,
+                ) {
+                    child_elements.push(child_el);
+                }
+            }
+
+            for req in folder_requests {
+                child_elements.push(render_req_item(req, false));
+            }
+
+            if !child_elements.is_empty() {
+                this.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(2.))
+                        .pl(px(14.))
+                        .children(child_elements)
+                )
+            } else {
+                this
+            }
+        });
+
+    Some(node.into_any_element())
 }
 
