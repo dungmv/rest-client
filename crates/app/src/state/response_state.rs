@@ -2,6 +2,9 @@ use gpui::Context;
 use restclient_core::models::{
     ConsoleLogEntry, ConsoleLogLevel, ConsoleLogSource, HttpResponseRecord, TestResult,
 };
+use restclient_core::storage::models::RequestExampleFile;
+use restclient_core::storage::WorkspaceStore;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Default)]
@@ -43,6 +46,10 @@ pub enum ResponseViewMode {
 pub struct ResponseState {
     pub current_response: Option<HttpResponseRecord>,
     pub previous_response: Option<HttpResponseRecord>,
+    pub session_responses: HashMap<String, HttpResponseRecord>,
+    pub previous_responses: HashMap<String, HttpResponseRecord>,
+    pub comparing_with_previous: bool,
+    pub active_example_name: Option<String>,
     pub active_tab: ResponseTabKind,
     pub view_mode: ResponseViewMode,
     pub search_query: String,
@@ -61,6 +68,10 @@ impl ResponseState {
         Self {
             current_response: None,
             previous_response: None,
+            session_responses: HashMap::new(),
+            previous_responses: HashMap::new(),
+            comparing_with_previous: false,
+            active_example_name: None,
             active_tab: ResponseTabKind::Response,
             view_mode: ResponseViewMode::Pretty,
             search_query: String::new(),
@@ -73,6 +84,103 @@ impl ResponseState {
             formatted_body: None,
             scroll_handle: gpui::UniformListScrollHandle::new(),
         }
+    }
+
+    pub fn load_for_request(
+        &mut self,
+        req_id: &str,
+        store: &dyn WorkspaceStore,
+        cx: &mut Context<Self>,
+    ) {
+        self.active_example_name = None;
+        self.comparing_with_previous = false;
+        if let Some(cached) = self.session_responses.get(req_id).cloned() {
+            self.current_response = Some(cached);
+            self.previous_response = self.previous_responses.get(req_id).cloned();
+        } else if let Ok(Some(loc)) = store.load_response_cache(req_id) {
+            let record = loc.to_record(req_id);
+            self.session_responses.insert(req_id.to_string(), record.clone());
+            self.current_response = Some(record);
+            self.previous_response = None;
+        } else {
+            self.current_response = None;
+            self.previous_response = None;
+        }
+        self.scroll_handle = gpui::UniformListScrollHandle::new();
+        self.refresh_formatted_body();
+        cx.notify();
+    }
+
+    pub fn set_response_for_request(
+        &mut self,
+        req_id: String,
+        response: HttpResponseRecord,
+        cx: &mut Context<Self>,
+    ) {
+        self.active_example_name = None;
+        self.test_results = response.test_results.clone();
+        self.console_logs = response.console_logs.clone();
+
+        let old = self.session_responses.insert(req_id.clone(), response.clone());
+        if let Some(prev) = old {
+            self.previous_responses.insert(req_id, prev.clone());
+            self.previous_response = Some(prev);
+        } else {
+            self.previous_response = None;
+        }
+        self.current_response = Some(response);
+        self.scroll_handle = gpui::UniformListScrollHandle::new();
+        self.refresh_formatted_body();
+        cx.notify();
+    }
+
+    pub fn toggle_compare_with_previous(&mut self, cx: &mut Context<Self>) {
+        if self.previous_response.is_some() {
+            self.comparing_with_previous = !self.comparing_with_previous;
+            cx.notify();
+        }
+    }
+
+    pub fn view_example(&mut self, example: &RequestExampleFile, cx: &mut Context<Self>) {
+        self.active_example_name = Some(example.name.clone());
+        self.comparing_with_previous = false;
+        let headers: Vec<(String, String)> = example
+            .headers
+            .iter()
+            .map(|h| (h.name.clone(), h.value.clone()))
+            .collect();
+        let body = example.body.as_deref().unwrap_or("").as_bytes().to_vec();
+        let size_bytes = body.len();
+        let record = HttpResponseRecord {
+            id: format!("example-{}", example.name),
+            request_id: String::new(),
+            status_code: example.status,
+            status_text: format!("Example: {}", example.name),
+            headers,
+            cookies: Vec::new(),
+            body,
+            duration_ms: 0,
+            size_bytes,
+            timing: Default::default(),
+            request_sent: None,
+            test_results: Vec::new(),
+            console_logs: Vec::new(),
+            created_at: chrono::Utc::now(),
+        };
+        self.current_response = Some(record);
+        self.scroll_handle = gpui::UniformListScrollHandle::new();
+        self.refresh_formatted_body();
+        cx.notify();
+    }
+
+    pub fn restore_live_response(&mut self, req_id: &str, cx: &mut Context<Self>) {
+        self.active_example_name = None;
+        if let Some(resp) = self.session_responses.get(req_id).cloned() {
+            self.current_response = Some(resp);
+        }
+        self.scroll_handle = gpui::UniformListScrollHandle::new();
+        self.refresh_formatted_body();
+        cx.notify();
     }
 
     pub fn refresh_formatted_body(&mut self) {

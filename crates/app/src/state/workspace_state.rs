@@ -553,6 +553,16 @@ impl WorkspaceState {
         cx.notify();
     }
 
+    pub fn get_request_file(&self, req_id: &str) -> Option<RequestFile> {
+        self.store.read_request(req_id).ok()
+    }
+
+    pub fn save_request_file(&mut self, req_id: &str, req_file: &RequestFile, cx: &mut Context<Self>) {
+        let _ = self.store.write_request(req_id, req_file);
+        self.reload_tree();
+        cx.notify();
+    }
+
     pub fn create_folder(&mut self, name: String, cx: &mut Context<Self>) {
         let trimmed = name.trim();
         if !trimmed.is_empty() {

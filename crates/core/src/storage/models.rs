@@ -1,6 +1,7 @@
 use crate::models::{
-    Auth, Environment, EnvironmentVariable, HttpMethod, HttpRequestItem, KeyValuePair,
-    MultipartItem, RequestBody, RequestSettings, ScriptConfig,
+    Auth, Environment, EnvironmentVariable, HttpMethod, HttpRequestItem, HttpResponseRecord,
+    KeyValuePair, MultipartItem, RequestBody, RequestSentInfo, RequestSettings, ScriptConfig,
+    TimingBreakdown,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -519,6 +520,95 @@ pub struct LocFile {
     pub sent_at: String,
     pub request: LocRequestInfo,
     pub response: LocResponseInfo,
+}
+
+impl LocFile {
+    pub fn from_record(record: &HttpResponseRecord) -> Self {
+        let sent_req = record.request_sent.as_ref();
+        let (method, url, req_headers, req_body) = if let Some(sent) = sent_req {
+            (
+                sent.method,
+                sent.url.clone(),
+                sent.headers.clone(),
+                sent.body_preview.clone(),
+            )
+        } else {
+            (
+                HttpMethod::Get,
+                String::new(),
+                Vec::new(),
+                None,
+            )
+        };
+
+        let is_binary = record.body.iter().take(1024).any(|&b| b == 0);
+        let max_body_bytes = 512 * 1024;
+        let (body_str, truncated) = if is_binary {
+            (None, false)
+        } else if record.body.len() > max_body_bytes {
+            (
+                Some(String::from_utf8_lossy(&record.body[..max_body_bytes]).to_string()),
+                true,
+            )
+        } else {
+            (
+                Some(String::from_utf8_lossy(&record.body).to_string()),
+                false,
+            )
+        };
+
+        Self {
+            sent_at: record.created_at.to_rfc3339(),
+            request: LocRequestInfo {
+                method,
+                url,
+                headers: req_headers,
+                body: req_body,
+            },
+            response: LocResponseInfo {
+                status: record.status_code,
+                duration_ms: record.duration_ms,
+                size: record.size_bytes,
+                headers: record.headers.clone(),
+                body: body_str,
+                truncated,
+                binary: is_binary,
+            },
+        }
+    }
+
+    pub fn to_record(&self, request_id: &str) -> HttpResponseRecord {
+        let body_bytes = self.response.body.as_deref().unwrap_or("").as_bytes().to_vec();
+        let created_at = chrono::DateTime::parse_from_rfc3339(&self.sent_at)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .unwrap_or_else(|_| chrono::Utc::now());
+
+        HttpResponseRecord {
+            id: format!("loc-{}", request_id),
+            request_id: request_id.to_string(),
+            status_code: self.response.status,
+            status_text: format!("HTTP {}", self.response.status),
+            duration_ms: self.response.duration_ms,
+            size_bytes: self.response.size,
+            headers: self.response.headers.clone(),
+            cookies: Vec::new(),
+            body: body_bytes,
+            timing: TimingBreakdown {
+                total_ms: self.response.duration_ms,
+                ..Default::default()
+            },
+            request_sent: Some(RequestSentInfo {
+                method: self.request.method,
+                url: self.request.url.clone(),
+                headers: self.request.headers.clone(),
+                body_size_bytes: self.request.body.as_ref().map(|b| b.len()).unwrap_or(0),
+                body_preview: self.request.body.clone(),
+            }),
+            test_results: Vec::new(),
+            console_logs: Vec::new(),
+            created_at,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

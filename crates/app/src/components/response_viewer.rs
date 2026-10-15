@@ -1,25 +1,32 @@
 use crate::components::tabs_with_badge::TabItem;
-use crate::state::{EditorState, ResponseState, ResponseTabKind, ResponseViewMode};
+use crate::state::{EditorState, ResponseState, ResponseTabKind, ResponseViewMode, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     div, px, uniform_list, AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
     RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
+use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::scroll::ScrollableElement as _;
+use restclient_core::models::HttpResponseRecord;
+use restclient_core::storage::models::{RequestExampleFile, RequestFile, RequestKvItem};
 
 #[derive(IntoElement)]
 pub struct ResponseViewer {
+    workspace_state: Entity<WorkspaceState>,
     editor_state: Entity<EditorState>,
     response_state: Entity<ResponseState>,
 }
 
 impl ResponseViewer {
     pub fn new(
+        workspace_state: Entity<WorkspaceState>,
         editor_state: Entity<EditorState>,
         response_state: Entity<ResponseState>,
     ) -> Self {
         Self {
+            workspace_state,
             editor_state,
             response_state,
         }
@@ -31,6 +38,16 @@ impl RenderOnce for ResponseViewer {
         let t = theme();
         let resp_s = self.response_state.read(cx);
         let ed_s = self.editor_state.read(cx);
+        let ws = self.workspace_state.read(cx);
+
+        let active_id = ws.local_state.active_request.clone();
+        let active_req = active_id.as_ref().and_then(|id| ws.get_request_file(id));
+        let examples = active_req.as_ref().map(|r| r.examples.clone()).unwrap_or_default();
+        let is_viewing_example = resp_s.active_example_name.is_some();
+        let active_example_name = resp_s.active_example_name.clone();
+        let comparing_with_prev = resp_s.comparing_with_previous;
+        let has_previous = resp_s.previous_response.is_some();
+        let prev_resp = resp_s.previous_response.clone();
 
         let current_resp = resp_s.current_response.clone();
         let active_tab = resp_s.active_tab;
@@ -132,8 +149,274 @@ impl RenderOnce for ResponseViewer {
                                         .child("No response yet"),
                                 )
                         }
-                    }),
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .when(has_previous, |this| {
+                                let rs = resp_state_clone.clone();
+                                this.child(
+                                    div()
+                                        .id("btn-compare-prev")
+                                        .cursor_pointer()
+                                        .px(px(6.))
+                                        .py(px(2.))
+                                        .rounded(px(4.))
+                                        .border_1()
+                                        .border_color(if comparing_with_prev { t.primary } else { t.border })
+                                        .bg(if comparing_with_prev { t.bg_hover } else { t.bg_card })
+                                        .text_xs()
+                                        .text_color(if comparing_with_prev { t.primary } else { t.text_secondary })
+                                        .hover(|s| s.text_color(t.text_primary).bg(t.bg_hover))
+                                        .on_click(move |_, _, cx| {
+                                            rs.update(cx, |state, cx| {
+                                                state.toggle_compare_with_previous(cx);
+                                            });
+                                        })
+                                        .child(if comparing_with_prev { "✓ Comparing" } else { "⇄ Compare" }),
+                                )
+                            })
+                            .when(is_viewing_example, |this| {
+                                let rs = resp_state_clone.clone();
+                                let req_id = active_id.clone().unwrap_or_default();
+                                let ex_name = active_example_name.clone().unwrap_or_default();
+                                this.child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(4.))
+                                        .child(
+                                            div()
+                                                .px(px(6.))
+                                                .py(px(2.))
+                                                .rounded(px(4.))
+                                                .bg(gpui::Hsla { a: 0.15, ..t.primary })
+                                                .border_1()
+                                                .border_color(gpui::Hsla { a: 0.3, ..t.primary })
+                                                .text_xs()
+                                                .text_color(t.primary)
+                                                .child(format!("Example: {}", ex_name)),
+                                        )
+                                        .child(
+                                            div()
+                                                .id("btn-return-live")
+                                                .cursor_pointer()
+                                                .px(px(6.))
+                                                .py(px(2.))
+                                                .rounded(px(4.))
+                                                .bg(t.bg_card)
+                                                .border_1()
+                                                .border_color(t.border)
+                                                .text_xs()
+                                                .text_color(t.primary)
+                                                .hover(|s| s.bg(t.bg_hover))
+                                                .on_click(move |_, _, cx| {
+                                                    rs.update(cx, |state, cx| {
+                                                        state.restore_live_response(&req_id, cx);
+                                                    });
+                                                })
+                                                .child("← Live"),
+                                        ),
+                                )
+                            })
+                            .when(current_resp.is_some() && !is_viewing_example && active_id.is_some(), |this| {
+                                let ws_s = self.workspace_state.clone();
+                                let c_resp = current_resp.clone().unwrap();
+                                let req_id = active_id.clone().unwrap();
+                                this.child(
+                                    div()
+                                        .id("btn-save-example")
+                                        .cursor_pointer()
+                                        .px(px(6.))
+                                        .py(px(2.))
+                                        .rounded(px(4.))
+                                        .bg(t.bg_card)
+                                        .border_1()
+                                        .border_color(t.border)
+                                        .text_xs()
+                                        .text_color(t.text_secondary)
+                                        .hover(|s| s.text_color(t.text_primary).bg(t.bg_hover))
+                                        .on_click(move |_, _, cx| {
+                                            ws_s.update(cx, |ws, cx| {
+                                                if let Some(mut req) = ws.get_request_file(&req_id) {
+                                                    let base_name = format!("{} {}", c_resp.status_code, c_resp.status_text);
+                                                    let mut name = base_name.clone();
+                                                    let mut idx = 2;
+                                                    while req.examples.iter().any(|e| e.name == name) {
+                                                        name = format!("{}-{}", base_name, idx);
+                                                        idx += 1;
+                                                    }
+                                                    let ex = RequestExampleFile {
+                                                        name,
+                                                        status: c_resp.status_code,
+                                                        headers: c_resp.headers.iter().map(|(k, v)| RequestKvItem::new(k, v)).collect(),
+                                                        body: Some(String::from_utf8_lossy(&c_resp.body).to_string()),
+                                                        extra: std::collections::BTreeMap::new(),
+                                                    };
+                                                    req.examples.push(ex);
+                                                    ws.save_request_file(&req_id, &req, cx);
+                                                }
+                                            });
+                                        })
+                                        .child("★ Save as Example"),
+                                )
+                            })
+                            .when(!examples.is_empty(), |this| {
+                                let rs = resp_state_clone.clone();
+                                let ws_s = self.workspace_state.clone();
+                                let req_id = active_id.clone().unwrap_or_default();
+                                let examples_list = examples.clone();
+
+                                this.child(
+                                    Button::new("btn-examples-dropdown")
+                                        .ghost()
+                                        .compact()
+                                        .px(px(6.))
+                                        .py(px(2.))
+                                        .h(px(24.))
+                                        .rounded(px(4.))
+                                        .bg(t.bg_card)
+                                        .border_1()
+                                        .border_color(t.border)
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(t.text_secondary)
+                                                .child(format!("Examples ({}) ▾", examples_list.len())),
+                                        )
+                                        .dropdown_menu(move |menu, _window, _cx| {
+                                            let mut m = menu;
+                                            let rs_live = rs.clone();
+                                            let rid_live = req_id.clone();
+                                            m = m.item(
+                                                PopupMenuItem::new("📡 Live Response")
+                                                    .on_click(move |_, _, cx| {
+                                                        rs_live.update(cx, |s, cx| {
+                                                            s.restore_live_response(&rid_live, cx);
+                                                        });
+                                                    }),
+                                            );
+
+                                            for (idx, ex) in examples_list.iter().enumerate() {
+                                                let rs_view = rs.clone();
+                                                let ex_view = ex.clone();
+                                                m = m.item(
+                                                    PopupMenuItem::new(format!("★ {} ({})", ex.name, ex.status))
+                                                        .on_click(move |_, _, cx| {
+                                                            rs_view.update(cx, |s, cx| {
+                                                                s.view_example(&ex_view, cx);
+                                                            });
+                                                        }),
+                                                );
+
+                                                let ws_del = ws_s.clone();
+                                                let rid_del = req_id.clone();
+                                                let ex_name_del = ex.name.clone();
+                                                m = m.item(
+                                                    PopupMenuItem::new(format!("  🗑 Delete {}", ex.name))
+                                                        .on_click(move |_, _, cx| {
+                                                            ws_del.update(cx, |ws, cx| {
+                                                                if let Some(mut req) = ws.get_request_file(&rid_del) {
+                                                                    req.examples.retain(|e| e.name != ex_name_del);
+                                                                    ws.save_request_file(&rid_del, &req, cx);
+                                                                }
+                                                            });
+                                                        }),
+                                                );
+
+                                                if idx > 0 {
+                                                    let ws_up = ws_s.clone();
+                                                    let rid_up = req_id.clone();
+                                                    m = m.item(
+                                                        PopupMenuItem::new(format!("  ▲ Move Up {}", ex.name))
+                                                            .on_click(move |_, _, cx| {
+                                                                ws_up.update(cx, |ws, cx| {
+                                                                    if let Some(mut req) = ws.get_request_file(&rid_up) {
+                                                                        if idx < req.examples.len() {
+                                                                            req.examples.swap(idx, idx - 1);
+                                                                            ws.save_request_file(&rid_up, &req, cx);
+                                                                        }
+                                                                    }
+                                                                });
+                                                            }),
+                                                    );
+                                                }
+
+                                                if idx + 1 < examples_list.len() {
+                                                    let ws_down = ws_s.clone();
+                                                    let rid_down = req_id.clone();
+                                                    m = m.item(
+                                                        PopupMenuItem::new(format!("  ▼ Move Down {}", ex.name))
+                                                            .on_click(move |_, _, cx| {
+                                                                ws_down.update(cx, |ws, cx| {
+                                                                    if let Some(mut req) = ws.get_request_file(&rid_down) {
+                                                                        if idx + 1 < req.examples.len() {
+                                                                            req.examples.swap(idx, idx + 1);
+                                                                            ws.save_request_file(&rid_down, &req, cx);
+                                                                        }
+                                                                    }
+                                                                });
+                                                            }),
+                                                    );
+                                                }
+                                            }
+
+                                            m
+                                        }),
+                                )
+                            }),
+                    ),
             )
+            // Comparison banner with previous response
+            .when(comparing_with_prev && current_resp.is_some() && prev_resp.is_some(), |this| {
+                let curr = current_resp.as_ref().unwrap();
+                let prev = prev_resp.as_ref().unwrap();
+                let dur_diff = curr.duration_ms as i64 - prev.duration_ms as i64;
+                let size_diff = curr.size_bytes as i64 - prev.size_bytes as i64;
+                let status_diff = curr.status_code != prev.status_code;
+
+                this.child(
+                    div()
+                        .px(px(12.))
+                        .py(px(6.))
+                        .bg(t.bg_card)
+                        .border_b_1()
+                        .border_color(t.border)
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .text_xs()
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(12.))
+                                .child(
+                                    div()
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .text_color(t.primary)
+                                        .child("Compare with Previous:"),
+                                )
+                                .child(
+                                    div()
+                                        .text_color(if status_diff { t.status_4xx } else { t.text_secondary })
+                                        .child(format!("Status: {} → {}", prev.status_code, curr.status_code)),
+                                )
+                                .child(
+                                    div()
+                                        .text_color(if dur_diff > 0 { t.text_muted } else { t.status_2xx })
+                                        .child(format!("Duration: {}ms (diff: {:+}ms)", curr.duration_ms, dur_diff)),
+                                )
+                                .child(
+                                    div()
+                                        .text_color(t.text_secondary)
+                                        .child(format!("Size: {} B (diff: {:+} B)", curr.size_bytes, size_diff)),
+                                ),
+                        ),
+                )
+            })
             // High-Precision Timing Popover
             .when(show_timing, |this| {
                 if let Some(resp) = &current_resp {

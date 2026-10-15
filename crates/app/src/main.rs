@@ -326,8 +326,9 @@ impl AppView {
                 let req_id = req.id.clone();
                 if last_req_id.as_ref() != Some(&req_id) {
                     last_req_id = Some(req_id.clone());
+                    let ws_store = ws_clone.read(cx).store.clone();
                     resp_clone.update(cx, |r_state, cx| {
-                        r_state.set_response(None, cx);
+                        r_state.load_for_request(&req_id, ws_store.as_ref(), cx);
                     });
                 }
 
@@ -643,15 +644,17 @@ impl AppView {
                                 let mut final_record = *record;
                                 final_record.console_logs = combined_console_logs.clone();
 
-                                this.response_state.update(cx, |resp, cx| {
-                                    resp.set_test_results(post_output.test_results, combined_console_logs, cx);
-                                    resp.set_response(Some(final_record), cx);
-                                });
-
+                                let loc_file = restclient_core::storage::models::LocFile::from_record(&final_record);
                                 this.workspace_state.update(cx, |ws, _cx| {
                                     if let Some(r) = ws.requests.iter_mut().find(|r| r.id == req_id) {
                                         r.last_status_code = Some(status);
                                     }
+                                    let _ = ws.store.save_response_cache(&req_id, &loc_file);
+                                });
+
+                                this.response_state.update(cx, |resp, cx| {
+                                    resp.set_test_results(post_output.test_results, combined_console_logs, cx);
+                                    resp.set_response_for_request(req_id.clone(), final_record, cx);
                                 });
 
                                 this.editor_state.update(cx, |ed, cx| {
@@ -1440,7 +1443,7 @@ impl Render for AppView {
                                                 )
                                             });
 
-                                        let response_pane = ResponseViewer::new(ed_entity.clone(), resp_entity.clone());
+                                        let response_pane = ResponseViewer::new(ws_entity.clone(), ed_entity.clone(), resp_entity.clone());
 
                                         if is_vertical_split {
                                             div().size_full().child(
