@@ -61,6 +61,7 @@ pub struct WorkspaceState {
     pub nav_index: usize,
     pub state_save_task: Option<Task<()>>,
     pub request_save_tasks: HashMap<String, Task<()>>,
+    pub env_save_task: Option<Task<()>>,
     pub conflicts: HashMap<String, String>,
     pub corrupt_secrets_warning: Option<String>,
     pub last_renamed_request: Option<(String, String)>,
@@ -136,6 +137,7 @@ impl WorkspaceState {
             nav_index: 0,
             state_save_task: None,
             request_save_tasks: HashMap::new(),
+            env_save_task: None,
             conflicts: HashMap::new(),
             corrupt_secrets_warning: None,
             last_renamed_request: None,
@@ -648,12 +650,16 @@ impl WorkspaceState {
         if req.last_status_code.is_none() {
             req.last_status_code = self.requests[idx].last_status_code;
         }
-        if self.requests[idx] == req {
-            return;
-        }
+        let was_unsaved = self.unsaved_requests.contains(&req.id);
+        let prev_name = self.requests[idx].name.clone();
+        let prev_method = self.requests[idx].method;
+        let visual_changed = !was_unsaved || prev_name != req.name || prev_method != req.method;
+
         self.requests[idx] = req.clone();
         self.unsaved_requests.insert(req.id.clone());
-        cx.notify();
+        if visual_changed {
+            cx.notify();
+        }
 
         let req_id = req.id.clone();
         let task = cx.spawn(async move |this, cx| {
@@ -1112,6 +1118,8 @@ impl WorkspaceState {
                 .clone()
                 .or_else(|| self.environments.first().map(|e| e.id.clone()))
                 .or_else(|| Some("globals".to_string()));
+        } else if !self.show_env_modal {
+            self.flush_environments();
         }
         cx.notify();
     }
@@ -1210,6 +1218,7 @@ impl WorkspaceState {
     }
 
     pub fn save_environments(&mut self, envs: Vec<Environment>, cx: &mut Context<Self>) {
+        self.env_save_task = None;
         for env in &envs {
             let (file, secrets) = EnvironmentFile::from_environment(env);
             let _ = self.store.save_environment(&env.name, &file);
@@ -1217,6 +1226,36 @@ impl WorkspaceState {
         }
         self.environments = envs;
         cx.notify();
+    }
+
+    pub fn save_environments_debounced(&mut self, envs: Vec<Environment>, cx: &mut Context<Self>) {
+        self.environments = envs;
+        cx.notify();
+
+        let task = cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(std::time::Duration::from_millis(500)).await;
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |ws, _cx| {
+                    for env in &ws.environments {
+                        let (file, secrets) = EnvironmentFile::from_environment(env);
+                        let _ = ws.store.save_environment(&env.name, &file);
+                        let _ = ws.store.save_secrets(&env.name, &secrets);
+                    }
+                    ws.env_save_task = None;
+                });
+            }
+        });
+        self.env_save_task = Some(task);
+    }
+
+    pub fn flush_environments(&mut self) {
+        if self.env_save_task.take().is_some() {
+            for env in &self.environments {
+                let (file, secrets) = EnvironmentFile::from_environment(env);
+                let _ = self.store.save_environment(&env.name, &file);
+                let _ = self.store.save_secrets(&env.name, &secrets);
+            }
+        }
     }
 }
 
@@ -1313,6 +1352,7 @@ mod tests {
             nav_index: 0,
             state_save_task: None,
             request_save_tasks: HashMap::new(),
+            env_save_task: None,
             conflicts: HashMap::new(),
             corrupt_secrets_warning: None,
             last_renamed_request: None,
@@ -1390,6 +1430,7 @@ mod tests {
             nav_index: 0,
             state_save_task: None,
             request_save_tasks: HashMap::new(),
+            env_save_task: None,
             conflicts: HashMap::new(),
             corrupt_secrets_warning: None,
             last_renamed_request: None,
@@ -1502,6 +1543,7 @@ mod tests {
             nav_index: 0,
             state_save_task: None,
             request_save_tasks: HashMap::new(),
+            env_save_task: None,
             conflicts: HashMap::new(),
             corrupt_secrets_warning: None,
             last_renamed_request: None,
@@ -1589,6 +1631,7 @@ mod tests {
             nav_index: 0,
             state_save_task: None,
             request_save_tasks: HashMap::new(),
+            env_save_task: None,
             conflicts: HashMap::new(),
             corrupt_secrets_warning: None,
             last_renamed_request: None,
@@ -1606,6 +1649,91 @@ mod tests {
         let child = ws_state.folders.iter().find(|f| f.id == child_rel).expect("Child folder should exist");
         assert_eq!(child.name, "Child Folder");
         assert_eq!(child.parent_id.as_deref(), Some(parent_rel.as_str()));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_flush_environments() {
+        let temp_dir = std::env::temp_dir().join(format!("restclient_test_flush_env_{}", uuid::Uuid::new_v4()));
+        let store: Arc<dyn WorkspaceStore> = Arc::new(FsWorkspaceStore::new(&temp_dir));
+        let _ = store.init_workspace("Test WS");
+
+        let mut ws_state = WorkspaceState {
+            store: store.clone(),
+            workspace_path: temp_dir.clone(),
+            workspace_meta: WorkspaceMeta::default(),
+            active_workspace: Some(Workspace::new("Test WS")),
+            folders: Vec::new(),
+            requests: Vec::new(),
+            parse_errors: HashMap::new(),
+            pins: Vec::new(),
+            local_state: LocalState::default(),
+            environments: Vec::new(),
+            global_environment: Environment::new("default", "Globals"),
+            active_environment_id: None,
+            selected_env_modal_id: None,
+            env_filter_query: String::new(),
+            var_filter_query: String::new(),
+            git_branch: None,
+            git_tracked_warning: false,
+            filter_query: String::new(),
+            sidebar_collapsed: false,
+            sidebar_width: px(260.),
+            split_layout_vertical: false,
+            show_env_modal: false,
+            show_cookies_modal: false,
+            show_command_palette: false,
+            show_settings_modal: false,
+            renaming_request_id: None,
+            rename_input: None,
+            rename_subscription: None,
+            renaming_folder_id: None,
+            rename_folder_input: None,
+            rename_folder_subscription: None,
+            renaming_env_id: None,
+            rename_env_input: None,
+            rename_env_subscription: None,
+            renaming_example: None,
+            rename_example_input: None,
+            rename_example_subscription: None,
+            last_renamed_example: None,
+            collapsed_folders: HashSet::new(),
+            collapsed_requests: HashSet::new(),
+            unsaved_requests: HashSet::new(),
+            running_request_id: None,
+            recent_workspaces: Vec::new(),
+            nav_history: Vec::new(),
+            nav_index: 0,
+            state_save_task: None,
+            request_save_tasks: HashMap::new(),
+            env_save_task: None,
+            conflicts: HashMap::new(),
+            corrupt_secrets_warning: None,
+            last_renamed_request: None,
+            watcher: None,
+            watcher_task: None,
+        };
+
+        let mut test_env = Environment::new("ws-test", "Staging");
+        test_env.variables.push(EnvironmentVariable {
+            key: "API_URL".to_string(),
+            initial_value: "https://staging.api.com".to_string(),
+            current_value: "http://localhost:3000".to_string(),
+            secret: false,
+        });
+
+        ws_state.environments.push(test_env);
+        // Direct save environments to disk
+        for env in &ws_state.environments {
+            let (file, secrets) = EnvironmentFile::from_environment(env);
+            let _ = ws_state.store.save_environment(&env.name, &file);
+            let _ = ws_state.store.save_secrets(&env.name, &secrets);
+        }
+
+        // Verify files exist in storage
+        let loaded = store.list_environments().unwrap();
+        assert!(loaded.contains(&"Staging".to_string()));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

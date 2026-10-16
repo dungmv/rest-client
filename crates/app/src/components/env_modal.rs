@@ -733,13 +733,28 @@ impl RenderOnce for EnvironmentModal {
                                                         let ws_secret = ws_clone.clone();
                                                         let ws_del = ws_clone.clone();
 
+                                                        let init_k = v_key.clone();
+                                                        let init_val_init = v_init.clone();
+                                                        let init_val_curr = v_curr.clone();
                                                         let holder = window.use_keyed_state(
                                                             gpui::SharedString::from(format!("{}-holder", row_id)),
                                                             cx,
                                                             |window, cx| {
-                                                                let k_in = cx.new(|cx| InputState::new(window, cx).placeholder("Variable key..."));
-                                                                let init_in = cx.new(|cx| InputState::new(window, cx).placeholder("Initial value (git)..."));
-                                                                let curr_in = cx.new(|cx| InputState::new(window, cx).placeholder("Current value (local)..."));
+                                                                let k_in = cx.new(|cx| {
+                                                                    let mut s = InputState::new(window, cx).placeholder("Variable key...");
+                                                                    s.set_value(init_k, window, cx);
+                                                                    s
+                                                                });
+                                                                let init_in = cx.new(|cx| {
+                                                                    let mut s = InputState::new(window, cx).placeholder("Initial value (git)...");
+                                                                    s.set_value(init_val_init, window, cx);
+                                                                    s
+                                                                });
+                                                                let curr_in = cx.new(|cx| {
+                                                                    let mut s = InputState::new(window, cx).placeholder("Current value (local)...");
+                                                                    s.set_value(init_val_curr, window, cx);
+                                                                    s
+                                                                });
 
                                                                 let k1 = k_in.clone();
                                                                 let cur_id1 = cur_id.clone();
@@ -761,7 +776,7 @@ impl RenderOnce for EnvironmentModal {
                                                                                         vr.key = nk;
                                                                                     }
                                                                                 }
-                                                                                state.save_environments(list, cx);
+                                                                                state.save_environments_debounced(list, cx);
                                                                             }
                                                                         });
                                                                     }
@@ -787,7 +802,7 @@ impl RenderOnce for EnvironmentModal {
                                                                                         vr.initial_value = n_init;
                                                                                     }
                                                                                 }
-                                                                                state.save_environments(list, cx);
+                                                                                state.save_environments_debounced(list, cx);
                                                                             }
                                                                         });
                                                                     }
@@ -813,7 +828,7 @@ impl RenderOnce for EnvironmentModal {
                                                                                         vr.current_value = n_curr;
                                                                                     }
                                                                                 }
-                                                                                state.save_environments(list, cx);
+                                                                                state.save_environments_debounced(list, cx);
                                                                             }
                                                                         });
                                                                     }
@@ -827,15 +842,6 @@ impl RenderOnce for EnvironmentModal {
                                                             let h = holder.read(cx);
                                                             (h.0.clone(), h.1.clone(), h.2.clone())
                                                         };
-                                                        if k_input.read(cx).value().as_str() != v_key {
-                                                            k_input.update(cx, |inp, cx| inp.set_value(v_key.clone(), window, cx));
-                                                        }
-                                                        if init_input.read(cx).value().as_str() != v_init {
-                                                            init_input.update(cx, |inp, cx| inp.set_value(v_init.clone(), window, cx));
-                                                        }
-                                                        if curr_input.read(cx).value().as_str() != v_curr {
-                                                            curr_input.update(cx, |inp, cx| inp.set_value(v_curr.clone(), window, cx));
-                                                        }
 
                                                         div()
                                                             .flex()

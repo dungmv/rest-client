@@ -56,7 +56,7 @@ impl RenderOnce for RequestBar {
         let on_send = self.on_send.clone();
 
         // Scan variables in URL and build completions while reading ws
-        let (var_map, completion_candidates, tokenized_content) = {
+        let (var_map, completion_candidates) = {
             let ws = self.workspace_state.read(cx);
             let effective_env = ws.effective_environment();
             let var_spans = scan_variables(&url, Some(&effective_env));
@@ -75,18 +75,9 @@ impl RenderOnce for RequestBar {
                 .map(|(_, q)| get_env_completions(ws, q))
                 .unwrap_or_default();
 
-            let tokenized = build_tokenized_content(&url, ws);
-            (map, candidates, tokenized)
+            (map, candidates)
         };
 
-        // If inline tokens count does not match scanned variables count, sync inline tokens
-        let current_tokens_count = self.url_input.read(cx).tokens().len();
-        let desired_tokens_count = tokenized_content.tokens().len();
-        if current_tokens_count != desired_tokens_count {
-            self.url_input.update(cx, |inp, cx| {
-                inp.set_value(tokenized_content, window, cx);
-            });
-        }
 
         let hover_token_state = window.use_keyed_state(
             gpui::SharedString::from("url-inline-token-hover"),

@@ -163,12 +163,22 @@ impl RenderOnce for KvTable {
 
                 let on_up_k = on_update.clone();
                 let on_up_v = on_update.clone();
+                let init_k = key_val.clone();
+                let init_v = val_val.clone();
                 let row_holder = window.use_keyed_state(
                     gpui::SharedString::from(format!("{}-holder", row_prefix)),
                     cx,
                     |window, cx| {
-                        let key_input = cx.new(|cx| InputState::new(window, cx).placeholder("Key..."));
-                        let val_input = cx.new(|cx| InputState::new(window, cx).placeholder("Value..."));
+                        let key_input = cx.new(|cx| {
+                            let mut s = InputState::new(window, cx).placeholder("Key...");
+                            s.set_value(init_k, window, cx);
+                            s
+                        });
+                        let val_input = cx.new(|cx| {
+                            let mut s = InputState::new(window, cx).placeholder("Value...");
+                            s.set_value(init_v, window, cx);
+                            s
+                        });
 
                         let k_in_1 = key_input.clone();
                         let v_in_1 = val_input.clone();
@@ -226,12 +236,12 @@ impl RenderOnce for KvTable {
                     (key_val.clone().into(), val_val.clone().into())
                 };
 
-                if key_input.read(cx).value().as_str() != key_val || key_input.read(cx).tokens().len() != key_tokenized.tokens().len() {
+                if key_input.read(cx).value().as_str() != key_val {
                     key_input.update(cx, |inp, cx| {
                         inp.set_value(key_tokenized, window, cx);
                     });
                 }
-                if val_input.read(cx).value().as_str() != val_val || val_input.read(cx).tokens().len() != val_tokenized.tokens().len() {
+                if val_input.read(cx).value().as_str() != val_val {
                     val_input.update(cx, |inp, cx| {
                         inp.set_value(val_tokenized, window, cx);
                     });

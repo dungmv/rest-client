@@ -820,7 +820,7 @@ impl Render for AppView {
         let method_dropdown_open = self.editor_state.read(cx).method_dropdown_open;
         let active_req = self.editor_state.read(cx).active_request.clone();
 
-        // Synchronize active request fields into InputState / TextareaState when switched or updated via query params
+        // Synchronize active request fields into InputState / TextareaState when switched or body version changed
         if let Some(req) = &active_req {
             let req_switched = self.last_synced_request_id.as_deref() != Some(&req.id);
             let ed_body_ver = self.editor_state.read(cx).body_version;
@@ -829,9 +829,7 @@ impl Render for AppView {
             if req_switched {
                 self.last_synced_request_id = Some(req.id.clone());
                 self.last_synced_body_version = ed_body_ver;
-            }
 
-            if req_switched || self.url_input.read(cx).value().as_str() != req.url {
                 let tokenized_url = {
                     let ws = self.workspace_state.read(cx);
                     crate::components::env_autocomplete::build_tokenized_content(&req.url, ws)
@@ -839,26 +837,7 @@ impl Render for AppView {
                 self.url_input.update(cx, |inp, cx| {
                     inp.set_value(tokenized_url, window, cx);
                 });
-            }
 
-            if req_switched || body_ver_changed {
-                self.last_synced_body_version = ed_body_ver;
-                match &req.body {
-                    RequestBody::Json(json_str) => {
-                        self.json_editor.update(cx, |txt, cx| {
-                            txt.set_value(json_str.clone(), window, cx);
-                        });
-                    }
-                    RequestBody::Raw { content, .. } => {
-                        self.raw_textarea.update(cx, |txt, cx| {
-                            txt.set_value(content.clone(), window, cx);
-                        });
-                    }
-                    _ => {}
-                }
-            }
-
-            if req_switched {
                 match &req.auth {
                     Auth::Bearer { token } => {
                         self.bearer_token_input.update(cx, |inp, cx| {
@@ -885,16 +864,29 @@ impl Render for AppView {
                 }
 
                 let pre_script = req.script.as_ref().and_then(|s| s.pre_request.clone()).unwrap_or_default();
-                if self.pre_script_editor.read(cx).value().as_str() != pre_script {
-                    self.pre_script_editor.update(cx, |txt, cx| {
-                        txt.set_value(pre_script, window, cx);
-                    });
-                }
+                self.pre_script_editor.update(cx, |txt, cx| {
+                    txt.set_value(pre_script, window, cx);
+                });
                 let test_script = req.script.as_ref().and_then(|s| s.post_response.clone()).unwrap_or_default();
-                if self.test_script_editor.read(cx).value().as_str() != test_script {
-                    self.test_script_editor.update(cx, |txt, cx| {
-                        txt.set_value(test_script, window, cx);
-                    });
+                self.test_script_editor.update(cx, |txt, cx| {
+                    txt.set_value(test_script, window, cx);
+                });
+            }
+
+            if req_switched || body_ver_changed {
+                self.last_synced_body_version = ed_body_ver;
+                match &req.body {
+                    RequestBody::Json(json_str) => {
+                        self.json_editor.update(cx, |txt, cx| {
+                            txt.set_value(json_str.clone(), window, cx);
+                        });
+                    }
+                    RequestBody::Raw { content, .. } => {
+                        self.raw_textarea.update(cx, |txt, cx| {
+                            txt.set_value(content.clone(), window, cx);
+                        });
+                    }
+                    _ => {}
                 }
             }
         }

@@ -849,8 +849,18 @@ impl RenderOnce for BodyEditor {
                                             gpui::SharedString::from(format!("{}-holder", mp_prefix)),
                                             cx,
                                             |window, cx| {
-                                                let key_input = cx.new(|cx| gpui_component::input::InputState::new(window, cx).placeholder("Key..."));
-                                                let val_input = cx.new(|cx| gpui_component::input::InputState::new(window, cx).placeholder("Value..."));
+                                                let init_k = key_str.clone();
+                                                let init_v = val_str.clone();
+                                                let key_input = cx.new(|cx| {
+                                                    let mut s = gpui_component::input::InputState::new(window, cx).placeholder("Key...");
+                                                    s.set_value(init_k, window, cx);
+                                                    s
+                                                });
+                                                let val_input = cx.new(|cx| {
+                                                    let mut s = gpui_component::input::InputState::new(window, cx).placeholder("Value...");
+                                                    s.set_value(init_v, window, cx);
+                                                    s
+                                                });
 
                                                 let k_in_1 = key_input.clone();
                                                 let v_in_1 = val_input.clone();
