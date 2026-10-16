@@ -38,11 +38,11 @@ pub fn get_env_completions(ws: &WorkspaceState, query: &str) -> Vec<EnvVarCandid
     // 1. Active Environment variables (highest priority)
     if let Some(active_env) = ws.active_environment() {
         for v in &active_env.variables {
-            if v.enabled && !seen_keys.contains(&v.key) {
+            if !seen_keys.contains(&v.key) {
                 if q.is_empty() || v.key.to_lowercase().contains(&q) {
                     candidates.push(EnvVarCandidate {
                         name: v.key.clone(),
-                        value: if v.secret { "••••••••".to_string() } else { v.value.clone() },
+                        value: if v.secret { "••••••••".to_string() } else { v.resolved_value().to_string() },
                         scope: format!("Active: {}", active_env.name),
                         is_secret: v.secret,
                     });
@@ -54,11 +54,11 @@ pub fn get_env_completions(ws: &WorkspaceState, query: &str) -> Vec<EnvVarCandid
 
     // 2. Global Environment variables
     for v in &ws.global_environment.variables {
-        if v.enabled && !seen_keys.contains(&v.key) {
+        if !seen_keys.contains(&v.key) {
             if q.is_empty() || v.key.to_lowercase().contains(&q) {
                 candidates.push(EnvVarCandidate {
                     name: v.key.clone(),
-                    value: if v.secret { "••••••••".to_string() } else { v.value.clone() },
+                    value: if v.secret { "••••••••".to_string() } else { v.resolved_value().to_string() },
                     scope: "Global".to_string(),
                     is_secret: v.secret,
                 });
@@ -100,15 +100,15 @@ pub fn get_env_completions(ws: &WorkspaceState, query: &str) -> Vec<EnvVarCandid
 pub fn get_variable_details(ws: &WorkspaceState, var_name: &str) -> (String, String, bool) {
     // 1. Check Active Env
     if let Some(active_env) = ws.active_environment() {
-        if let Some(v) = active_env.variables.iter().find(|x| x.key == var_name && x.enabled) {
-            let val = if v.secret { "••••••••".to_string() } else { v.value.clone() };
+        if let Some(v) = active_env.variables.iter().find(|x| x.key == var_name) {
+            let val = if v.secret { "••••••••".to_string() } else { v.resolved_value().to_string() };
             return (val, format!("Active: {}", active_env.name), true);
         }
     }
 
     // 2. Check Global Env
-    if let Some(v) = ws.global_environment.variables.iter().find(|x| x.key == var_name && x.enabled) {
-        let val = if v.secret { "••••••••".to_string() } else { v.value.clone() };
+    if let Some(v) = ws.global_environment.variables.iter().find(|x| x.key == var_name) {
+        let val = if v.secret { "••••••••".to_string() } else { v.resolved_value().to_string() };
         return (val, "Global".to_string(), true);
     }
 
@@ -269,16 +269,16 @@ mod tests {
         let mut ws = WorkspaceState::new();
         ws.global_environment.variables.push(restclient_core::models::EnvironmentVariable {
             key: "apiKey".to_string(),
-            value: "secret-123".to_string(),
-            enabled: true,
+            initial_value: "secret-123".to_string(),
+            current_value: "".to_string(),
             secret: true,
         });
 
         let mut custom_env = restclient_core::models::Environment::new("default", "Staging");
         custom_env.variables.push(restclient_core::models::EnvironmentVariable {
             key: "baseUrl".to_string(),
-            value: "https://staging.api.com".to_string(),
-            enabled: true,
+            initial_value: "https://staging.api.com".to_string(),
+            current_value: "".to_string(),
             secret: false,
         });
         let env_id = custom_env.id.clone();

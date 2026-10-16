@@ -307,12 +307,23 @@ impl Folder {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct EnvironmentVariable {
-    #[serde(default = "default_true")]
-    pub enabled: bool,
     pub key: String,
-    pub value: String,
+    #[serde(default)]
+    pub initial_value: String,
+    #[serde(default)]
+    pub current_value: String,
     #[serde(default)]
     pub secret: bool,
+}
+
+impl EnvironmentVariable {
+    pub fn resolved_value(&self) -> &str {
+        if !self.current_value.is_empty() {
+            &self.current_value
+        } else {
+            &self.initial_value
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

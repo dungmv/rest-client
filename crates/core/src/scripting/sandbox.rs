@@ -288,9 +288,7 @@ fn build_environment_object<'js>(
 ) -> rquickjs::Result<Object<'js>> {
     let mut initial_map = HashMap::new();
     for v in env_vars {
-        if v.enabled {
-            initial_map.insert(v.key.clone(), v.value.clone());
-        }
+        initial_map.insert(v.key.clone(), v.resolved_value().to_string());
     }
     let map_cell = Rc::new(RefCell::new(initial_map));
 
@@ -341,9 +339,7 @@ fn build_variables_object<'js>(
 ) -> rquickjs::Result<Object<'js>> {
     let mut var_map = HashMap::new();
     for v in env_vars {
-        if v.enabled {
-            var_map.insert(v.key.clone(), v.value.clone());
-        }
+        var_map.insert(v.key.clone(), v.resolved_value().to_string());
     }
     let map_cell = Rc::new(var_map);
 
@@ -622,9 +618,9 @@ mod tests {
     #[test]
     fn test_pre_request_env_and_headers() {
         let env_vars = vec![EnvironmentVariable {
-            enabled: true,
             key: "token".to_string(),
-            value: "old_token".to_string(),
+            initial_value: "old_token".to_string(),
+            current_value: "".to_string(),
             secret: false,
         }];
 

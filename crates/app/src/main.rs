@@ -582,12 +582,12 @@ impl AppView {
             for (k, v_opt) in &pre_output.env_mutations {
                 if let Some(val) = v_opt {
                     if let Some(v_item) = temp_env.variables.iter_mut().find(|v| v.key == *k) {
-                        v_item.value = val.clone();
+                        v_item.current_value = val.clone();
                     } else {
                         temp_env.variables.push(EnvironmentVariable {
-                            enabled: true,
                             key: k.clone(),
-                            value: val.clone(),
+                            initial_value: "".to_string(),
+                            current_value: val.clone(),
                             secret: false,
                         });
                     }
@@ -702,12 +702,12 @@ impl AppView {
                                             for (k, v_opt) in &all_mutations {
                                                 if let Some(val) = v_opt {
                                                     if let Some(var) = act_env.variables.iter_mut().find(|v| v.key == *k) {
-                                                        var.value = val.clone();
+                                                        var.current_value = val.clone();
                                                     } else {
                                                         act_env.variables.push(EnvironmentVariable {
-                                                            enabled: true,
                                                             key: k.clone(),
-                                                            value: val.clone(),
+                                                            initial_value: "".to_string(),
+                                                            current_value: val.clone(),
                                                             secret: false,
                                                         });
                                                     }
@@ -721,12 +721,12 @@ impl AppView {
                                             for (k, v_opt) in &all_mutations {
                                                 if let Some(val) = v_opt {
                                                     if let Some(var) = ws.global_environment.variables.iter_mut().find(|v| v.key == *k) {
-                                                        var.value = val.clone();
+                                                        var.current_value = val.clone();
                                                     } else {
                                                         ws.global_environment.variables.push(EnvironmentVariable {
-                                                            enabled: true,
                                                             key: k.clone(),
-                                                            value: val.clone(),
+                                                            initial_value: "".to_string(),
+                                                            current_value: val.clone(),
                                                             secret: false,
                                                         });
                                                     }

@@ -391,19 +391,15 @@ impl WorkspaceState {
         let mut effective = Environment::new(ws_name, "Effective");
 
         for v in &self.global_environment.variables {
-            if v.enabled {
-                effective.variables.push(v.clone());
-            }
+            effective.variables.push(v.clone());
         }
 
         if let Some(active_env) = self.active_environment() {
             for v in &active_env.variables {
-                if v.enabled {
-                    if let Some(existing) = effective.variables.iter_mut().find(|x| x.key == v.key) {
-                        *existing = v.clone();
-                    } else {
-                        effective.variables.push(v.clone());
-                    }
+                if let Some(existing) = effective.variables.iter_mut().find(|x| x.key == v.key) {
+                    *existing = v.clone();
+                } else {
+                    effective.variables.push(v.clone());
                 }
             }
         }
@@ -1233,35 +1229,35 @@ mod tests {
     fn test_effective_environment_override() {
         let mut global = Environment::new("ws1", "Globals");
         global.variables.push(EnvironmentVariable {
-            enabled: true,
             key: "HOST".to_string(),
-            value: "global.example.com".to_string(),
+            initial_value: "global.example.com".to_string(),
+            current_value: "".to_string(),
             secret: false,
         });
         global.variables.push(EnvironmentVariable {
-            enabled: true,
             key: "GLOBAL_TOKEN".to_string(),
-            value: "token_123".to_string(),
+            initial_value: "token_123".to_string(),
+            current_value: "".to_string(),
             secret: true,
         });
         global.variables.push(EnvironmentVariable {
-            enabled: false,
-            key: "DISABLED_KEY".to_string(),
-            value: "should_not_appear".to_string(),
+            key: "ONLY_GLOBAL".to_string(),
+            initial_value: "val_only_global".to_string(),
+            current_value: "".to_string(),
             secret: false,
         });
 
         let mut active = Environment::new("ws1", "Production");
         active.variables.push(EnvironmentVariable {
-            enabled: true,
             key: "HOST".to_string(),
-            value: "prod.example.com".to_string(),
+            initial_value: "prod.example.com".to_string(),
+            current_value: "".to_string(),
             secret: false,
         });
         active.variables.push(EnvironmentVariable {
-            enabled: true,
             key: "PORT".to_string(),
-            value: "443".to_string(),
+            initial_value: "443".to_string(),
+            current_value: "".to_string(),
             secret: false,
         });
 
@@ -1326,15 +1322,15 @@ mod tests {
 
         let effective = ws_state.effective_environment();
         let host_var = effective.variables.iter().find(|v| v.key == "HOST").unwrap();
-        assert_eq!(host_var.value, "prod.example.com");
+        assert_eq!(host_var.resolved_value(), "prod.example.com");
 
         let port_var = effective.variables.iter().find(|v| v.key == "PORT").unwrap();
-        assert_eq!(port_var.value, "443");
+        assert_eq!(port_var.resolved_value(), "443");
 
         let token_var = effective.variables.iter().find(|v| v.key == "GLOBAL_TOKEN").unwrap();
-        assert_eq!(token_var.value, "token_123");
+        assert_eq!(token_var.resolved_value(), "token_123");
 
-        assert!(effective.variables.iter().all(|v| v.key != "DISABLED_KEY"));
+        assert!(effective.variables.iter().any(|v| v.key == "ONLY_GLOBAL"));
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 

@@ -452,15 +452,26 @@ impl EnvironmentFile {
         let mut env = Environment::new(workspace_id, name);
         env.id = id.into();
         for v in &self.variables {
-            let val = if v.secret {
-                secrets.get(&v.name).cloned().unwrap_or_default()
+            let (init_val, cur_val) = if v.secret {
+                let init = secrets.get(&format!("{}:init", v.name))
+                    .cloned()
+                    .or_else(|| secrets.get(&v.name).cloned())
+                    .unwrap_or_default();
+                let cur = if secrets.contains_key(&format!("{}:init", v.name)) {
+                    secrets.get(&v.name).cloned().unwrap_or_default()
+                } else {
+                    secrets.get(&v.name).cloned().unwrap_or_default()
+                };
+                (init, cur)
             } else {
-                v.value.clone().unwrap_or_default()
+                let init = v.value.clone().unwrap_or_default();
+                let cur = secrets.get(&v.name).cloned().unwrap_or_default();
+                (init, cur)
             };
             env.variables.push(EnvironmentVariable {
-                enabled: v.enabled,
                 key: v.name.clone(),
-                value: val,
+                initial_value: init_val,
+                current_value: cur_val,
                 secret: v.secret,
             });
         }
@@ -473,22 +484,32 @@ impl EnvironmentFile {
 
         for v in &env.variables {
             if v.secret {
-                secrets.insert(v.key.clone(), v.value.clone());
                 env_file.variables.push(EnvVarFile {
                     name: v.key.clone(),
                     value: None,
                     secret: true,
-                    enabled: v.enabled,
+                    enabled: true,
                     extra: BTreeMap::new(),
                 });
+                if !v.current_value.is_empty() {
+                    secrets.insert(v.key.clone(), v.current_value.clone());
+                    if !v.initial_value.is_empty() && v.initial_value != v.current_value {
+                        secrets.insert(format!("{}:init", v.key), v.initial_value.clone());
+                    }
+                } else if !v.initial_value.is_empty() {
+                    secrets.insert(v.key.clone(), v.initial_value.clone());
+                }
             } else {
                 env_file.variables.push(EnvVarFile {
                     name: v.key.clone(),
-                    value: Some(v.value.clone()),
+                    value: Some(v.initial_value.clone()),
                     secret: false,
-                    enabled: v.enabled,
+                    enabled: true,
                     extra: BTreeMap::new(),
                 });
+                if !v.current_value.is_empty() {
+                    secrets.insert(v.key.clone(), v.current_value.clone());
+                }
             }
         }
         (env_file, secrets)
@@ -695,4 +716,77 @@ pub struct FolderNode {
 pub struct WorkspaceTree {
     pub root_requests: Vec<RequestNode>,
     pub folders: Vec<FolderNode>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Environment, EnvironmentVariable};
+
+    #[test]
+    fn test_environment_file_conversion_and_secrets() {
+        let mut env = Environment::new("ws1", "Development");
+        env.id = "env-dev".to_string();
+        env.variables.push(EnvironmentVariable {
+            key: "BASE_URL".to_string(),
+            initial_value: "https://api.example.com".to_string(),
+            current_value: "http://localhost:8000".to_string(),
+            secret: false,
+        });
+        env.variables.push(EnvironmentVariable {
+            key: "TIMEOUT".to_string(),
+            initial_value: "30".to_string(),
+            current_value: "".to_string(),
+            secret: false,
+        });
+        env.variables.push(EnvironmentVariable {
+            key: "API_KEY".to_string(),
+            initial_value: "prod-secret".to_string(),
+            current_value: "local-dev-secret".to_string(),
+            secret: true,
+        });
+
+        let (env_file, secrets) = EnvironmentFile::from_environment(&env);
+
+        // Env file only holds initial_value for non-secrets, None for secrets
+        assert_eq!(env_file.variables.len(), 3);
+        assert_eq!(env_file.variables[0].name, "BASE_URL");
+        assert_eq!(env_file.variables[0].value.as_deref(), Some("https://api.example.com"));
+        assert!(!env_file.variables[0].secret);
+
+        assert_eq!(env_file.variables[1].name, "TIMEOUT");
+        assert_eq!(env_file.variables[1].value.as_deref(), Some("30"));
+        assert!(!env_file.variables[1].secret);
+
+        assert_eq!(env_file.variables[2].name, "API_KEY");
+        assert_eq!(env_file.variables[2].value, None);
+        assert!(env_file.variables[2].secret);
+
+        // Secrets hold current values and secret values
+        assert_eq!(secrets.get("BASE_URL").map(|s| s.as_str()), Some("http://localhost:8000"));
+        assert!(!secrets.contains_key("TIMEOUT")); // empty current value not stored
+        assert_eq!(secrets.get("API_KEY").map(|s| s.as_str()), Some("local-dev-secret"));
+
+        // Converting back from EnvironmentFile + secrets
+        let restored = env_file.to_environment("env-dev", "ws1", "Development", &secrets);
+        assert_eq!(restored.variables.len(), 3);
+
+        let v0 = &restored.variables[0];
+        assert_eq!(v0.key, "BASE_URL");
+        assert_eq!(v0.initial_value, "https://api.example.com");
+        assert_eq!(v0.current_value, "http://localhost:8000");
+        assert_eq!(v0.resolved_value(), "http://localhost:8000");
+
+        let v1 = &restored.variables[1];
+        assert_eq!(v1.key, "TIMEOUT");
+        assert_eq!(v1.initial_value, "30");
+        assert_eq!(v1.current_value, "");
+        assert_eq!(v1.resolved_value(), "30");
+
+        let v2 = &restored.variables[2];
+        assert_eq!(v2.key, "API_KEY");
+        assert_eq!(v2.current_value, "local-dev-secret");
+        assert_eq!(v2.resolved_value(), "local-dev-secret");
+        assert!(v2.secret);
+    }
 }

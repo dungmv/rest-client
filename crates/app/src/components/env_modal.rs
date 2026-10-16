@@ -32,7 +32,6 @@ impl RenderOnce for EnvironmentModal {
             .selected_env_modal_id
             .clone()
             .unwrap_or_else(|| "globals".to_string());
-        let env_query = ws.env_filter_query.to_lowercase();
         let var_query = ws.var_filter_query.to_lowercase();
         let ws_clone = self.workspace_state.clone();
         let renaming_env_id = ws.renaming_env_id.clone();
@@ -41,28 +40,7 @@ impl RenderOnce for EnvironmentModal {
         let is_global_selected = selected_id == "globals";
         let active_custom_env = envs.iter().find(|e| e.id == selected_id).cloned();
 
-        // 1. Env search input holder
-        let env_search_holder = window.use_keyed_state(
-            gpui::SharedString::from("env-modal-search-input"),
-            cx,
-            |window, cx| {
-                let input = cx.new(|cx| InputState::new(window, cx).placeholder("Filter environments..."));
-                let inp = input.clone();
-                let ws_s = ws_clone.clone();
-                let sub = cx.subscribe_in(&input, window, move |_, _, ev, _, cx| {
-                    if let InputEvent::Change = ev {
-                        let val = inp.read(cx).value().to_string();
-                        ws_s.update(cx, |state, cx| {
-                            state.set_env_filter_query(val, cx);
-                        });
-                    }
-                });
-                (input, sub)
-            },
-        );
-        let env_search_input = env_search_holder.read(cx).0.clone();
-
-        // 2. Variable search input holder
+        // Variable search input holder
         let var_search_holder = window.use_keyed_state(
             gpui::SharedString::from(format!("var-modal-search-{}", selected_id)),
             cx,
@@ -83,18 +61,7 @@ impl RenderOnce for EnvironmentModal {
         );
         let var_search_input = var_search_holder.read(cx).0.clone();
 
-        // Filtered environments for sidebar
-        let filtered_envs: Vec<Environment> = envs
-            .iter()
-            .filter(|e| {
-                if env_query.is_empty() {
-                    true
-                } else {
-                    e.name.to_lowercase().contains(&env_query)
-                }
-            })
-            .cloned()
-            .collect();
+        let filtered_envs: Vec<Environment> = envs.clone();
 
         // Target variables to display in the right pane
         let (_target_env_name, target_variables): (String, Vec<(usize, EnvironmentVariable)>) = {
@@ -108,7 +75,8 @@ impl RenderOnce for EnvironmentModal {
                             true
                         } else {
                             v.key.to_lowercase().contains(&var_query)
-                                || v.value.to_lowercase().contains(&var_query)
+                                || v.initial_value.to_lowercase().contains(&var_query)
+                                || v.current_value.to_lowercase().contains(&var_query)
                         }
                     })
                     .map(|(i, v)| (i, v.clone()))
@@ -124,7 +92,8 @@ impl RenderOnce for EnvironmentModal {
                             true
                         } else {
                             v.key.to_lowercase().contains(&var_query)
-                                || v.value.to_lowercase().contains(&var_query)
+                                || v.initial_value.to_lowercase().contains(&var_query)
+                                || v.current_value.to_lowercase().contains(&var_query)
                         }
                     })
                     .map(|(i, v)| (i, v.clone()))
@@ -143,14 +112,6 @@ impl RenderOnce for EnvironmentModal {
             0
         };
 
-        let enabled_vars_in_target = if is_global_selected {
-            global_env.variables.iter().filter(|v| v.enabled).count()
-        } else if let Some(custom) = &active_custom_env {
-            custom.variables.iter().filter(|v| v.enabled).count()
-        } else {
-            0
-        };
-
         let is_target_active = !is_global_selected
             && active_custom_env.as_ref().map(|e| e.id.as_str()) == active_env_id.as_deref();
 
@@ -163,7 +124,7 @@ impl RenderOnce for EnvironmentModal {
             .justify_center()
             .child(
                 div()
-                    .w(px(920.))
+                    .w(px(980.))
                     .h(px(580.))
                     .rounded(px(10.))
                     .bg(t.bg_card)
@@ -237,31 +198,6 @@ impl RenderOnce for EnvironmentModal {
                                     .bg(t.bg_sidebar)
                                     .flex()
                                     .flex_col()
-                                    // Search environments
-                                    .child(
-                                        div()
-                                            .p(px(8.))
-                                            .border_b_1()
-                                            .border_color(t.border)
-                                            .child(
-                                                div()
-                                                    .h(px(28.))
-                                                    .px(px(6.))
-                                                    .rounded(px(4.))
-                                                    .bg(t.bg_input)
-                                                    .border_1()
-                                                    .border_color(t.border)
-                                                    .flex()
-                                                    .items_center()
-                                                    .child(
-                                                        Input::new(&env_search_input)
-                                                            .id("env-sidebar-search")
-                                                            .appearance(false)
-                                                            .bordered(false)
-                                                            .focus_bordered(false),
-                                                    ),
-                                            ),
-                                    )
                                     // Global Environment section
                                     .child(
                                         div()
@@ -394,13 +330,9 @@ impl RenderOnce for EnvironmentModal {
                                                 let env_name = env.name.clone();
                                                 let env_id_click = env.id.clone();
                                                 let env_name_click = env.name.clone();
-                                                let env_id_dup = env.id.clone();
-                                                let env_id_del = env.id.clone();
                                                 let count = env.variables.len();
 
                                                 let ws_sel = ws_clone.clone();
-                                                let ws_dup = ws_clone.clone();
-                                                let ws_del = ws_clone.clone();
 
                                                 div()
                                                     .id(gpui::SharedString::from(format!("env-sidebar-item-{}", env.id)))
@@ -536,44 +468,6 @@ impl RenderOnce for EnvironmentModal {
                                                             .flex()
                                                             .items_center()
                                                             .gap(px(4.))
-                                                            // Duplicate icon on hover
-                                                            .child(
-                                                                div()
-                                                                    .id(gpui::SharedString::from(format!("dup-btn-{}", env_id)))
-                                                                    .cursor_pointer()
-                                                                    .px(px(4.))
-                                                                    .py(px(1.))
-                                                                    .rounded(px(3.))
-                                                                    .hover(|s| s.bg(t.bg_card).text_color(t.text_primary))
-                                                                    .text_color(t.text_muted)
-                                                                    .text_xs()
-                                                                    .on_click(move |_, _, cx| {
-                                                                        cx.stop_propagation();
-                                                                        ws_dup.update(cx, |state, cx| {
-                                                                            state.duplicate_environment(&env_id_dup, cx);
-                                                                        });
-                                                                    })
-                                                                    .child("❐"),
-                                                            )
-                                                            // Delete icon on hover
-                                                            .child(
-                                                                div()
-                                                                    .id(gpui::SharedString::from(format!("del-btn-{}", env_id)))
-                                                                    .cursor_pointer()
-                                                                    .px(px(4.))
-                                                                    .py(px(1.))
-                                                                    .rounded(px(3.))
-                                                                    .hover(|s| s.bg(t.bg_card).text_color(t.status_5xx))
-                                                                    .text_color(t.text_muted)
-                                                                    .text_xs()
-                                                                    .on_click(move |_, _, cx| {
-                                                                        cx.stop_propagation();
-                                                                        ws_del.update(cx, |state, cx| {
-                                                                            state.delete_environment(&env_id_del, cx);
-                                                                        });
-                                                                    })
-                                                                    .child("×"),
-                                                            )
                                                             // Count badge
                                                             .child(
                                                                 div()
@@ -705,9 +599,9 @@ impl RenderOnce for EnvironmentModal {
                                                             .on_click(move |_, _, cx| {
                                                                 ws_add.update(cx, |state, cx| {
                                                                     let new_var = EnvironmentVariable {
-                                                                        enabled: true,
                                                                         key: "".to_string(),
-                                                                        value: "".to_string(),
+                                                                        initial_value: "".to_string(),
+                                                                        current_value: "".to_string(),
                                                                         secret: false,
                                                                     };
                                                                     if is_glob {
@@ -761,10 +655,9 @@ impl RenderOnce for EnvironmentModal {
                                                     .text_xs()
                                                     .text_color(t.text_muted)
                                                     .child(format!(
-                                                        "Showing {} of {} variables ({} enabled)",
+                                                        "Showing {} of {} variables",
                                                         target_variables.len(),
-                                                        total_vars_in_target,
-                                                        enabled_vars_in_target
+                                                        total_vars_in_target
                                                     )),
                                             ),
                                     )
@@ -789,11 +682,11 @@ impl RenderOnce for EnvironmentModal {
                                                     .text_xs()
                                                     .font_weight(gpui::FontWeight::SEMIBOLD)
                                                     .text_color(t.text_muted)
-                                                    .child(div().w(px(24.)).child(""))
-                                                    .child(div().w(px(210.)).child("VARIABLE NAME"))
-                                                    .child(div().flex_1().child("INITIAL / CURRENT VALUE"))
-                                                    .child(div().w(px(48.)).text_center().child("SECRET"))
-                                                    .child(div().w(px(28.)).child("")),
+                                                    .child(div().w(px(180.)).child("VARIABLE NAME"))
+                                                    .child(div().flex_1().child("INITIAL VALUE (GIT)"))
+                                                    .child(div().flex_1().child("CURRENT VALUE (LOCAL)"))
+                                                    .child(div().w(px(64.)).text_center().child("SECRET"))
+                                                    .child(div().w(px(24.)).child("")),
                                             )
                                             // Table Rows
                                             .child(
@@ -830,13 +723,13 @@ impl RenderOnce for EnvironmentModal {
                                                         let cur_id = selected_id.clone();
                                                         let row_id = format!("{}-row-{}", selected_id, orig_idx);
                                                         let v_key = var.key.clone();
-                                                        let v_val = var.value.clone();
-                                                        let enabled = var.enabled;
+                                                        let v_init = var.initial_value.clone();
+                                                        let v_curr = var.current_value.clone();
                                                         let secret = var.secret;
 
                                                         let ws_up_k = ws_clone.clone();
-                                                        let ws_up_v = ws_clone.clone();
-                                                        let ws_toggle = ws_clone.clone();
+                                                        let ws_up_init = ws_clone.clone();
+                                                        let ws_up_curr = ws_clone.clone();
                                                         let ws_secret = ws_clone.clone();
                                                         let ws_del = ws_clone.clone();
 
@@ -845,22 +738,20 @@ impl RenderOnce for EnvironmentModal {
                                                             cx,
                                                             |window, cx| {
                                                                 let k_in = cx.new(|cx| InputState::new(window, cx).placeholder("Variable key..."));
-                                                                let v_in = cx.new(|cx| InputState::new(window, cx).placeholder("Variable value..."));
+                                                                let init_in = cx.new(|cx| InputState::new(window, cx).placeholder("Initial value (git)..."));
+                                                                let curr_in = cx.new(|cx| InputState::new(window, cx).placeholder("Current value (local)..."));
 
                                                                 let k1 = k_in.clone();
-                                                                let v1 = v_in.clone();
                                                                 let cur_id1 = cur_id.clone();
                                                                 let sub1 = cx.subscribe_in(&k_in, window, move |_, _, ev, _, cx| {
                                                                     if let InputEvent::Change = ev {
                                                                         let nk = k1.read(cx).value().to_string();
-                                                                        let nv = v1.read(cx).value().to_string();
                                                                         let cid = cur_id1.clone();
                                                                         ws_up_k.update(cx, |state, cx| {
                                                                             if is_glob {
                                                                                 let mut g = state.global_environment.clone();
                                                                                 if let Some(vr) = g.variables.get_mut(orig_idx) {
                                                                                     vr.key = nk;
-                                                                                    vr.value = nv;
                                                                                 }
                                                                                 state.save_global_environment(g, cx);
                                                                             } else {
@@ -868,7 +759,6 @@ impl RenderOnce for EnvironmentModal {
                                                                                 if let Some(e) = list.iter_mut().find(|x| x.id == cid) {
                                                                                     if let Some(vr) = e.variables.get_mut(orig_idx) {
                                                                                         vr.key = nk;
-                                                                                        vr.value = nv;
                                                                                     }
                                                                                 }
                                                                                 state.save_environments(list, cx);
@@ -877,28 +767,24 @@ impl RenderOnce for EnvironmentModal {
                                                                     }
                                                                 });
 
-                                                                let k2 = k_in.clone();
-                                                                let v2 = v_in.clone();
+                                                                let init2 = init_in.clone();
                                                                 let cur_id2 = cur_id.clone();
-                                                                let sub2 = cx.subscribe_in(&v_in, window, move |_, _, ev, _, cx| {
+                                                                let sub2 = cx.subscribe_in(&init_in, window, move |_, _, ev, _, cx| {
                                                                     if let InputEvent::Change = ev {
-                                                                        let nk = k2.read(cx).value().to_string();
-                                                                        let nv = v2.read(cx).value().to_string();
+                                                                        let n_init = init2.read(cx).value().to_string();
                                                                         let cid = cur_id2.clone();
-                                                                        ws_up_v.update(cx, |state, cx| {
+                                                                        ws_up_init.update(cx, |state, cx| {
                                                                             if is_glob {
                                                                                 let mut g = state.global_environment.clone();
                                                                                 if let Some(vr) = g.variables.get_mut(orig_idx) {
-                                                                                    vr.key = nk;
-                                                                                    vr.value = nv;
+                                                                                    vr.initial_value = n_init;
                                                                                 }
                                                                                 state.save_global_environment(g, cx);
                                                                             } else {
                                                                                 let mut list = state.environments.clone();
                                                                                 if let Some(e) = list.iter_mut().find(|x| x.id == cid) {
                                                                                     if let Some(vr) = e.variables.get_mut(orig_idx) {
-                                                                                        vr.key = nk;
-                                                                                        vr.value = nv;
+                                                                                        vr.initial_value = n_init;
                                                                                     }
                                                                                 }
                                                                                 state.save_environments(list, cx);
@@ -907,19 +793,48 @@ impl RenderOnce for EnvironmentModal {
                                                                     }
                                                                 });
 
-                                                                (k_in, v_in, vec![sub1, sub2])
+                                                                let curr3 = curr_in.clone();
+                                                                let cur_id3 = cur_id.clone();
+                                                                let sub3 = cx.subscribe_in(&curr_in, window, move |_, _, ev, _, cx| {
+                                                                    if let InputEvent::Change = ev {
+                                                                        let n_curr = curr3.read(cx).value().to_string();
+                                                                        let cid = cur_id3.clone();
+                                                                        ws_up_curr.update(cx, |state, cx| {
+                                                                            if is_glob {
+                                                                                let mut g = state.global_environment.clone();
+                                                                                if let Some(vr) = g.variables.get_mut(orig_idx) {
+                                                                                    vr.current_value = n_curr;
+                                                                                }
+                                                                                state.save_global_environment(g, cx);
+                                                                            } else {
+                                                                                let mut list = state.environments.clone();
+                                                                                if let Some(e) = list.iter_mut().find(|x| x.id == cid) {
+                                                                                    if let Some(vr) = e.variables.get_mut(orig_idx) {
+                                                                                        vr.current_value = n_curr;
+                                                                                    }
+                                                                                }
+                                                                                state.save_environments(list, cx);
+                                                                            }
+                                                                        });
+                                                                    }
+                                                                });
+
+                                                                (k_in, init_in, curr_in, vec![sub1, sub2, sub3])
                                                             },
                                                         );
 
-                                                        let (k_input, v_input) = {
+                                                        let (k_input, init_input, curr_input) = {
                                                             let h = holder.read(cx);
-                                                            (h.0.clone(), h.1.clone())
+                                                            (h.0.clone(), h.1.clone(), h.2.clone())
                                                         };
                                                         if k_input.read(cx).value().as_str() != v_key {
                                                             k_input.update(cx, |inp, cx| inp.set_value(v_key.clone(), window, cx));
                                                         }
-                                                        if v_input.read(cx).value().as_str() != v_val {
-                                                            v_input.update(cx, |inp, cx| inp.set_value(v_val.clone(), window, cx));
+                                                        if init_input.read(cx).value().as_str() != v_init {
+                                                            init_input.update(cx, |inp, cx| inp.set_value(v_init.clone(), window, cx));
+                                                        }
+                                                        if curr_input.read(cx).value().as_str() != v_curr {
+                                                            curr_input.update(cx, |inp, cx| inp.set_value(v_curr.clone(), window, cx));
                                                         }
 
                                                         div()
@@ -930,49 +845,10 @@ impl RenderOnce for EnvironmentModal {
                                                             .gap(px(8.))
                                                             .rounded(px(4.))
                                                             .hover(|s| s.bg(t.bg_hover))
-                                                            // Checkbox: enable/disable variable
-                                                            .child({
-                                                                let cur_id_c = cur_id.clone();
-                                                                div()
-                                                                    .id(gpui::SharedString::from(format!("{}-check", row_id)))
-                                                                    .w(px(20.))
-                                                                    .h(px(20.))
-                                                                    .rounded(px(4.))
-                                                                    .border_1()
-                                                                    .border_color(if enabled { t.primary } else { t.border })
-                                                                    .bg(if enabled { t.primary } else { t.bg_input })
-                                                                    .flex()
-                                                                    .items_center()
-                                                                    .justify_center()
-                                                                    .cursor_pointer()
-                                                                    .text_xs()
-                                                                    .text_color(t.primary_foreground)
-                                                                    .on_click(move |_, _, cx| {
-                                                                        let cid = cur_id_c.clone();
-                                                                        ws_toggle.update(cx, |state, cx| {
-                                                                            if is_glob {
-                                                                                let mut g = state.global_environment.clone();
-                                                                                if let Some(vr) = g.variables.get_mut(orig_idx) {
-                                                                                    vr.enabled = !enabled;
-                                                                                }
-                                                                                state.save_global_environment(g, cx);
-                                                                            } else {
-                                                                                let mut list = state.environments.clone();
-                                                                                if let Some(e) = list.iter_mut().find(|x| x.id == cid) {
-                                                                                    if let Some(vr) = e.variables.get_mut(orig_idx) {
-                                                                                        vr.enabled = !enabled;
-                                                                                    }
-                                                                                }
-                                                                                state.save_environments(list, cx);
-                                                                            }
-                                                                        });
-                                                                    })
-                                                                    .child(if enabled { "✓" } else { "" })
-                                                            })
                                                             // Key Input
                                                             .child(
                                                                 div()
-                                                                    .w(px(210.))
+                                                                    .w(px(180.))
                                                                     .h(px(28.))
                                                                     .px(px(6.))
                                                                     .rounded(px(4.))
@@ -989,7 +865,7 @@ impl RenderOnce for EnvironmentModal {
                                                                             .focus_bordered(false),
                                                                     ),
                                                             )
-                                                            // Value Input
+                                                            // Initial Value Input
                                                             .child(
                                                                 div()
                                                                     .flex_1()
@@ -1002,8 +878,28 @@ impl RenderOnce for EnvironmentModal {
                                                                     .flex()
                                                                     .items_center()
                                                                     .child(
-                                                                        Input::new(&v_input)
-                                                                            .id(gpui::SharedString::from(format!("{}-val", row_id)))
+                                                                        Input::new(&init_input)
+                                                                            .id(gpui::SharedString::from(format!("{}-init-val", row_id)))
+                                                                            .appearance(false)
+                                                                            .bordered(false)
+                                                                            .focus_bordered(false),
+                                                                    ),
+                                                            )
+                                                            // Current Value Input
+                                                            .child(
+                                                                div()
+                                                                    .flex_1()
+                                                                    .h(px(28.))
+                                                                    .px(px(6.))
+                                                                    .rounded(px(4.))
+                                                                    .bg(t.bg_input)
+                                                                    .border_1()
+                                                                    .border_color(t.border)
+                                                                    .flex()
+                                                                    .items_center()
+                                                                    .child(
+                                                                        Input::new(&curr_input)
+                                                                            .id(gpui::SharedString::from(format!("{}-curr-val", row_id)))
                                                                             .appearance(false)
                                                                             .bordered(false)
                                                                             .focus_bordered(false),
@@ -1014,7 +910,7 @@ impl RenderOnce for EnvironmentModal {
                                                                 let cur_id_s = cur_id.clone();
                                                                 div()
                                                                     .id(gpui::SharedString::from(format!("{}-secret", row_id)))
-                                                                    .w(px(48.))
+                                                                    .w(px(64.))
                                                                     .h(px(24.))
                                                                     .rounded(px(4.))
                                                                     .bg(if secret { gpui::Hsla { a: 0.15, ..t.status_4xx } } else { gpui::transparent_black() })
@@ -1085,49 +981,6 @@ impl RenderOnce for EnvironmentModal {
                                                                     .child("×")
                                                             })
                                                     }))
-                                                    .child({
-                                                        let ws_add = ws_clone.clone();
-                                                        let is_glob = is_global_selected;
-                                                        let cur_id = selected_id.clone();
-                                                        div()
-                                                            .id("btn-table-add-row")
-                                                            .mt(px(4.))
-                                                            .py(px(6.))
-                                                            .px(px(10.))
-                                                            .rounded(px(4.))
-                                                            .border_1()
-                                                            .border_color(t.border)
-                                                            .bg(t.bg_card)
-                                                            .text_color(t.text_secondary)
-                                                            .hover(|s| s.bg(t.bg_hover).border_color(t.primary).text_color(t.primary))
-                                                            .cursor_pointer()
-                                                            .flex()
-                                                            .items_center()
-                                                            .gap(px(6.))
-                                                            .text_xs()
-                                                            .on_click(move |_, _, cx| {
-                                                                ws_add.update(cx, |state, cx| {
-                                                                    let new_var = EnvironmentVariable {
-                                                                        enabled: true,
-                                                                        key: "".to_string(),
-                                                                        value: "".to_string(),
-                                                                        secret: false,
-                                                                    };
-                                                                    if is_glob {
-                                                                        let mut g = state.global_environment.clone();
-                                                                        g.variables.push(new_var);
-                                                                        state.save_global_environment(g, cx);
-                                                                    } else {
-                                                                        let mut list = state.environments.clone();
-                                                                        if let Some(e) = list.iter_mut().find(|x| x.id == cur_id) {
-                                                                            e.variables.push(new_var);
-                                                                        }
-                                                                        state.save_environments(list, cx);
-                                                                    }
-                                                                });
-                                                            })
-                                                            .child("+ Add Variable Row")
-                                                    }),
                                             ),
                                     ),
                             ),

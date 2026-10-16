@@ -28,9 +28,7 @@ pub fn interpolate(text: &str, env: Option<&Environment>) -> InterpolationResult
     let mut var_map = HashMap::new();
     if let Some(env) = env {
         for v in &env.variables {
-            if v.enabled {
-                var_map.insert(v.key.as_str(), v.value.as_str());
-            }
+            var_map.insert(v.key.as_str(), v.resolved_value());
         }
     }
     interpolate_with_map(text, &var_map)
@@ -39,9 +37,7 @@ pub fn interpolate(text: &str, env: Option<&Environment>) -> InterpolationResult
 pub fn interpolate_with_vars(text: &str, vars: &[EnvironmentVariable]) -> InterpolationResult {
     let mut var_map = HashMap::new();
     for v in vars {
-        if v.enabled {
-            var_map.insert(v.key.as_str(), v.value.as_str());
-        }
+        var_map.insert(v.key.as_str(), v.resolved_value());
     }
     interpolate_with_map(text, &var_map)
 }
@@ -100,9 +96,7 @@ pub fn scan_variables(raw_text: &str, env: Option<&Environment>) -> Vec<Variable
     let mut var_map = HashMap::new();
     if let Some(env) = env {
         for v in &env.variables {
-            if v.enabled {
-                var_map.insert(v.key.as_str(), v.value.as_str());
-            }
+            var_map.insert(v.key.as_str(), v.resolved_value());
         }
     }
 
@@ -132,15 +126,15 @@ mod tests {
     fn test_interpolation_basic() {
         let mut env = Environment::new("ws1", "local");
         env.variables.push(EnvironmentVariable {
-            enabled: true,
             key: "host".to_string(),
-            value: "localhost:8000".to_string(),
+            initial_value: "localhost:8000".to_string(),
+            current_value: "".to_string(),
             secret: false,
         });
         env.variables.push(EnvironmentVariable {
-            enabled: true,
             key: "token".to_string(),
-            value: "xyz123".to_string(),
+            initial_value: "xyz123".to_string(),
+            current_value: "".to_string(),
             secret: true,
         });
 
@@ -164,27 +158,27 @@ mod tests {
     }
 
     #[test]
-    fn test_interpolation_disabled_variable() {
+    fn test_interpolation_prefers_current_value() {
         let mut env = Environment::new("ws1", "local");
         env.variables.push(EnvironmentVariable {
-            enabled: false,
             key: "host".to_string(),
-            value: "localhost:8000".to_string(),
+            initial_value: "git.example.com".to_string(),
+            current_value: "localhost:8000".to_string(),
             secret: false,
         });
 
         let res = interpolate("http://{{host}}/test", Some(&env));
-        assert_eq!(res.text, "http://{{host}}/test");
-        assert_eq!(res.unresolved_variables, vec!["host"]);
+        assert_eq!(res.text, "http://localhost:8000/test");
+        assert!(res.unresolved_variables.is_empty());
     }
 
     #[test]
     fn test_scan_variables() {
         let mut env = Environment::new("ws1", "local");
         env.variables.push(EnvironmentVariable {
-            enabled: true,
             key: "port".to_string(),
-            value: "8080".to_string(),
+            initial_value: "8080".to_string(),
+            current_value: "".to_string(),
             secret: false,
         });
 

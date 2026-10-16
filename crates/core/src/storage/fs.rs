@@ -201,9 +201,9 @@ mod tests {
         // Save global variables
         let mut global = default_global;
         global.variables.push(EnvironmentVariable {
-            enabled: true,
             key: "GLOBAL_API_KEY".to_string(),
-            value: "secret_123".to_string(),
+            initial_value: "secret_123".to_string(),
+            current_value: "".to_string(),
             secret: true,
         });
         storage.save_global_environment(ws_id, &global).unwrap();
@@ -212,7 +212,7 @@ mod tests {
         let loaded = storage.load_global_environment(ws_id).unwrap();
         assert_eq!(loaded.variables.len(), 1);
         assert_eq!(loaded.variables[0].key, "GLOBAL_API_KEY");
-        assert_eq!(loaded.variables[0].value, "secret_123");
+        assert_eq!(loaded.variables[0].initial_value, "secret_123");
         assert!(loaded.variables[0].secret);
 
         let _ = fs::remove_dir_all(&temp_dir);
