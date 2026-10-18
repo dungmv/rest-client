@@ -35,7 +35,7 @@ impl FsWorkspaceStore {
         let sup = self.suppressed_paths.clone();
         let p = path.to_path_buf();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            std::thread::sleep(std::time::Duration::from_millis(1500));
             if let Ok(mut set) = sup.lock() {
                 set.remove(&p);
             }

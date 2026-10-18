@@ -43,11 +43,13 @@ impl RequestBar {
 impl RenderOnce for RequestBar {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
-        let (active_req, is_sending) = {
+        let (method, is_sending) = {
             let ed = self.editor_state.read(cx);
-            (ed.active_request.clone(), ed.is_sending)
+            (
+                ed.active_request.as_ref().map(|r| r.method).unwrap_or(HttpMethod::Get),
+                ed.is_sending,
+            )
         };
-        let method = active_req.as_ref().map(|r| r.method).unwrap_or(HttpMethod::Get);
         let url = self.url_input.read(cx).value().to_string();
 
         let ws_clone = self.workspace_state.clone();
@@ -55,8 +57,8 @@ impl RenderOnce for RequestBar {
         let url_input_clone = self.url_input.clone();
         let on_send = self.on_send.clone();
 
-        // Scan variables in URL and build completions while reading ws
-        let (var_map, completion_candidates) = {
+        // Scan variables in URL and build completions only if URL contains {{
+        let (var_map, completion_candidates, unclosed) = if url.contains("{{") {
             let ws = self.workspace_state.read(cx);
             let effective_env = ws.effective_environment();
             let var_spans = scan_variables(&url, Some(&effective_env));
@@ -75,9 +77,10 @@ impl RenderOnce for RequestBar {
                 .map(|(_, q)| get_env_completions(ws, q))
                 .unwrap_or_default();
 
-            (map, candidates)
+            (map, candidates, unclosed)
+        } else {
+            (std::collections::HashMap::new(), Vec::new(), None)
         };
-
 
         let hover_token_state = window.use_keyed_state(
             gpui::SharedString::from("url-inline-token-hover"),
@@ -86,7 +89,6 @@ impl RenderOnce for RequestBar {
         );
         let hovered_token = hover_token_state.read(cx).clone();
 
-        let unclosed = detect_unclosed_env_var(&url);
         let show_autocomplete = !completion_candidates.is_empty();
 
         div()

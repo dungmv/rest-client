@@ -452,4 +452,33 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
+
+    #[test]
+    fn test_benchmark_yaml_and_clone() {
+        let speedt_path = std::path::Path::new(r"C:\Users\maiva\Documents\speedtest\collections\new-folder\new\new-folder\speedt.yaml");
+        if speedt_path.exists() {
+            let content = std::fs::read_to_string(speedt_path).unwrap();
+            let t0 = std::time::Instant::now();
+            let req_file: RequestFile = serde_yaml::from_str(&content).unwrap();
+            let parse_time = t0.elapsed();
+
+            let t1 = std::time::Instant::now();
+            let serialized = to_yaml_string(&req_file).unwrap();
+            let ser_time = t1.elapsed();
+
+            let item = req_file.to_item("speedt.yaml", "ws", None);
+            let t2 = std::time::Instant::now();
+            for _ in 0..100 {
+                let _ = item.clone();
+            }
+            let clone_time = t2.elapsed();
+
+            println!("\n=== BENCHMARK on 16KB speedt.yaml ===");
+            println!("YAML parse: {:?}", parse_time);
+            println!("YAML serialize: {:?}", ser_time);
+            println!("100 clones: {:?}", clone_time);
+            println!("Serialized len: {} bytes", serialized.len());
+            println!("====================================\n");
+        }
+    }
 }

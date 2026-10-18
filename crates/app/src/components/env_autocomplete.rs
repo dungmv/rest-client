@@ -166,6 +166,9 @@ pub fn get_variable_kind_and_color(scope: &str, is_res: bool) -> (EnvVarKind, gp
 
 /// Builds `InputContent` with inline tokens for all variable spans `{{var}}` found in `text`.
 pub fn build_tokenized_content(text: &str, ws: &WorkspaceState) -> InputContent {
+    if !text.contains("{{") {
+        return InputContent::new(text);
+    }
     let mut content = InputContent::new(text);
     let effective_env = ws.effective_environment();
     let spans = restclient_core::interpolation::scan_variables(text, Some(&effective_env));

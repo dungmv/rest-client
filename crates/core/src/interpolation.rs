@@ -25,6 +25,13 @@ pub struct InterpolationResult {
 /// Any unresolved variables remain in their `{{var}}` form in the output string,
 /// and are reported in `unresolved_variables`.
 pub fn interpolate(text: &str, env: Option<&Environment>) -> InterpolationResult {
+    if !text.contains("{{") {
+        return InterpolationResult {
+            text: text.to_string(),
+            unresolved_variables: Vec::new(),
+            spans: Vec::new(),
+        };
+    }
     let mut var_map = HashMap::new();
     if let Some(env) = env {
         for v in &env.variables {
@@ -35,6 +42,13 @@ pub fn interpolate(text: &str, env: Option<&Environment>) -> InterpolationResult
 }
 
 pub fn interpolate_with_vars(text: &str, vars: &[EnvironmentVariable]) -> InterpolationResult {
+    if !text.contains("{{") {
+        return InterpolationResult {
+            text: text.to_string(),
+            unresolved_variables: Vec::new(),
+            spans: Vec::new(),
+        };
+    }
     let mut var_map = HashMap::new();
     for v in vars {
         var_map.insert(v.key.as_str(), v.resolved_value());
@@ -43,6 +57,13 @@ pub fn interpolate_with_vars(text: &str, vars: &[EnvironmentVariable]) -> Interp
 }
 
 pub fn interpolate_with_map(text: &str, var_map: &HashMap<&str, &str>) -> InterpolationResult {
+    if !text.contains("{{") {
+        return InterpolationResult {
+            text: text.to_string(),
+            unresolved_variables: Vec::new(),
+            spans: Vec::new(),
+        };
+    }
     let mut result = String::with_capacity(text.len());
     let mut last_match_end = 0;
     let mut unresolved_variables = Vec::new();
@@ -93,6 +114,9 @@ pub fn interpolate_with_map(text: &str, var_map: &HashMap<&str, &str>) -> Interp
 
 /// Find variable tokens in raw text before substitution (useful for editor syntax highlighting)
 pub fn scan_variables(raw_text: &str, env: Option<&Environment>) -> Vec<VariableSpan> {
+    if !raw_text.contains("{{") {
+        return Vec::new();
+    }
     let mut var_map = HashMap::new();
     if let Some(env) = env {
         for v in &env.variables {

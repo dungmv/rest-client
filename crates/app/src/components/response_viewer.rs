@@ -550,12 +550,12 @@ impl RenderOnce for ResponseViewer {
                                         )
                                         .into_any_element()
                                 } else {
-                                    let body_bytes = current_resp.as_ref().map(|r| r.body.clone()).unwrap_or_default();
-                                    let raw_str = String::from_utf8_lossy(&body_bytes).to_string();
+                                    let body_len = current_resp.as_ref().map(|r| r.body.len()).unwrap_or(0);
 
                                     let (_display_text, lines, is_json) = if let Some(fmt) = &resp_s.formatted_body {
                                         (fmt.display_text.clone(), fmt.lines.clone(), fmt.is_json)
                                     } else {
+                                        let raw_str = current_resp.as_ref().map(|r| String::from_utf8_lossy(&r.body).to_string()).unwrap_or_default();
                                         let parsed_json = serde_json::from_str::<serde_json::Value>(&raw_str).ok();
                                         let is_json = parsed_json.is_some()
                                             || current_resp.as_ref().map(|r| r.is_json()).unwrap_or(false)
@@ -577,11 +577,11 @@ impl RenderOnce for ResponseViewer {
                                     };
 
                                     let total_lines = lines.len();
-                                    let is_large_payload = body_bytes.len() > 10 * 1024 * 1024 || total_lines > 20000;
+                                    let is_large_payload = body_len > 10 * 1024 * 1024 || total_lines > 20000;
 
                                 let rs_toggle = resp_state_clone.clone();
-                                let raw_for_copy = raw_str.clone();
-                                let bytes_for_save = body_bytes.clone();
+                                let rs_copy = resp_state_clone.clone();
+                                let rs_save = resp_state_clone.clone();
 
                                 div()
                                     .size_full()
@@ -659,7 +659,7 @@ impl RenderOnce for ResponseViewer {
                                                     .gap(px(6.))
                                                     // Copy Button
                                                     .child({
-                                                        let copy_text = raw_for_copy.clone();
+                                                        let rs_c = rs_copy.clone();
                                                         div()
                                                             .id("btn-copy-response")
                                                             .px(px(6.))
@@ -673,13 +673,20 @@ impl RenderOnce for ResponseViewer {
                                                             .text_color(t.text_secondary)
                                                             .cursor_pointer()
                                                             .on_click(move |_, _, cx| {
-                                                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(copy_text.clone()));
+                                                                let copy_text = rs_c.read(cx).formatted_body.as_ref()
+                                                                    .map(|f| f.display_text.to_string())
+                                                                    .or_else(|| {
+                                                                        rs_c.read(cx).current_response.as_ref()
+                                                                            .map(|r| String::from_utf8_lossy(&r.body).to_string())
+                                                                    })
+                                                                    .unwrap_or_default();
+                                                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(copy_text));
                                                             })
                                                             .child("📋 Copy")
                                                     })
                                                     // Save to File Button
                                                     .child({
-                                                        let save_bytes = bytes_for_save.clone();
+                                                        let rs_s = rs_save.clone();
                                                         div()
                                                             .id("btn-save-response")
                                                             .px(px(6.))
@@ -692,12 +699,15 @@ impl RenderOnce for ResponseViewer {
                                                             .text_xs()
                                                             .text_color(t.text_secondary)
                                                             .cursor_pointer()
-                                                            .on_click(move |_, _, _| {
-                                                                if let Some(path) = rfd::FileDialog::new()
-                                                                    .set_file_name("response.json")
-                                                                    .save_file()
-                                                                {
-                                                                    let _ = std::fs::write(path, &save_bytes);
+                                                            .on_click(move |_, _, cx| {
+                                                                let save_bytes = rs_s.read(cx).current_response.as_ref().map(|r| r.body.clone());
+                                                                if let Some(bytes) = save_bytes {
+                                                                    if let Some(path) = rfd::FileDialog::new()
+                                                                        .set_file_name("response.json")
+                                                                        .save_file()
+                                                                    {
+                                                                        let _ = std::fs::write(path, &bytes);
+                                                                    }
                                                                 }
                                                             })
                                                             .child("💾 Save to File")

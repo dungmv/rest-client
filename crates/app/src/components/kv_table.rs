@@ -82,27 +82,43 @@ impl RenderOnce for KvTable {
             self.pairs
                 .iter()
                 .map(|pair| {
-                    let key_vars = scan_variables(&pair.key, Some(&effective_env))
-                        .into_iter()
-                        .map(|v| {
-                            let (val, scope, is_res) = get_variable_details(ws, &v.name);
-                            (v.name, val, scope, is_res)
-                        })
-                        .collect();
+                    let key_vars = if pair.key.contains("{{") {
+                        scan_variables(&pair.key, Some(&effective_env))
+                            .into_iter()
+                            .map(|v| {
+                                let (val, scope, is_res) = get_variable_details(ws, &v.name);
+                                (v.name, val, scope, is_res)
+                            })
+                            .collect()
+                    } else {
+                        vec![]
+                    };
 
-                    let val_vars = scan_variables(&pair.value, Some(&effective_env))
-                        .into_iter()
-                        .map(|v| {
-                            let (val, scope, is_res) = get_variable_details(ws, &v.name);
-                            (v.name, val, scope, is_res)
-                        })
-                        .collect();
+                    let val_vars = if pair.value.contains("{{") {
+                        scan_variables(&pair.value, Some(&effective_env))
+                            .into_iter()
+                            .map(|v| {
+                                let (val, scope, is_res) = get_variable_details(ws, &v.name);
+                                (v.name, val, scope, is_res)
+                            })
+                            .collect()
+                    } else {
+                        vec![]
+                    };
 
-                    let key_completions = detect_unclosed_env_var(&pair.key)
-                        .map(|(pos, q)| (pos, get_env_completions(ws, &q)));
+                    let key_completions = if pair.key.contains("{{") {
+                        detect_unclosed_env_var(&pair.key)
+                            .map(|(pos, q)| (pos, get_env_completions(ws, &q)))
+                    } else {
+                        None
+                    };
 
-                    let val_completions = detect_unclosed_env_var(&pair.value)
-                        .map(|(pos, q)| (pos, get_env_completions(ws, &q)));
+                    let val_completions = if pair.value.contains("{{") {
+                        detect_unclosed_env_var(&pair.value)
+                            .map(|(pos, q)| (pos, get_env_completions(ws, &q)))
+                    } else {
+                        None
+                    };
 
                     RowEnvData {
                         key_vars,
@@ -163,12 +179,23 @@ impl RenderOnce for KvTable {
 
                 let on_up_k = on_update.clone();
                 let on_up_v = on_update.clone();
-                let init_k = key_val.clone();
-                let init_v = val_val.clone();
+                let ws_for_init = self.workspace_state.clone();
+                let k_init_val = key_val.clone();
+                let v_init_val = val_val.clone();
                 let row_holder = window.use_keyed_state(
                     gpui::SharedString::from(format!("{}-holder", row_prefix)),
                     cx,
                     |window, cx| {
+                        let init_k = if let Some(ws_m) = &ws_for_init {
+                            build_tokenized_content(&k_init_val, ws_m.read(cx))
+                        } else {
+                            k_init_val.into()
+                        };
+                        let init_v = if let Some(ws_m) = &ws_for_init {
+                            build_tokenized_content(&v_init_val, ws_m.read(cx))
+                        } else {
+                            v_init_val.into()
+                        };
                         let key_input = cx.new(|cx| {
                             let mut s = InputState::new(window, cx).placeholder("Key...");
                             s.set_value(init_k, window, cx);
@@ -225,27 +252,6 @@ impl RenderOnce for KvTable {
                 );
                 let hovered_k = hover_k_state.read(cx).clone();
                 let hovered_v = hover_v_state.read(cx).clone();
-
-                let (key_tokenized, val_tokenized) = if let Some(ws_m) = &self.workspace_state {
-                    let ws = ws_m.read(cx);
-                    (
-                        build_tokenized_content(&key_val, ws),
-                        build_tokenized_content(&val_val, ws),
-                    )
-                } else {
-                    (key_val.clone().into(), val_val.clone().into())
-                };
-
-                if key_input.read(cx).value().as_str() != key_val {
-                    key_input.update(cx, |inp, cx| {
-                        inp.set_value(key_tokenized, window, cx);
-                    });
-                }
-                if val_input.read(cx).value().as_str() != val_val {
-                    val_input.update(cx, |inp, cx| {
-                        inp.set_value(val_tokenized, window, cx);
-                    });
-                }
 
                 div()
                     .flex()

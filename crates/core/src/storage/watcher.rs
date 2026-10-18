@@ -18,6 +18,29 @@ pub struct WorkspaceWatcher {
     _watcher: RecommendedWatcher,
 }
 
+fn normalize_path_for_compare(p: &Path) -> String {
+    let s = p.to_string_lossy().replace('/', "\\");
+    let trimmed = if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        stripped
+    } else {
+        &s
+    };
+    trimmed.to_lowercase()
+}
+
+fn strip_unc_prefix(p: &Path) -> PathBuf {
+    let s = p.to_string_lossy();
+    if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        p.to_path_buf()
+    }
+}
+
+fn path_matches(p1: &Path, p2: &Path) -> bool {
+    normalize_path_for_compare(p1) == normalize_path_for_compare(p2)
+}
+
 pub fn start_workspace_watcher(
     root_dir: &Path,
     suppressed_paths: Arc<Mutex<HashSet<PathBuf>>>,
@@ -36,7 +59,7 @@ pub fn start_workspace_watcher(
 
     watcher.watch(root_dir, RecursiveMode::Recursive)?;
 
-    let root_buf = root_dir.to_path_buf();
+    let root_buf = strip_unc_prefix(root_dir);
     std::thread::Builder::new()
         .name("workspace-watcher-debouncer".to_string())
         .spawn(move || {
@@ -70,14 +93,15 @@ pub fn start_workspace_watcher(
 
                 if let Some(event) = next_event {
                     for path in &event.paths {
-                        // Check if path is in suppressed set
+                        // Check if path is in suppressed set (normalized for Windows UNC prefixes and case)
                         if let Ok(set) = suppressed_paths.lock() {
-                            if set.contains(path) {
+                            if set.iter().any(|p| path_matches(p, path)) {
                                 continue;
                             }
                         }
 
-                        let Ok(rel) = path.strip_prefix(&root_buf) else {
+                        let clean_path = strip_unc_prefix(path);
+                        let Ok(rel) = clean_path.strip_prefix(&root_buf) else {
                             continue;
                         };
                         let rel_str = rel.to_string_lossy().replace('\\', "/");
@@ -112,7 +136,12 @@ pub fn start_workspace_watcher(
                                     }
                                 }
                             } else if path.is_dir() {
-                                pending_events.insert(FsEvent::TreeChanged);
+                                match event.kind {
+                                    EventKind::Create(_) | EventKind::Remove(_) => {
+                                        pending_events.insert(FsEvent::TreeChanged);
+                                    }
+                                    _ => {}
+                                }
                             }
                         }
                     }

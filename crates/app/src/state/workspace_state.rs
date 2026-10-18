@@ -1,5 +1,6 @@
 use crate::platform::detect_git_branch;
 use crate::settings::AppSettings;
+use crate::state::EditorState;
 use gpui::{AppContext as _, Context, Entity, Pixels, Task, Window, px};
 use gpui_component::input::InputState;
 use restclient_core::models::{
@@ -381,6 +382,10 @@ impl WorkspaceState {
         None
     }
 
+    pub fn find_request(&self, req_id: &str) -> Option<&HttpRequestItem> {
+        self.requests.iter().find(|r| r.id == req_id)
+    }
+
     pub fn set_active_environment(&mut self, env_id: Option<String>, cx: &mut Context<Self>) {
         self.active_environment_id = env_id.clone();
         self.local_state.active_environment = env_id;
@@ -662,26 +667,141 @@ impl WorkspaceState {
         }
 
         let req_id = req.id.clone();
+        let store = self.store.clone();
         let task = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(std::time::Duration::from_millis(500)).await;
-            if let Some(this) = this.upgrade() {
-                this.update(cx, |ws, cx| {
-                    if let Some(r) = ws.requests.iter().find(|r| r.id == req_id) {
-                        let mut req_file = ws.store.read_request(&req_id).unwrap_or_else(|_| RequestFile {
-                            name: r.name.clone(),
-                            method: r.method,
-                            url: r.url.clone(),
-                            ..Default::default()
-                        });
-                        req_file.update_from_item(r);
-                        let _ = ws.store.write_request(&req_id, &req_file);
-                        ws.unsaved_requests.remove(&req_id);
-                        cx.notify();
-                    }
+
+            let Some(this_ent) = this.upgrade() else { return; };
+            let Some(r) = this_ent.read_with(cx, |this, _| this.requests.iter().find(|r| r.id == req_id).cloned()) else { return; };
+
+            let r_id = req_id.clone();
+            let store_clone = store.clone();
+            cx.background_executor().spawn(async move {
+                let mut req_file = store_clone.read_request(&r_id).unwrap_or_else(|_| RequestFile {
+                    name: r.name.clone(),
+                    method: r.method,
+                    url: r.url.clone(),
+                    ..Default::default()
+                });
+                req_file.update_from_item(&r);
+                let _ = store_clone.write_request(&r_id, &req_file);
+            }).await;
+
+            if let Some(this_ent) = this.upgrade() {
+                this_ent.update(cx, |ws, cx| {
+                    ws.unsaved_requests.remove(&req_id);
+                    cx.notify();
                 });
             }
         });
         self.request_save_tasks.insert(req.id, task);
+    }
+
+    /// Updates the in-memory request and schedules persistence without notifying the
+    /// root view. Use this for ordinary text edits where the input component already
+    /// redraws itself and the request's surrounding layout has not changed.
+    pub fn update_request_silently(&mut self, mut req: HttpRequestItem, cx: &mut Context<Self>) {
+        let Some(idx) = self.requests.iter().position(|r| r.id == req.id) else {
+            return;
+        };
+        if req.last_status_code.is_none() {
+            req.last_status_code = self.requests[idx].last_status_code;
+        }
+        let req_id = req.id.clone();
+        self.requests[idx] = req;
+
+        let store = self.store.clone();
+        let task_req_id = req_id.clone();
+        let task = cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(std::time::Duration::from_millis(500)).await;
+
+            let Some(this_ent) = this.upgrade() else { return; };
+            let Some(r) = this_ent.read_with(cx, |this, _| {
+                this.requests.iter().find(|r| r.id == task_req_id).cloned()
+            }) else { return; };
+
+            let store_clone = store.clone();
+            let r_id = task_req_id.clone();
+            cx.background_executor().spawn(async move {
+                let mut req_file = store_clone.read_request(&r_id).unwrap_or_else(|_| RequestFile {
+                    name: r.name.clone(),
+                    method: r.method,
+                    url: r.url.clone(),
+                    ..Default::default()
+                });
+                req_file.update_from_item(&r);
+                let _ = store_clone.write_request(&r_id, &req_file);
+            }).await;
+
+            let final_req_id = task_req_id.clone();
+            if let Some(this_ent) = this.upgrade() {
+                this_ent.update(cx, |ws, _cx| {
+                    ws.unsaved_requests.remove(&final_req_id);
+                });
+            }
+        });
+        self.request_save_tasks.insert(req_id, task);
+    }
+
+    /// Debounced auto-save for typing in active request editors.
+    /// Does NOT clone the request or write to disk on every keystroke.
+    /// Cancels previous timer and only saves 500ms after the user stops typing.
+    pub fn schedule_save_active_request(
+        &mut self,
+        req_id: String,
+        editor: Entity<EditorState>,
+        cx: &mut Context<Self>,
+    ) {
+        let store = self.store.clone();
+        let task_req_id = req_id.clone();
+        let task = cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(500))
+                .await;
+
+            let Some(req) = editor.read_with(cx, |ed, _| {
+                if ed.active_request.as_ref().map(|r| &r.id) == Some(&task_req_id) {
+                    ed.active_request.clone()
+                } else {
+                    None
+                }
+            }) else {
+                return;
+            };
+
+            let Some(this_ent) = this.upgrade() else { return; };
+            this_ent.update(cx, |ws, _| {
+                if let Some(idx) = ws.requests.iter().position(|r| r.id == task_req_id) {
+                    let mut r = req.clone();
+                    if r.last_status_code.is_none() {
+                        r.last_status_code = ws.requests[idx].last_status_code;
+                    }
+                    ws.requests[idx] = r;
+                }
+            });
+
+            let store_clone = store.clone();
+            let r_id = task_req_id.clone();
+            let r_clone = req;
+            cx.background_executor().spawn(async move {
+                let mut req_file = store_clone.read_request(&r_id).unwrap_or_else(|_| RequestFile {
+                    name: r_clone.name.clone(),
+                    method: r_clone.method,
+                    url: r_clone.url.clone(),
+                    ..Default::default()
+                });
+                req_file.update_from_item(&r_clone);
+                let _ = store_clone.write_request(&r_id, &req_file);
+            }).await;
+
+            let final_req_id = task_req_id.clone();
+            if let Some(this_ent) = this.upgrade() {
+                this_ent.update(cx, |ws, _cx| {
+                    ws.unsaved_requests.remove(&final_req_id);
+                });
+            }
+        });
+        self.request_save_tasks.insert(req_id, task);
     }
 
     pub fn mark_dirty(&mut self, req_id: String, cx: &mut Context<Self>) {
@@ -1140,6 +1260,10 @@ impl WorkspaceState {
         cx.notify();
     }
 
+    pub fn save_global_environment_silently(&mut self, env: Environment) {
+        self.global_environment = env;
+    }
+
     pub fn save_global_environment(&mut self, env: Environment, cx: &mut Context<Self>) {
         self.global_environment = env;
         cx.notify();
@@ -1230,17 +1354,25 @@ impl WorkspaceState {
 
     pub fn save_environments_debounced(&mut self, envs: Vec<Environment>, cx: &mut Context<Self>) {
         self.environments = envs;
-        cx.notify();
 
+        let store = self.store.clone();
         let task = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(std::time::Duration::from_millis(500)).await;
-            if let Some(this) = this.upgrade() {
-                this.update(cx, |ws, _cx| {
-                    for env in &ws.environments {
-                        let (file, secrets) = EnvironmentFile::from_environment(env);
-                        let _ = ws.store.save_environment(&env.name, &file);
-                        let _ = ws.store.save_secrets(&env.name, &secrets);
-                    }
+
+            let Some(this_ent) = this.upgrade() else { return; };
+            let envs = this_ent.read_with(cx, |this, _| this.environments.clone());
+
+            let store_clone = store.clone();
+            cx.background_executor().spawn(async move {
+                for env in &envs {
+                    let (file, secrets) = EnvironmentFile::from_environment(env);
+                    let _ = store_clone.save_environment(&env.name, &file);
+                    let _ = store_clone.save_secrets(&env.name, &secrets);
+                }
+            }).await;
+
+            if let Some(this_ent) = this.upgrade() {
+                this_ent.update(cx, |ws, _cx| {
                     ws.env_save_task = None;
                 });
             }

@@ -22,6 +22,24 @@ pub struct JsonHighlighter {
     pub cached_str: String,
 }
 
+fn persist_active_request_without_redraw(
+    editor: &Entity<EditorState>,
+    workspace: Option<&Entity<WorkspaceState>>,
+    cx: &mut App,
+) {
+    let (Some(workspace), Some(req_id)) = (
+        workspace,
+        editor.read(cx).active_request.as_ref().map(|r| r.id.clone()),
+    ) else {
+        return;
+    };
+    let is_scratch = editor.read(cx).active_request.as_ref().map(|r| r.workspace_id == "scratch").unwrap_or(true);
+    if !is_scratch {
+        let ed = editor.clone();
+        workspace.update(cx, |ws, cx| ws.schedule_save_active_request(req_id, ed, cx));
+    }
+}
+
 impl JsonHighlighter {
     pub fn new() -> Self {
         Self {
@@ -410,21 +428,21 @@ impl RenderOnce for BodyEditor {
         let ed = self.editor_state.read(cx);
         let ed_entity = self.editor_state.clone();
 
-        let active_req = ed.active_request.clone();
-        let body = active_req.as_ref().map(|r| r.body.clone()).unwrap_or(RequestBody::None);
+        let req_id_str = ed.active_request.as_ref().map(|r| r.id.clone()).unwrap_or_else(|| "scratch".to_string());
+        let body_ref = ed.active_request.as_ref().map(|r| &r.body);
 
-        let (is_none, is_json, is_xml, is_text, is_multipart, is_form, is_binary) = match &body {
-            RequestBody::None => (true, false, false, false, false, false, false),
-            RequestBody::Json(_) => (false, true, false, false, false, false, false),
-            RequestBody::Raw { content_type, .. }
+        let (is_none, is_json, is_xml, is_text, is_multipart, is_form, is_binary) = match body_ref {
+            None | Some(RequestBody::None) => (true, false, false, false, false, false, false),
+            Some(RequestBody::Json(_)) => (false, true, false, false, false, false, false),
+            Some(RequestBody::Raw { content_type, .. })
                 if content_type == "application/xml" || content_type == "text/xml" =>
             {
                 (false, false, true, false, false, false, false)
             }
-            RequestBody::Raw { .. } => (false, false, false, true, false, false, false),
-            RequestBody::Multipart(_) => (false, false, false, false, true, false, false),
-            RequestBody::FormUrlEncoded(_) => (false, false, false, false, false, true, false),
-            RequestBody::Binary { .. } => (false, false, false, false, false, false, true),
+            Some(RequestBody::Raw { .. }) => (false, false, false, true, false, false, false),
+            Some(RequestBody::Multipart(_)) => (false, false, false, false, true, false, false),
+            Some(RequestBody::FormUrlEncoded(_)) => (false, false, false, false, false, true, false),
+            Some(RequestBody::Binary { .. }) => (false, false, false, false, false, false, true),
         };
 
         let current_label = if is_none {
@@ -724,8 +742,8 @@ impl RenderOnce for BodyEditor {
                     .w_full()
                     .overflow_hidden()
                     .child({
-                        match body {
-                            RequestBody::None => {
+                        match body_ref {
+                            None | Some(RequestBody::None) => {
                                 div()
                                     .size_full()
                                     .flex()
@@ -754,7 +772,7 @@ impl RenderOnce for BodyEditor {
                                     )
                                     .into_any_element()
                             }
-                            RequestBody::Json(_) => {
+                            Some(RequestBody::Json(_)) => {
                                 div()
                                     .size_full()
                                     .py(px(6.))
@@ -767,11 +785,13 @@ impl RenderOnce for BodyEditor {
                                     )
                                     .into_any_element()
                             }
-                            RequestBody::FormUrlEncoded(pairs) => {
+                            Some(RequestBody::FormUrlEncoded(pairs)) => {
+                                let pairs = pairs.clone();
                                 let ed_up = ed_entity.clone();
+                                let ws_up = self.workspace_state.clone();
                                 let ed_add = ed_entity.clone();
                                 let ed_del = ed_entity.clone();
-                                let req_id_str = active_req.as_ref().map(|r| r.id.clone()).unwrap_or_else(|| "scratch".to_string());
+                                let req_id_str = req_id_str.clone();
 
                                 div()
                                     .size_full()
@@ -784,6 +804,7 @@ impl RenderOnce for BodyEditor {
                                                 ed_up.update(cx, |state, cx| {
                                                     state.update_form_param(idx, k, v, enabled, cx);
                                                 });
+                                                persist_active_request_without_redraw(&ed_up, ws_up.as_ref(), cx);
                                             },
                                             move |_, cx| {
                                                 ed_add.update(cx, |state, cx| {
@@ -800,9 +821,10 @@ impl RenderOnce for BodyEditor {
                                     )
                                     .into_any_element()
                             }
-                            RequestBody::Multipart(items) => {
+                            Some(RequestBody::Multipart(items)) => {
+                                let items = items.clone();
                                 let ed_c = ed_entity.clone();
-                                let req_id_str = active_req.as_ref().map(|r| r.id.clone()).unwrap_or_else(|| "scratch".to_string());
+                                let req_id_str = req_id_str.clone();
                                 div()
                                     .size_full()
                                     .overflow_y_scrollbar()
@@ -843,6 +865,8 @@ impl RenderOnce for BodyEditor {
 
                                         let ed_up_k = ed_row.clone();
                                         let ed_up_v = ed_row.clone();
+                                                let ws_up = self.workspace_state.clone();
+                                                let ws_up_v = ws_up.clone();
                                         let fp_k = file_path.clone();
                                         let fp_v = file_path.clone();
                                         let mp_holder = window.use_keyed_state(
@@ -871,6 +895,7 @@ impl RenderOnce for BodyEditor {
                                                         ed_up_k.update(cx, |state, cx| {
                                                             state.update_multipart_item(idx, k, v, is_file, fp_k.clone(), true, cx);
                                                         });
+                                                        persist_active_request_without_redraw(&ed_up_k, ws_up.as_ref(), cx);
                                                     }
                                                 });
 
@@ -883,6 +908,7 @@ impl RenderOnce for BodyEditor {
                                                         ed_up_v.update(cx, |state, cx| {
                                                             state.update_multipart_item(idx, k, v, is_file, fp_v.clone(), true, cx);
                                                         });
+                                                        persist_active_request_without_redraw(&ed_up_v, ws_up_v.as_ref(), cx);
                                                     }
                                                 });
 
@@ -894,16 +920,6 @@ impl RenderOnce for BodyEditor {
                                             let h = mp_holder.read(cx);
                                             (h.0.clone(), h.1.clone())
                                         };
-                                        if key_input.read(cx).value().as_str() != key_str {
-                                            key_input.update(cx, |inp, cx| {
-                                                inp.set_value(key_str.clone(), window, cx);
-                                            });
-                                        }
-                                        if val_input.read(cx).value().as_str() != val_str {
-                                            val_input.update(cx, |inp, cx| {
-                                                inp.set_value(val_str.clone(), window, cx);
-                                            });
-                                        }
 
                                         div()
                                             .flex()
@@ -1109,7 +1125,7 @@ impl RenderOnce for BodyEditor {
                                     )
                                     .into_any_element()
                             }
-                            RequestBody::Raw { .. } => {
+                            Some(RequestBody::Raw { .. }) => {
                                 div()
                                     .size_full()
                                     .p(px(8.))
@@ -1121,7 +1137,8 @@ impl RenderOnce for BodyEditor {
                                     )
                                     .into_any_element()
                             }
-                            RequestBody::Binary { file_path } => {
+                            Some(RequestBody::Binary { file_path }) => {
+                                let file_path = file_path.clone();
                                 let ed_c = ed_entity.clone();
                                 let has_file = !file_path.is_empty();
                                 let size_str = format_file_size(&file_path);

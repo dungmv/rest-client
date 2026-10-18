@@ -102,6 +102,24 @@ impl Render for DragFolderItem {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct SidebarExampleItem {
+    pub name: String,
+    pub status: u16,
+}
+
+#[derive(Clone, Debug)]
+pub struct SidebarReqItem {
+    pub id: String,
+    pub folder_id: Option<String>,
+    pub name: String,
+    pub display_name: String,
+    pub method: HttpMethod,
+    pub url: String,
+    pub last_status_code: Option<u16>,
+    pub examples: Vec<SidebarExampleItem>,
+}
+
 #[derive(IntoElement)]
 pub struct SidebarTree {
     workspace_state: Entity<WorkspaceState>,
@@ -128,12 +146,38 @@ impl RenderOnce for SidebarTree {
         let t = theme();
         let (git_branch, query, filter_query_raw, folders, requests, renaming_req_id, rename_input, renaming_folder_id, rename_folder_input, renaming_example, rename_example_input, collapsed_folders, collapsed_requests, pins, parse_errors, unsaved_requests, running_request_id) = {
             let ws = self.workspace_state.read(cx);
+            let req_items: Vec<SidebarReqItem> = ws.requests.iter().map(|r| {
+                let initial_name = {
+                    let eff = crate::state::effective_request_name(r);
+                    if !r.name.trim().is_empty() && r.name != "New Request" && r.name != "Untitled Request" {
+                        r.name.clone()
+                    } else {
+                        eff
+                    }
+                };
+                let examples = r.examples.iter().map(|e| SidebarExampleItem {
+                    name: e.name.clone(),
+                    status: e.status,
+                }).collect();
+
+                SidebarReqItem {
+                    id: r.id.clone(),
+                    folder_id: r.folder_id.clone(),
+                    name: r.name.clone(),
+                    display_name: initial_name,
+                    method: r.method,
+                    url: r.url.clone(),
+                    last_status_code: r.last_status_code,
+                    examples,
+                }
+            }).collect();
+
             (
                 ws.git_branch.clone().unwrap_or_else(|| "main".to_string()),
                 ws.filter_query.to_lowercase(),
                 ws.filter_query.clone(),
                 ws.folders.clone(),
-                ws.requests.clone(),
+                req_items,
                 ws.renaming_request_id.clone(),
                 ws.rename_input.clone(),
                 ws.renaming_folder_id.clone(),
@@ -184,29 +228,23 @@ impl RenderOnce for SidebarTree {
             });
         }
 
-        let render_req_item = |req: &HttpRequestItem, in_folder: bool| -> AnyElement {
+        let render_req_item = |req: &SidebarReqItem, in_folder: bool| -> AnyElement {
             let is_req_active = active_req_id.as_ref() == Some(&req.id);
             let is_viewing_example = is_req_active && active_example_name.is_some();
             let is_selected = is_req_active && !is_viewing_example;
             let is_renaming = renaming_req_id.as_deref() == Some(&req.id);
             let has_examples = !req.examples.is_empty();
             let is_req_collapsed = collapsed_requests.contains(&req.id) && query.is_empty();
-            let req_for_click = req.clone();
-            let req_for_right = req.clone();
-            let req_for_menu = req.clone();
+            let r_id_click = req.id.clone();
+            let r_id_right = req.id.clone();
+            let r_id_menu = req.id.clone();
             let ed_s = ed_clone.clone();
             let ed_right = ed_clone.clone();
             let ws_click = ws_clone.clone();
+            let ws_right = ws_clone.clone();
             let resp_click = resp_clone.clone();
 
-            let initial_name = {
-                let eff = crate::state::effective_request_name(req);
-                if !req.name.trim().is_empty() && req.name != "New Request" && req.name != "Untitled Request" {
-                    req.name.clone()
-                } else {
-                    eff
-                }
-            };
+            let initial_name = req.display_name.clone();
             let initial_name_click = initial_name.clone();
             let initial_name_menu = initial_name.clone();
 
@@ -257,91 +295,89 @@ impl RenderOnce for SidebarTree {
                     });
                 })
                 .on_mouse_down(MouseButton::Right, move |_, _, cx| {
-                    ed_right.update(cx, |state, cx| {
-                        state.set_active_request(req_for_right.clone(), false, cx);
-                    });
+                    if let Some(r) = ws_right.read(cx).find_request(&r_id_right) {
+                        let r = r.clone();
+                        ed_right.update(cx, |state, cx| {
+                            state.set_active_request(r, false, cx);
+                        });
+                    }
                 })
                 .on_click(move |ev, window, cx| {
                     if is_renaming {
                         return;
                     }
-                    if ev.click_count() > 1 {
-                        let r_id = req_for_click.id.clone();
-                        let init_name = initial_name_click.clone();
-                        ws_click.update(cx, |state, cx| {
-                            state.start_renaming_request(r_id, init_name, window, cx);
-                        });
-                        ed_s.update(cx, |state, cx| {
-                            state.set_active_request(req_for_click.clone(), false, cx);
-                        });
-                    } else {
-                        let r_id = req_for_click.id.clone();
-                        ws_click.update(cx, |state, cx| {
-                            state.record_navigation(&r_id, cx);
-                        });
-                        ed_s.update(cx, |state, cx| {
-                            state.set_active_request(req_for_click.clone(), false, cx);
-                        });
-                        let ws_store = ws_click.read(cx).store.clone();
-                        resp_click.update(cx, |state, cx| {
-                            state.load_for_request(&r_id, ws_store.as_ref(), cx);
-                        });
+                    if let Some(req_item) = ws_click.read(cx).find_request(&r_id_click).cloned() {
+                        if ev.click_count() > 1 {
+                            let r_id = r_id_click.clone();
+                            let init_name = initial_name_click.clone();
+                            ws_click.update(cx, |state, cx| {
+                                state.start_renaming_request(r_id, init_name, window, cx);
+                            });
+                            ed_s.update(cx, |state, cx| {
+                                state.set_active_request(req_item, false, cx);
+                            });
+                        } else {
+                            let r_id = r_id_click.clone();
+                            ws_click.update(cx, |state, cx| {
+                                state.record_navigation(&r_id, cx);
+                            });
+                            ed_s.update(cx, |state, cx| {
+                                state.set_active_request(req_item, false, cx);
+                            });
+                            let ws_store = ws_click.read(cx).store.clone();
+                            resp_click.update(cx, |state, cx| {
+                                state.load_for_request(&r_id, ws_store.as_ref(), cx);
+                            });
+                        }
                     }
                 })
                 .context_menu({
-                    let ws_rename = ws_clone.clone();
-                    let r_id_rename = req_for_menu.id.clone();
-                    let init_name_rename = initial_name_menu.clone();
-
-                    let ws_dup = ws_clone.clone();
-                    let ed_dup = ed_clone.clone();
-                    let r_id_dup = req_for_menu.id.clone();
-
-                    let ws_del_ctx = ws_clone.clone();
-                    let ed_del_ctx = ed_clone.clone();
-                    let r_id_del_ctx = req_for_menu.id.clone();
-
-                    let ws_pin = ws_clone.clone();
-                    let r_id_pin = req_for_menu.id.clone();
-                    let is_pinned = pins.contains(&r_id_pin);
-
-                    let req_yaml = req_for_menu.clone();
-                    let req_curl = req_for_menu.clone();
+                    let ws_menu = ws_clone.clone();
+                    let r_id_menu = r_id_menu.clone();
+                    let init_name_menu = initial_name_menu.clone();
+                    let ed_menu = ed_clone.clone();
+                    let is_pinned = pins.contains(&r_id_menu);
 
                     move |menu, _window, _cx| {
-                        let ws_r = ws_rename.clone();
-                        let r_id_r = r_id_rename.clone();
-                        let init_r = init_name_rename.clone();
+                        let ws_r = ws_menu.clone();
+                        let r_id_r = r_id_menu.clone();
+                        let init_r = init_name_menu.clone();
 
-                        let ws_d = ws_dup.clone();
-                        let ed_d = ed_dup.clone();
-                        let r_id_d = r_id_dup.clone();
+                        let ws_d = ws_menu.clone();
+                        let ed_d = ed_menu.clone();
+                        let r_id_d = r_id_menu.clone();
 
-                        let ws_del = ws_del_ctx.clone();
-                        let ed_del = ed_del_ctx.clone();
-                        let r_id_del = r_id_del_ctx.clone();
+                        let ws_del = ws_menu.clone();
+                        let ed_del = ed_menu.clone();
+                        let r_id_del = r_id_menu.clone();
 
-                        let ws_p = ws_pin.clone();
-                        let r_id_p = r_id_pin.clone();
+                        let ws_p = ws_menu.clone();
+                        let r_id_p = r_id_menu.clone();
 
-                        let r_yaml = req_yaml.clone();
-                        let r_curl = req_curl.clone();
+                        let ws_yaml = ws_menu.clone();
+                        let r_id_yaml = r_id_menu.clone();
+                        let ws_curl = ws_menu.clone();
+                        let r_id_curl = r_id_menu.clone();
 
                         menu
                             .item(
                                 gpui_component::menu::PopupMenuItem::new("Copy as YAML")
                                     .on_click(move |_, _, cx| {
-                                        let rf = RequestFile::from_item(&r_yaml);
-                                        if let Ok(yaml) = to_yaml_string(&rf) {
-                                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(yaml));
+                                        if let Some(r) = ws_yaml.read(cx).find_request(&r_id_yaml) {
+                                            let rf = RequestFile::from_item(r);
+                                            if let Ok(yaml) = to_yaml_string(&rf) {
+                                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(yaml));
+                                            }
                                         }
                                     }),
                             )
                             .item(
                                 gpui_component::menu::PopupMenuItem::new("Copy as cURL")
                                     .on_click(move |_, _, cx| {
-                                        let curl = restclient_core::curl::request_to_curl(&r_curl, None);
-                                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(curl));
+                                        if let Some(r) = ws_curl.read(cx).find_request(&r_id_curl) {
+                                            let curl = restclient_core::curl::request_to_curl(r, None);
+                                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(curl));
+                                        }
                                     }),
                             )
                             .separator()
@@ -461,7 +497,7 @@ impl RenderOnce for SidebarTree {
                                 .font_family(".SystemMonoFont")
                                 .text_color(if is_selected || is_viewing_example { t.text_primary } else { t.text_secondary })
                                 .truncate()
-                                .child(crate::state::effective_request_name(req))
+                                .child(req.display_name.clone())
                                 .into_any_element()
                         }),
                 )
@@ -505,7 +541,6 @@ impl RenderOnce for SidebarTree {
             } else {
                 let examples_list = req.examples.clone();
                 let parent_id = req.id.clone();
-                let req_for_children = req.clone();
 
                 div()
                     .id(format!("req-group-{}", parent_id))
@@ -519,9 +554,8 @@ impl RenderOnce for SidebarTree {
                             let ed_ex_click = ed_clone.clone();
                             let resp_ex_click = resp_clone.clone();
                             let ws_ex_click = ws_clone.clone();
-                            let req_for_click = req_for_children.clone();
-                            let ex_for_click = ex.clone();
                             let r_id_for_click = parent_id.clone();
+                            let ex_name_for_click = ex.name.clone();
 
                             div()
                                 .id(format!("req-{}-ex-{}", parent_id, idx))
@@ -552,50 +586,62 @@ impl RenderOnce for SidebarTree {
                                     if is_renaming_this_ex {
                                         return;
                                     }
+                                    let r_id = r_id_for_click.clone();
+                                    let ex_name = ex_name_for_click.clone();
                                     if ev.click_count() > 1 {
-                                        let r_id = r_id_for_click.clone();
-                                        let ex_name = ex_for_click.name.clone();
                                         ws_ex_click.update(cx, |state, cx| {
-                                            state.start_renaming_example(r_id, ex_name, window, cx);
+                                            state.start_renaming_example(r_id.clone(), ex_name.clone(), window, cx);
                                         });
-                                        ed_ex_click.update(cx, |state, cx| {
-                                            state.set_active_request(req_for_click.clone(), false, cx);
-                                        });
-                                        resp_ex_click.update(cx, |state, cx| {
-                                            state.view_example(&ex_for_click, cx);
-                                        });
+                                        if let Some(r) = ws_ex_click.read(cx).find_request(&r_id).cloned() {
+                                            ed_ex_click.update(cx, |state, cx| {
+                                                state.set_active_request(r, false, cx);
+                                            });
+                                        }
+                                        if let Some(rf) = ws_ex_click.read(cx).get_request_file(&r_id) {
+                                            if let Some(ex_file) = rf.examples.iter().find(|e| e.name == ex_name) {
+                                                resp_ex_click.update(cx, |state, cx| {
+                                                    state.view_example(ex_file, cx);
+                                                });
+                                            }
+                                        }
                                     } else {
                                         ws_ex_click.update(cx, |state, cx| {
-                                            state.record_navigation(&r_id_for_click, cx);
+                                            state.record_navigation(&r_id, cx);
                                         });
-                                        ed_ex_click.update(cx, |state, cx| {
-                                            state.set_active_request(req_for_click.clone(), false, cx);
-                                        });
-                                        resp_ex_click.update(cx, |state, cx| {
-                                            state.view_example(&ex_for_click, cx);
-                                        });
+                                        if let Some(r) = ws_ex_click.read(cx).find_request(&r_id).cloned() {
+                                            ed_ex_click.update(cx, |state, cx| {
+                                                state.set_active_request(r, false, cx);
+                                            });
+                                        }
+                                        if let Some(rf) = ws_ex_click.read(cx).get_request_file(&r_id) {
+                                            if let Some(ex_file) = rf.examples.iter().find(|e| e.name == ex_name) {
+                                                resp_ex_click.update(cx, |state, cx| {
+                                                    state.view_example(ex_file, cx);
+                                                });
+                                            }
+                                        }
                                     }
                                 })
                                 .context_menu({
                                     let ws_ctx = ws_clone.clone();
                                     let resp_ctx = resp_clone.clone();
                                     let r_id_ctx = parent_id.clone();
-                                    let ex_ctx = ex.clone();
-                                    let total_ex = req_for_children.examples.len();
+                                    let ex_name_ctx = ex.name.clone();
+                                    let total_ex = req.examples.len();
 
                                     move |menu, _window, _cx| {
                                         let ws_ren = ws_ctx.clone();
                                         let r_id_ren = r_id_ctx.clone();
-                                        let ex_ren_name = ex_ctx.name.clone();
+                                        let ex_ren_name = ex_name_ctx.clone();
 
                                         let ws_dup = ws_ctx.clone();
                                         let r_id_dup = r_id_ctx.clone();
-                                        let ex_dup = ex_ctx.clone();
+                                        let ex_dup_name = ex_name_ctx.clone();
 
                                         let ws_del = ws_ctx.clone();
                                         let resp_del = resp_ctx.clone();
                                         let r_id_del = r_id_ctx.clone();
-                                        let ex_del_name = ex_ctx.name.clone();
+                                        let ex_del_name = ex_name_ctx.clone();
 
                                         let mut m = menu
                                             .item(
@@ -611,17 +657,19 @@ impl RenderOnce for SidebarTree {
                                                     .on_click(move |_, _, cx| {
                                                         ws_dup.update(cx, |ws, cx| {
                                                             if let Some(mut rf) = ws.get_request_file(&r_id_dup) {
-                                                                let base_name = ex_dup.name.clone();
-                                                                let mut name = format!("{}-copy", base_name);
-                                                                let mut i = 2;
-                                                                while rf.examples.iter().any(|e| e.name == name) {
-                                                                    name = format!("{}-copy-{}", base_name, i);
-                                                                    i += 1;
+                                                                if let Some(orig_ex) = rf.examples.iter().find(|e| e.name == ex_dup_name).cloned() {
+                                                                    let base_name = orig_ex.name.clone();
+                                                                    let mut name = format!("{}-copy", base_name);
+                                                                    let mut i = 2;
+                                                                    while rf.examples.iter().any(|e| e.name == name) {
+                                                                        name = format!("{}-copy-{}", base_name, i);
+                                                                        i += 1;
+                                                                    }
+                                                                    let mut new_ex = orig_ex;
+                                                                    new_ex.name = name;
+                                                                    rf.examples.push(new_ex);
+                                                                    ws.save_request_file(&r_id_dup, &rf, cx);
                                                                 }
-                                                                let mut new_ex = ex_dup.clone();
-                                                                new_ex.name = name;
-                                                                rf.examples.push(new_ex);
-                                                                ws.save_request_file(&r_id_dup, &rf, cx);
                                                             }
                                                         });
                                                     }),
@@ -757,7 +805,7 @@ impl RenderOnce for SidebarTree {
             }
         };
 
-        div()
+        let res = div()
             .w_full()
             .h_full()
             .bg(t.bg_sidebar)
@@ -1009,7 +1057,9 @@ impl RenderOnce for SidebarTree {
                             .font_family(".SystemMonoFont")
                             .child(git_branch),
                     ),
-            )
+            );
+
+        res
     }
 }
 
@@ -1063,7 +1113,7 @@ fn delete_request_item(
 fn folder_has_matches(
     folder_id: &str,
     folders: &[Folder],
-    requests: &[HttpRequestItem],
+    requests: &[SidebarReqItem],
     query: &str,
 ) -> bool {
     if query.is_empty() {
@@ -1093,14 +1143,14 @@ fn folder_has_matches(
 fn render_folder_node(
     folder: &Folder,
     folders: &[Folder],
-    requests: &[HttpRequestItem],
+    requests: &[SidebarReqItem],
     query: &str,
     renaming_folder_id: Option<&str>,
     rename_folder_input: &Option<Entity<gpui_component::input::InputState>>,
     collapsed_folders: &std::collections::HashSet<String>,
     ws_clone: &Entity<WorkspaceState>,
     ed_clone: &Entity<EditorState>,
-    render_req_item: &dyn Fn(&HttpRequestItem, bool) -> AnyElement,
+    render_req_item: &dyn Fn(&SidebarReqItem, bool) -> AnyElement,
 ) -> Option<AnyElement> {
     if !folder_has_matches(&folder.id, folders, requests, query) {
         return None;

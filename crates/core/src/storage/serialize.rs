@@ -40,24 +40,34 @@ pub fn with_retry<T, F: FnMut() -> std::io::Result<T>>(mut op: F) -> std::io::Re
     }
 }
 
-/// Atomic write: writes to temp file in the same directory, then renames.
+/// Atomic write: on Windows writes directly to avoid sharing violations with file watchers and retry sleeps.
+/// On other platforms, writes to temp file in the same directory, then renames.
 pub fn atomic_write(path: &Path, content: &[u8]) -> std::io::Result<()> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(parent)?;
-    let temp_name = format!(
-        ".tmp_{}_{}",
-        uuid::Uuid::new_v4().simple(),
-        path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
-    );
-    let temp_path = parent.join(temp_name);
 
-    std::fs::write(&temp_path, content)?;
-
-    let rename_res = with_retry(|| std::fs::rename(&temp_path, path));
-    if rename_res.is_err() {
-        let _ = std::fs::remove_file(&temp_path);
+    #[cfg(windows)]
+    {
+        std::fs::write(path, content)
     }
-    rename_res
+
+    #[cfg(not(windows))]
+    {
+        let temp_name = format!(
+            ".tmp_{}_{}",
+            uuid::Uuid::new_v4().simple(),
+            path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
+        );
+        let temp_path = parent.join(temp_name);
+
+        std::fs::write(&temp_path, content)?;
+
+        let rename_res = with_retry(|| std::fs::rename(&temp_path, path));
+        if rename_res.is_err() {
+            let _ = std::fs::remove_file(&temp_path);
+        }
+        rename_res
+    }
 }
 
 /// Atomic write string (ensuring LF line endings).

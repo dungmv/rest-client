@@ -1,4 +1,5 @@
 #![allow(dead_code, clippy::type_complexity)]
+#![recursion_limit = "512"]
 
 mod components;
 mod platform;
@@ -56,6 +57,20 @@ pub struct AppView {
     last_synced_request_id: Option<String>,
     last_synced_body_version: usize,
     _subscriptions: Vec<Subscription>,
+}
+
+fn save_active_request_without_redraw(
+    editor: &Entity<EditorState>,
+    workspace: &Entity<WorkspaceState>,
+    cx: &mut App,
+) {
+    let is_scratch_or_none = editor.read(cx).active_request.as_ref().map(|r| r.workspace_id == "scratch" || r.id.is_empty()).unwrap_or(true);
+    if !is_scratch_or_none {
+        if let Some(req_id) = editor.read(cx).active_request.as_ref().map(|r| r.id.clone()) {
+            let ed = editor.clone();
+            workspace.update(cx, |ws, cx| ws.schedule_save_active_request(req_id, ed, cx));
+        }
+    }
 }
 
 impl AppView {
@@ -196,13 +211,15 @@ impl AppView {
 
         // 1. Subscribe to URL input change
         let ed_url = editor_state.clone();
+        let ws_url = workspace_state.clone();
         _subscriptions.push(cx.subscribe(&url_input, move |this, input, event, cx| {
             match event {
                 InputEvent::Change => {
                     let val = input.read(cx).value().to_string();
                     ed_url.update(cx, |ed, cx| {
-                        ed.set_url(val, cx);
+                        ed.update_url_from_input(val, cx);
                     });
+                    save_active_request_without_redraw(&ed_url, &ws_url, cx);
                 }
                 InputEvent::PressEnter { .. } => {
                     this.send_current_request(cx);
@@ -213,120 +230,133 @@ impl AppView {
 
         // 2. Subscribe to JSON editor change
         let ed_json = editor_state.clone();
+        let ws_json = workspace_state.clone();
         _subscriptions.push(cx.subscribe(&json_editor, move |_, txt, event, cx| {
             if let InputEvent::Change = event {
                 let val = txt.read(cx).value().to_string();
-                ed_json.update(cx, |ed, cx| {
-                    ed.set_body_json(val, cx);
+                ed_json.update(cx, |ed, _cx| {
+                    ed.apply_set_body_json(val);
                 });
+                save_active_request_without_redraw(&ed_json, &ws_json, cx);
             }
         }));
 
         // 3. Subscribe to Raw textarea change
         let ed_raw = editor_state.clone();
+        let ws_raw = workspace_state.clone();
         _subscriptions.push(cx.subscribe(&raw_textarea, move |_, txt, event, cx| {
             if let InputEvent::Change = event {
                 let val = txt.read(cx).value().to_string();
-                ed_raw.update(cx, |ed, cx| {
-                    let content_type = if let Some(req) = &ed.active_request {
-                        if let RequestBody::Raw { content_type, .. } = &req.body {
-                            content_type.clone()
-                        } else {
-                            "text/plain".to_string()
-                        }
-                    } else {
-                        "text/plain".to_string()
+                ed_raw.update(cx, |ed, _cx| {
+                    let content_type = match ed.active_request.as_ref().map(|r| &r.body) {
+                        Some(RequestBody::Raw { content_type, .. }) => content_type.clone(),
+                        _ => "text/plain".to_string(),
                     };
-                    ed.set_raw_body(val, content_type, cx);
+                    ed.apply_set_raw_body(val, content_type);
                 });
+                save_active_request_without_redraw(&ed_raw, &ws_raw, cx);
             }
         }));
 
         // 3b. Subscribe to Auth inputs
         let ed_bearer = editor_state.clone();
+        let ws_bearer = workspace_state.clone();
         _subscriptions.push(cx.subscribe(&bearer_token_input, move |_, inp, event, cx| {
             if let InputEvent::Change = event {
                 let val = inp.read(cx).value().to_string();
-                ed_bearer.update(cx, |ed, cx| {
-                    ed.set_bearer_token(val, cx);
+                ed_bearer.update(cx, |ed, _cx| {
+                    ed.apply_set_bearer_token(val);
                 });
+                save_active_request_without_redraw(&ed_bearer, &ws_bearer, cx);
             }
         }));
 
         let ed_basic_u = editor_state.clone();
+        let ws_basic_u = workspace_state.clone();
         let pass_ref = basic_pass_input.clone();
         _subscriptions.push(cx.subscribe(&basic_user_input, move |_, inp, event, cx| {
             if let InputEvent::Change = event {
                 let u = inp.read(cx).value().to_string();
                 let p = pass_ref.read(cx).value().to_string();
-                ed_basic_u.update(cx, |ed, cx| {
-                    ed.set_basic_auth(u, p, cx);
+                ed_basic_u.update(cx, |ed, _cx| {
+                    ed.apply_set_basic_auth(u, p);
                 });
+                save_active_request_without_redraw(&ed_basic_u, &ws_basic_u, cx);
             }
         }));
 
         let ed_basic_p = editor_state.clone();
+        let ws_basic_p = workspace_state.clone();
         let user_ref = basic_user_input.clone();
         _subscriptions.push(cx.subscribe(&basic_pass_input, move |_, inp, event, cx| {
             if let InputEvent::Change = event {
                 let u = user_ref.read(cx).value().to_string();
                 let p = inp.read(cx).value().to_string();
-                ed_basic_p.update(cx, |ed, cx| {
-                    ed.set_basic_auth(u, p, cx);
+                ed_basic_p.update(cx, |ed, _cx| {
+                    ed.apply_set_basic_auth(u, p);
                 });
+                save_active_request_without_redraw(&ed_basic_p, &ws_basic_p, cx);
             }
         }));
 
         let ed_ak_k = editor_state.clone();
+        let ws_ak_k = workspace_state.clone();
         let ak_val_ref = apikey_val_input.clone();
         _subscriptions.push(cx.subscribe(&apikey_key_input, move |_, inp, event, cx| {
             if let InputEvent::Change = event {
                 let k = inp.read(cx).value().to_string();
                 let v = ak_val_ref.read(cx).value().to_string();
-                ed_ak_k.update(cx, |ed, cx| {
+                ed_ak_k.update(cx, |ed, _cx| {
                     let in_header = match ed.active_request.as_ref().map(|r| &r.auth) {
                         Some(Auth::ApiKey { in_header, .. }) => *in_header,
                         _ => true,
                     };
-                    ed.set_api_key(k, v, in_header, cx);
+                    ed.apply_set_api_key(k, v, in_header);
                 });
+                save_active_request_without_redraw(&ed_ak_k, &ws_ak_k, cx);
             }
         }));
 
         let ed_ak_v = editor_state.clone();
+        let ws_ak_v = workspace_state.clone();
         let ak_key_ref = apikey_key_input.clone();
         _subscriptions.push(cx.subscribe(&apikey_val_input, move |_, inp, event, cx| {
             if let InputEvent::Change = event {
                 let k = ak_key_ref.read(cx).value().to_string();
                 let v = inp.read(cx).value().to_string();
-                ed_ak_v.update(cx, |ed, cx| {
+                ed_ak_v.update(cx, |ed, _cx| {
                     let in_header = match ed.active_request.as_ref().map(|r| &r.auth) {
                         Some(Auth::ApiKey { in_header, .. }) => *in_header,
                         _ => true,
                     };
-                    ed.set_api_key(k, v, in_header, cx);
+                    ed.apply_set_api_key(k, v, in_header);
                 });
+                save_active_request_without_redraw(&ed_ak_v, &ws_ak_v, cx);
             }
         }));
 
         // 3c. Subscribe to Script editors
         let ed_pre = editor_state.clone();
+        let ws_pre = workspace_state.clone();
         _subscriptions.push(cx.subscribe(&pre_script_editor, move |_, txt, event, cx| {
             if let InputEvent::Change = event {
                 let val = txt.read(cx).value().to_string();
-                ed_pre.update(cx, |ed, cx| {
-                    ed.set_pre_script(val, cx);
+                ed_pre.update(cx, |ed, _cx| {
+                    ed.apply_set_pre_script(val);
                 });
+                save_active_request_without_redraw(&ed_pre, &ws_pre, cx);
             }
         }));
 
         let ed_test = editor_state.clone();
+        let ws_test = workspace_state.clone();
         _subscriptions.push(cx.subscribe(&test_script_editor, move |_, txt, event, cx| {
             if let InputEvent::Change = event {
                 let val = txt.read(cx).value().to_string();
-                ed_test.update(cx, |ed, cx| {
-                    ed.set_test_script(val, cx);
+                ed_test.update(cx, |ed, _cx| {
+                    ed.apply_set_test_script(val);
                 });
+                save_active_request_without_redraw(&ed_test, &ws_test, cx);
             }
         }));
 
@@ -335,9 +365,11 @@ impl AppView {
         let resp_clone = response_state.clone();
         let mut last_req_id = initial_req.as_ref().map(|r| r.id.clone());
         _subscriptions.push(cx.observe(&editor_state, move |_, ed, cx| {
-            let active_req = ed.read(cx).active_request.clone();
-            if let Some(req) = active_req {
-                let req_id = req.id.clone();
+            let req_switch_info = {
+                let ed_ref = ed.read(cx);
+                ed_ref.active_request.as_ref().map(|r| (r.id.clone(), r.workspace_id == "scratch" || r.id.is_empty()))
+            };
+            if let Some((req_id, is_scratch)) = req_switch_info {
                 if last_req_id.as_ref() != Some(&req_id) {
                     last_req_id = Some(req_id.clone());
                     let ws_store = ws_clone.read(cx).store.clone();
@@ -346,10 +378,11 @@ impl AppView {
                     });
                 }
 
-                // Auto-save active request to workspace storage only if it belongs to a real workspace
-                if req.workspace_id != "scratch" {
+                // Debounced auto-save active request to workspace storage
+                if !is_scratch {
+                    let ed_ent = ed.clone();
                     ws_clone.update(cx, |ws, cx| {
-                        ws.update_request(req, cx);
+                        ws.schedule_save_active_request(req_id, ed_ent, cx);
                     });
                 }
             } else if last_req_id.is_some() {
@@ -452,11 +485,13 @@ impl AppView {
                 });
             }
 
-            let last_renamed_ex = ws.update(cx, |ws, _cx| ws.last_renamed_example.take());
-            if let Some((_req_id, old_ex, new_ex)) = last_renamed_ex {
-                resp_sync.update(cx, |resp, cx| {
-                    resp.rename_example(&old_ex, &new_ex, cx);
-                });
+            if ws.read(cx).last_renamed_example.is_some() {
+                let last_renamed_ex = ws.update(cx, |ws, _cx| ws.last_renamed_example.take());
+                if let Some((_req_id, old_ex, new_ex)) = last_renamed_ex {
+                    resp_sync.update(cx, |resp, cx| {
+                        resp.rename_example(&old_ex, &new_ex, cx);
+                    });
+                }
             }
         }));
 
@@ -818,75 +853,104 @@ impl Render for AppView {
 
         let active_tab_kind = self.editor_state.read(cx).active_tab_kind;
         let method_dropdown_open = self.editor_state.read(cx).method_dropdown_open;
-        let active_req = self.editor_state.read(cx).active_request.clone();
+        let (active_req_id, active_req_info) = {
+            let ed = self.editor_state.read(cx);
+            let id = ed.active_request.as_ref().map(|r| r.id.clone());
+            let info = ed.active_request.as_ref().map(|r| (
+                r.params.len(),
+                r.headers.len(),
+                match &r.auth {
+                    Auth::Bearer { .. } => "Bearer",
+                    Auth::Basic { .. } => "Basic",
+                    Auth::ApiKey { .. } => "API Key",
+                    _ => "Auth",
+                },
+                r.script.as_ref().and_then(|s| s.pre_request.as_ref()).map(|s| !s.trim().is_empty()).unwrap_or(false),
+                r.script.as_ref().and_then(|s| s.post_response.as_ref()).map(|s| !s.trim().is_empty()).unwrap_or(false),
+            ));
+            (id, info)
+        };
 
         // Synchronize active request fields into InputState / TextareaState when switched or body version changed
-        if let Some(req) = &active_req {
-            let req_switched = self.last_synced_request_id.as_deref() != Some(&req.id);
-            let ed_body_ver = self.editor_state.read(cx).body_version;
-            let body_ver_changed = self.last_synced_body_version != ed_body_ver;
-
-            if req_switched {
-                self.last_synced_request_id = Some(req.id.clone());
-                self.last_synced_body_version = ed_body_ver;
-
-                let tokenized_url = {
-                    let ws = self.workspace_state.read(cx);
-                    crate::components::env_autocomplete::build_tokenized_content(&req.url, ws)
+        {
+            let (req_switched, body_ver_changed, ed_body_ver) = {
+                let ed = self.editor_state.read(cx);
+                let switched = match (&self.last_synced_request_id, &ed.active_request) {
+                    (Some(last_id), Some(req)) => last_id != &req.id,
+                    (None, Some(_)) => true,
+                    (Some(_), None) => true,
+                    (None, None) => false,
                 };
-                self.url_input.update(cx, |inp, cx| {
-                    inp.set_value(tokenized_url, window, cx);
-                });
-
-                match &req.auth {
-                    Auth::Bearer { token } => {
-                        self.bearer_token_input.update(cx, |inp, cx| {
-                            inp.set_value(token.clone(), window, cx);
-                        });
-                    }
-                    Auth::Basic { username, password } => {
-                        self.basic_user_input.update(cx, |inp, cx| {
-                            inp.set_value(username.clone(), window, cx);
-                        });
-                        self.basic_pass_input.update(cx, |inp, cx| {
-                            inp.set_value(password.clone(), window, cx);
-                        });
-                    }
-                    Auth::ApiKey { key, value, .. } => {
-                        self.apikey_key_input.update(cx, |inp, cx| {
-                            inp.set_value(key.clone(), window, cx);
-                        });
-                        self.apikey_val_input.update(cx, |inp, cx| {
-                            inp.set_value(value.clone(), window, cx);
-                        });
-                    }
-                    Auth::None => {}
-                }
-
-                let pre_script = req.script.as_ref().and_then(|s| s.pre_request.clone()).unwrap_or_default();
-                self.pre_script_editor.update(cx, |txt, cx| {
-                    txt.set_value(pre_script, window, cx);
-                });
-                let test_script = req.script.as_ref().and_then(|s| s.post_response.clone()).unwrap_or_default();
-                self.test_script_editor.update(cx, |txt, cx| {
-                    txt.set_value(test_script, window, cx);
-                });
-            }
+                let ver_changed = self.last_synced_body_version != ed.body_version;
+                (switched, ver_changed, ed.body_version)
+            };
 
             if req_switched || body_ver_changed {
-                self.last_synced_body_version = ed_body_ver;
-                match &req.body {
-                    RequestBody::Json(json_str) => {
-                        self.json_editor.update(cx, |txt, cx| {
-                            txt.set_value(json_str.clone(), window, cx);
+                let req_opt = self.editor_state.read(cx).active_request.clone();
+                if let Some(req) = req_opt {
+                    if req_switched {
+                        self.last_synced_request_id = Some(req.id.clone());
+                        self.last_synced_body_version = ed_body_ver;
+
+                        let tokenized_url = {
+                            let ws = self.workspace_state.read(cx);
+                            crate::components::env_autocomplete::build_tokenized_content(&req.url, ws)
+                        };
+                        self.url_input.update(cx, |inp, cx| {
+                            inp.set_value(tokenized_url, window, cx);
+                        });
+
+                        match &req.auth {
+                            Auth::Bearer { token } => {
+                                self.bearer_token_input.update(cx, |inp, cx| {
+                                    inp.set_value(token.clone(), window, cx);
+                                });
+                            }
+                            Auth::Basic { username, password } => {
+                                self.basic_user_input.update(cx, |inp, cx| {
+                                    inp.set_value(username.clone(), window, cx);
+                                });
+                                self.basic_pass_input.update(cx, |inp, cx| {
+                                    inp.set_value(password.clone(), window, cx);
+                                });
+                            }
+                            Auth::ApiKey { key, value, .. } => {
+                                self.apikey_key_input.update(cx, |inp, cx| {
+                                    inp.set_value(key.clone(), window, cx);
+                                });
+                                self.apikey_val_input.update(cx, |inp, cx| {
+                                    inp.set_value(value.clone(), window, cx);
+                                });
+                            }
+                            Auth::None => {}
+                        }
+
+                        let pre_script = req.script.as_ref().and_then(|s| s.pre_request.clone()).unwrap_or_default();
+                        self.pre_script_editor.update(cx, |txt, cx| {
+                            txt.set_value(pre_script, window, cx);
+                        });
+                        let test_script = req.script.as_ref().and_then(|s| s.post_response.clone()).unwrap_or_default();
+                        self.test_script_editor.update(cx, |txt, cx| {
+                            txt.set_value(test_script, window, cx);
                         });
                     }
-                    RequestBody::Raw { content, .. } => {
-                        self.raw_textarea.update(cx, |txt, cx| {
-                            txt.set_value(content.clone(), window, cx);
-                        });
+
+                    if req_switched || body_ver_changed {
+                        self.last_synced_body_version = ed_body_ver;
+                        match &req.body {
+                            RequestBody::Json(json_str) => {
+                                self.json_editor.update(cx, |txt, cx| {
+                                    txt.set_value(json_str.clone(), window, cx);
+                                });
+                            }
+                            RequestBody::Raw { content, .. } => {
+                                self.raw_textarea.update(cx, |txt, cx| {
+                                    txt.set_value(content.clone(), window, cx);
+                                });
+                            }
+                            _ => {}
+                        }
                     }
-                    _ => {}
                 }
             }
         }
@@ -897,13 +961,13 @@ impl Render for AppView {
         let toast_entity = self.toast_state.clone();
 
         let app_view_entity = cx.entity().clone();
-        let req_id_str = active_req.as_ref().map(|r| r.id.clone()).unwrap_or_else(|| "scratch".to_string());
+        let req_id_str = active_req_id.clone().unwrap_or_else(|| "scratch".to_string());
         let ws_read = ws_entity.read(cx);
         let active_conflict = ws_read.conflicts.get(&req_id_str).cloned();
         let active_parse_err = ws_read.parse_errors.get(&req_id_str).cloned();
         let corrupt_sec_err = ws_read.corrupt_secrets_warning.clone();
 
-        div()
+        let res = div()
             .size_full()
             .bg(t.bg_app)
             .text_color(t.text_primary)
@@ -1134,7 +1198,7 @@ impl Render for AppView {
                                                     })
                                                     .child({
                                                         let ed_c = ed_entity.clone();
-                                                        let param_count = active_req.as_ref().map(|r| r.params.len()).unwrap_or(0);
+                                                        let param_count = active_req_info.as_ref().map(|info| info.0).unwrap_or(0);
                                                         TabItem::new("tab-params", "Params")
                                                             .active(active_tab_kind == RequestTabKind::Params)
                                                             .badge(format!("{}", param_count))
@@ -1146,7 +1210,7 @@ impl Render for AppView {
                                                     })
                                                     .child({
                                                         let ed_c = ed_entity.clone();
-                                                        let header_count = active_req.as_ref().map(|r| r.headers.len()).unwrap_or(0);
+                                                        let header_count = active_req_info.as_ref().map(|info| info.1).unwrap_or(0);
                                                         TabItem::new("tab-headers", "Headers")
                                                             .active(active_tab_kind == RequestTabKind::Headers)
                                                             .badge(format!("{}", header_count))
@@ -1158,12 +1222,7 @@ impl Render for AppView {
                                                     })
                                                     .child({
                                                         let ed_c = ed_entity.clone();
-                                                        let auth_label = match active_req.as_ref().map(|r| &r.auth) {
-                                                            Some(Auth::Bearer { .. }) => "Bearer",
-                                                            Some(Auth::Basic { .. }) => "Basic",
-                                                            Some(Auth::ApiKey { .. }) => "API Key",
-                                                            _ => "Auth",
-                                                        };
+                                                        let auth_label = active_req_info.as_ref().map(|info| info.2).unwrap_or("Auth");
                                                         TabItem::new("tab-auth", auth_label)
                                                             .active(active_tab_kind == RequestTabKind::Auth)
                                                             .with_dropdown(true)
@@ -1175,12 +1234,7 @@ impl Render for AppView {
                                                     })
                                                     .child({
                                                         let ed_c = ed_entity.clone();
-                                                        let has_pre = active_req
-                                                            .as_ref()
-                                                            .and_then(|r| r.script.as_ref())
-                                                            .and_then(|s| s.pre_request.as_ref())
-                                                            .map(|s| !s.trim().is_empty())
-                                                            .unwrap_or(false);
+                                                        let has_pre = active_req_info.as_ref().map(|info| info.3).unwrap_or(false);
                                                         TabItem::new("tab-pre-script", "Pre-request")
                                                             .active(active_tab_kind == RequestTabKind::PreRequestScript)
                                                             .when(has_pre, |tab| tab.badge("●"))
@@ -1192,12 +1246,7 @@ impl Render for AppView {
                                                     })
                                                     .child({
                                                         let ed_c = ed_entity.clone();
-                                                        let has_test = active_req
-                                                            .as_ref()
-                                                            .and_then(|r| r.script.as_ref())
-                                                            .and_then(|s| s.post_response.as_ref())
-                                                            .map(|s| !s.trim().is_empty())
-                                                            .unwrap_or(false);
+                                                        let has_test = active_req_info.as_ref().map(|info| info.4).unwrap_or(false);
                                                         TabItem::new("tab-tests", "Tests")
                                                             .active(active_tab_kind == RequestTabKind::Tests)
                                                             .when(has_test, |tab| tab.badge("●"))
@@ -1227,8 +1276,9 @@ impl Render for AppView {
                                                                 )
                                                             }
                                                             RequestTabKind::Params => {
-                                                                let params = active_req.as_ref().map(|r| r.params.clone()).unwrap_or_default();
+                                                                let params = ed_entity.read(cx).active_request.as_ref().map(|r| r.params.clone()).unwrap_or_default();
                                                                 let ed_up = ed_entity.clone();
+                                                                let ws_up = ws_entity.clone();
                                                                 let ed_add = ed_entity.clone();
                                                                 let ed_del = ed_entity.clone();
                                                                 div().size_full().child(
@@ -1239,6 +1289,7 @@ impl Render for AppView {
                                                                             ed_up.update(cx, |state, cx| {
                                                                                 state.update_param(idx, k, v, enabled, cx);
                                                                             });
+                                                                            save_active_request_without_redraw(&ed_up, &ws_up, cx);
                                                                         },
                                                                         move |_, cx| {
                                                                             ed_add.update(cx, |state, cx| {
@@ -1255,8 +1306,9 @@ impl Render for AppView {
                                                                 )
                                                             }
                                                             RequestTabKind::Headers => {
-                                                                let headers = active_req.as_ref().map(|r| r.headers.clone()).unwrap_or_default();
+                                                                let headers = ed_entity.read(cx).active_request.as_ref().map(|r| r.headers.clone()).unwrap_or_default();
                                                                 let ed_up = ed_entity.clone();
+                                                                let ws_up = ws_entity.clone();
                                                                 let ed_add = ed_entity.clone();
                                                                 let ed_del = ed_entity.clone();
                                                                 div().size_full().child(
@@ -1267,6 +1319,7 @@ impl Render for AppView {
                                                                             ed_up.update(cx, |state, cx| {
                                                                                 state.update_header(idx, k, v, enabled, cx);
                                                                             });
+                                                                            save_active_request_without_redraw(&ed_up, &ws_up, cx);
                                                                         },
                                                                         move |_, cx| {
                                                                             ed_add.update(cx, |state, cx| {
@@ -1283,7 +1336,7 @@ impl Render for AppView {
                                                                 )
                                                             }
                                                             RequestTabKind::Auth => {
-                                                                let auth = active_req.as_ref().map(|r| r.auth.clone()).unwrap_or(Auth::None);
+                                                                let auth = ed_entity.read(cx).active_request.as_ref().map(|r| r.auth.clone()).unwrap_or(Auth::None);
                                                                 let ed_c = ed_entity.clone();
                                                                 div()
                                                                     .p(px(16.))
@@ -1711,7 +1764,9 @@ impl Render for AppView {
                 }))
             })
             // Toast Notifications container bottom-right
-            .child(ToastContainer::new(toast_entity))
+            .child(ToastContainer::new(toast_entity));
+
+        res
     }
 }
 
@@ -1753,3 +1808,5 @@ fn main() {
         .expect("Failed to open main window");
     });
 }
+
+

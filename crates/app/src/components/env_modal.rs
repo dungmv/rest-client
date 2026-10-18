@@ -762,13 +762,13 @@ impl RenderOnce for EnvironmentModal {
                                                                     if let InputEvent::Change = ev {
                                                                         let nk = k1.read(cx).value().to_string();
                                                                         let cid = cur_id1.clone();
-                                                                        ws_up_k.update(cx, |state, cx| {
+                                                                        ws_up_k.update(cx, |state, _cx| {
                                                                             if is_glob {
                                                                                 let mut g = state.global_environment.clone();
                                                                                 if let Some(vr) = g.variables.get_mut(orig_idx) {
                                                                                     vr.key = nk;
                                                                                 }
-                                                                                state.save_global_environment(g, cx);
+                                                                                state.save_global_environment_silently(g);
                                                                             } else {
                                                                                 let mut list = state.environments.clone();
                                                                                 if let Some(e) = list.iter_mut().find(|x| x.id == cid) {
@@ -776,7 +776,7 @@ impl RenderOnce for EnvironmentModal {
                                                                                         vr.key = nk;
                                                                                     }
                                                                                 }
-                                                                                state.save_environments_debounced(list, cx);
+                                                                                state.save_environments_debounced(list, _cx);
                                                                             }
                                                                         });
                                                                     }
@@ -788,13 +788,13 @@ impl RenderOnce for EnvironmentModal {
                                                                     if let InputEvent::Change = ev {
                                                                         let n_init = init2.read(cx).value().to_string();
                                                                         let cid = cur_id2.clone();
-                                                                        ws_up_init.update(cx, |state, cx| {
+                                                                        ws_up_init.update(cx, |state, _cx| {
                                                                             if is_glob {
                                                                                 let mut g = state.global_environment.clone();
                                                                                 if let Some(vr) = g.variables.get_mut(orig_idx) {
                                                                                     vr.initial_value = n_init;
                                                                                 }
-                                                                                state.save_global_environment(g, cx);
+                                                                                state.save_global_environment_silently(g);
                                                                             } else {
                                                                                 let mut list = state.environments.clone();
                                                                                 if let Some(e) = list.iter_mut().find(|x| x.id == cid) {
@@ -802,7 +802,7 @@ impl RenderOnce for EnvironmentModal {
                                                                                         vr.initial_value = n_init;
                                                                                     }
                                                                                 }
-                                                                                state.save_environments_debounced(list, cx);
+                                                                                state.save_environments_debounced(list, _cx);
                                                                             }
                                                                         });
                                                                     }
@@ -814,13 +814,13 @@ impl RenderOnce for EnvironmentModal {
                                                                     if let InputEvent::Change = ev {
                                                                         let n_curr = curr3.read(cx).value().to_string();
                                                                         let cid = cur_id3.clone();
-                                                                        ws_up_curr.update(cx, |state, cx| {
+                                                                        ws_up_curr.update(cx, |state, _cx| {
                                                                             if is_glob {
                                                                                 let mut g = state.global_environment.clone();
                                                                                 if let Some(vr) = g.variables.get_mut(orig_idx) {
                                                                                     vr.current_value = n_curr;
                                                                                 }
-                                                                                state.save_global_environment(g, cx);
+                                                                                state.save_global_environment_silently(g);
                                                                             } else {
                                                                                 let mut list = state.environments.clone();
                                                                                 if let Some(e) = list.iter_mut().find(|x| x.id == cid) {
@@ -828,7 +828,7 @@ impl RenderOnce for EnvironmentModal {
                                                                                         vr.current_value = n_curr;
                                                                                     }
                                                                                 }
-                                                                                state.save_environments_debounced(list, cx);
+                                                                                state.save_environments_debounced(list, _cx);
                                                                             }
                                                                         });
                                                                     }
