@@ -4,3 +4,10 @@ members = [
     "crates/app",
 ]
 resolver = "2"
+
+# Optimize third-party dependencies (GPUI, text layout, font shaping, parsers)
+# even in debug mode to ensure 60fps UI performance while keeping local crates
+# at opt-level = 0 for rapid incremental builds.
+[profile.dev.package."*"]
+opt-level = 3
+
