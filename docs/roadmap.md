@@ -27,6 +27,11 @@ Tài liệu này xác định lộ trình phát triển toàn diện của **Res
    - Lưu trữ collections và requests dưới dạng file YAML phẳng (Git-friendly, không lock-in).
    - Biến môi trường cơ bản với cơ chế thay thế `{{var}}` trong URL, headers, params, auth, body.
    - Lưu response cache vào file `.loc` cạnh file request.
+6. **Tự Động Nhận Diện & Parse cURL Khi Dán (cURL Auto-Parse on Paste) — ✅ Đã hoàn thành:**
+   - Tự động nhận diện lệnh cURL dán vào ô URL input (`is_curl_command`).
+   - Hỗ trợ định dạng cURL đa nền tảng (Bash `\`, Windows CMD `^`, PowerShell ``` ` ```, loại bỏ `$ ` / `> `).
+   - Tự động bóc tách: Method, URL, Query params, Headers, Auth (Bearer / Basic base64), Body (JSON, Form-urlencoded, Multipart, Raw text).
+   - Tự động kích hoạt tab phù hợp và đồng bộ toàn bộ giao diện kèm Toast thông báo.
 
 ---
 
@@ -139,22 +144,26 @@ Tài liệu này xác định lộ trình phát triển toàn diện của **Res
 ---
 
 ## 🎯 Giai đoạn 5: Khả năng Tương Thích & Nhập/Xuất (Import/Export & Migration)
-*Mục tiêu: Giúp người dùng chuyển ngay lập tức toàn bộ dữ liệu đang có từ Postman, Insomnia và OpenAPI sang RestClient mà không mất bất kỳ cấu hình nào.*
+*Mục tiêu: Giúp người dùng chuyển ngay lập tức toàn bộ dữ liệu đang có từ Postman, Insomnia, OpenAPI và cURL sang RestClient mà không mất bất kỳ cấu hình nào.*
 
-1. **Import Postman Collections & Environments:**
+1. **Import cURL Tự Động Khi Dán Trực Tiếp (Inline cURL Paste) — ✅ Đã hoàn thành (100% Implemented & Tested):**
+   - Tự động nhận diện lệnh cURL khi dán vào thanh URL input.
+   - Trích xuất toàn bộ Method, URL, Query params, Headers, Auth (Bearer/Basic), Body (JSON/Form/Multipart/Raw).
+   - Đồng bộ ngay lập tức toàn bộ giao diện và cập nhật request.
+2. **Import Postman Collections & Environments:**
    - Hỗ trợ chuẩn Postman Collection v2.0 và v2.1 format.
    - Chuyển đổi chính xác: Folders, Requests, URL params, Headers, Body, Auth, Scripts (pre-request & test), Environments.
-2. **Import Insomnia Export:**
+3. **Import Insomnia Export:**
    - Hỗ trợ Insomnia Export v4 (YAML & JSON).
    - Mapping Workspaces, Request Groups (Folders), Requests, Environments.
-3. **Import OpenAPI / Swagger (v2.0, v3.0, v3.1):**
+4. **Import OpenAPI / Swagger (v2.0, v3.0, v3.1):**
    - Đọc OpenAPI specs từ file nội bộ hoặc URL (YAML/JSON).
    - Tự động sinh cây request theo Tag/Path.
    - Điền sẵn example query parameters, headers, sample JSON body dựa trên schema components.
-4. **Export đa định dạng:**
+5. **Export đa định dạng:**
    - Xuất Collection sang Postman v2.1 JSON (để chia sẻ cho đồng nghiệp vẫn dùng Postman).
    - Xuất sang OpenAPI 3.0 YAML/JSON.
-   - Xuất sang định dạng Bruno (`.bru`) và cURL.
+   - Xuất sang định dạng Bruno (`.bru`) và cURL (đã hỗ trợ "Copy as cURL").
 
 ---
 

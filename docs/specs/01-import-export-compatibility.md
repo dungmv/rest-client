@@ -12,16 +12,19 @@ Khi Postman chuyển đổi sang chính sách lưu trữ đám mây bắt buộc
 
 ---
 
-## 2. Kiến trúc Module (`restclient-core::importers`)
+## 2. Kiến trúc Module (`restclient-core`)
 
 ```
-crates/core/src/importers/
-├── mod.rs                # Trait CollectionImporter, CollectionExporter
-├── postman.rs            # Postman v2.0 & v2.1 JSON parser & converter
-├── insomnia.rs           # Insomnia v4 YAML/JSON parser
-├── openapi.rs            # OpenAPI 3.0, 3.1 & Swagger 2.0 parser
-├── har.rs                # HAR 1.2 log parser
-└── bruno.rs              # Bruno .bru parser
+crates/core/src/
+├── curl/
+│   └── mod.rs            # cURL parser (is_curl_command, curl_to_request) & exporter (request_to_curl)
+└── importers/
+    ├── mod.rs            # Trait CollectionImporter, CollectionExporter
+    ├── postman.rs        # Postman v2.0 & v2.1 JSON parser & converter
+    ├── insomnia.rs       # Insomnia v4 YAML/JSON parser
+    ├── openapi.rs        # OpenAPI 3.0, 3.1 & Swagger 2.0 parser
+    ├── har.rs            # HAR 1.2 log parser
+    └── bruno.rs          # Bruno .bru parser
 ```
 
 ### 2.1 Trait Định Nghĩa Core
@@ -131,13 +134,17 @@ Postman v2.1 có cấu trúc lồng nhau dạng đệ quy (`item` có thể là 
 
 ## 5. Trải nghiệm người dùng trên UI (UI UX Flow)
 
-1. **Kéo-Thả (Drag & Drop):** Người dùng có thể kéo trực tiếp file `.json` (Postman/OpenAPI) hoặc `.yaml` vào cửa sổ RestClient để hiển thị dialog preview import.
-2. **Import Modal (`Ctrl + I` hoặc Menu `⋮` -> Import):**
+1. **Dán cURL Trực Tiếp Vào Thanh URL (Inline cURL Paste & Auto-Import) — ✅ Đã Triển Khai:**
+   - Người dùng chỉ cần sao chép câu lệnh cURL từ bất kỳ đâu (Chrome DevTools, Postman, Terminal, Docs) và nhấn `Ctrl + V` vào ô nhập URL.
+   - Hệ thống tự động nhận diện tiền tố `curl` / `curl.exe` / `$ curl` qua `is_curl_command`.
+   - Toàn bộ method, url, query parameters, headers, auth và body được trích xuất ngay lập tức, thanh URL hiển thị URL sạch, các tab được cập nhật đồng bộ và Toast thông báo hiển thị kết quả.
+2. **Kéo-Thả (Drag & Drop):** Người dùng có thể kéo trực tiếp file `.json` (Postman/OpenAPI) hoặc `.yaml` vào cửa sổ RestClient để hiển thị dialog preview import.
+3. **Import Modal (`Ctrl + I` hoặc Menu `⋮` -> Import):**
    - Hỗ trợ 3 tab:
      - **File:** Chọn file từ ổ đĩa.
      - **Raw Text / Clipboard:** Dán JSON/YAML hoặc lệnh cURL.
      - **URL:** Tải từ link công khai (ví dụ: `https://api.example.com/swagger/v1/swagger.json`).
-3. **Conflict Resolution:** Khi import phát hiện trùng tên Workspace hoặc Request, cung cấp tùy chọn:
+4. **Conflict Resolution:** Khi import phát hiện trùng tên Workspace hoặc Request, cung cấp tùy chọn:
    - Ghi đè (Overwrite).
    - Đổi tên (Keep both, append `_copy`).
    - Bỏ qua (Skip).

@@ -44,6 +44,28 @@ Hỗ trợ đầy đủ các phương thức chuẩn với mã màu nhận diệ
 - **Follow Redirects:** Bật/tắt tự động chuyển hướng HTTP (301, 302, 307, 308), giới hạn số lần redirect tối đa (mặc định: 10).
 - **Validate TLS Certificate:** Tùy chọn bỏ qua kiểm tra chứng chỉ SSL/TLS khi làm việc với API local/self-signed (`https://localhost`).
 
+### 2.6 Tự Động Nhận Diện & Phân Tích cURL Khi Dán (cURL Auto-Parse on Paste)
+Nhằm mang lại trải nghiệm tương đương Postman / Insomnia khi người dùng sao chép cURL từ Chrome/Firefox/Edge DevTools, tài liệu API hoặc terminal:
+- **Nhận diện thông minh (`is_curl_command`):**
+  - Tự động nhận diện lệnh cURL bắt đầu bằng `curl`, `curl.exe` (không phân biệt hoa thường).
+  - Tự động bỏ qua tiền tố shell như `$ `, `> ` khi copy từ hướng dẫn dòng lệnh.
+  - Phân biệt rõ ràng giữa cURL command và các URL có scheme `curl://` hoặc văn bản thông thường.
+- **Hỗ trợ Line Continuation đa nền tảng:**
+  - Hỗ trợ ký tự nối dòng Unix/Bash (`\`), Windows CMD (`^`, `^"`), và Windows PowerShell (``` ` ```).
+  - Bảo toàn định dạng nhiều dòng bên trong body payload JSON hoặc Raw text.
+- **Trích xuất thuộc tính toàn diện (`curl_to_request`):**
+  - **Method:** Nhận diện `-X`, `--request` và cờ `-I` / `--head`.
+  - **URL & Query:** Tách query string vào bảng `Params`, làm sạch URL để tránh lặp tham số.
+  - **Headers:** Nhận diện `-H`, `--header`, kèm shortcut `-A` / `--user-agent`, `-b` / `--cookie`, `-e` / `--referer`.
+  - **Authentication:** Tự động nhận diện Bearer Token (`Authorization: Bearer <token>`) và Basic Auth (`-u user:pass` hoặc giải mã Base64).
+  - **Body:** Nhận diện `-d`, `--data`, `--data-raw`, `--data-binary`, `--data-urlencode`, `-F` / `--form`. Tự động nhận dạng JSON `{...}`, `[...]`, Form-urlencoded, Multipart hoặc Raw. Tự động chuyển method sang `POST` nếu chưa có `-X`.
+  - **Safe Flag Skipping:** Bỏ qua an toàn các cờ có tham số (`--connect-timeout`, `-m`, `-o`, `--proxy`,...) mà không làm mất URL.
+- **Đồng bộ hóa giao diện UI tức thì:**
+  - Thay thế nội dung trên thanh URL bằng URL đích đã làm sạch.
+  - Cập nhật Method badge, bảng Params, bảng Headers, các ô nhập Auth và Editor Body.
+  - Tự động kích hoạt tab phù hợp nhất (`Body`, `Auth`, `Params`, `Headers`).
+  - Hiển thị thông báo Toast xác nhận thành công.
+
 ---
 
 ## 3. Kiến Trúc Thực Thi Mạng (Tokio & Reqwest Decoupled Executor)

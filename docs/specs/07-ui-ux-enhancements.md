@@ -57,3 +57,17 @@ Trong tab Response, bên cạnh chế độ xem `Pretty` (JSON thụt lề có m
    - **Light Mode:** Dành cho người dùng thích giao diện sáng khi làm việc ban ngày.
 2. **Cỡ Chữ & Font Family:**
    - Cho phép người dùng tùy chọn Font chữ Monospace (JetBrains Mono, Fira Code, Cascadia Code, SF Mono) và kích thước font size từ 11px đến 18px trong Settings.
+
+---
+
+## 5. Thanh Nhập Liệu Request Thông Minh (Unified Smart Request Bar)
+
+1. **Tự Động Nhận Diện & Parse cURL Khi Dán (Auto-Detect cURL on Paste):**
+   - Khi người dùng dán (Ctrl+V) câu lệnh cURL vào ô nhập URL, thanh input tự động phát hiện lệnh cURL, bóc tách method, URL, headers, auth và body.
+   - Tránh việc phải mở modal import riêng biệt, mang lại trải nghiệm tiện dụng cao nhất.
+2. **Tự Động Tách Query Parameters:**
+   - Khi gõ hoặc dán URL có chứa `?param1=val1&param2=val2`, hệ thống tự động trích xuất các tham số này vào bảng `Params` và giữ URL gốc sạch sẽ.
+3. **Inline Environment Variable Tokens & Autocomplete:**
+   - Khi gõ `{{`, hiển thị popup gợi ý biến môi trường (kèm scope Global / Active Environment, giá trị hiện tại).
+   - Render biến dưới dạng token màu trực quan (xanh lá cho biến hợp lệ, cam/đỏ cho biến chưa được định nghĩa).
+   - Di chuột lên token để xem popover giá trị giải mã; click vào token để mở nhanh modal cấu hình Environment.

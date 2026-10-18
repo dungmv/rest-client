@@ -40,6 +40,7 @@ Thư mục `docs/` này bao gồm toàn bộ thiết kế chi tiết, kiến tr�
 | **Timing Breakdown** | DNS, TLS, TTFB | TTFB, Total | DNS, TCP, TLS, TTFB, Download | DNS, TCP, TLS, TTFB, Download |
 | **Response Cache & Examples** | Cloud sync | Local Storage | Local Response Cache (.loc) | Examples & Response Cache |
 | **Import Postman / Insomnia** | N/A | Postman | Đang lập kế hoạch | **1-Click Import hoàn chỉnh** |
+| **Import cURL khi dán (URL bar)** | Có | Có | **Đầy đủ (Auto-detect & parse đa nền tảng)** | **Đầy đủ** |
 | **Import OpenAPI 3.0 / 3.1** | Có | Có | Đang lập kế hoạch | **Full Spec Tree Generator** |
 | **Code Generator** | 15+ languages | 12+ languages | cURL | **16+ languages & frameworks** |
 | **Pre-request & Test Scripts** | JavaScript sandbox | JavaScript sandbox | **Embedded QuickJS (`rquickjs`) Sandbox** | **Embedded QuickJS (`rquickjs`) Sandbox** |
