@@ -31,6 +31,7 @@ pub struct EditorState {
     pub auth_dropdown_open: bool,
     pub script_error: Option<String>,
     pub body_version: usize,
+    pub request_version: usize,
     input_refresh_task: Option<Task<()>>,
     url_input_has_query: bool,
     url_input_has_template: bool,
@@ -57,6 +58,7 @@ impl EditorState {
             auth_dropdown_open: false,
             script_error: None,
             body_version: 0,
+            request_version: 0,
             input_refresh_task: None,
             url_input_has_query: false,
             url_input_has_template: false,
@@ -94,7 +96,48 @@ impl EditorState {
         self.url_input_has_template = req.url.contains("{{");
         self.active_request = Some(req);
         self.is_dirty = false;
+        self.request_version = self.request_version.wrapping_add(1);
         self.body_version = self.body_version.wrapping_add(1);
+        cx.notify();
+    }
+
+    pub fn apply_imported_curl_data(&mut self, parsed: HttpRequestItem) {
+        if let Some(req) = &mut self.active_request {
+            if req.name == "New Request" || req.name == "Untitled Request" || req.name.is_empty() {
+                req.name = parsed.name;
+            }
+            req.method = parsed.method;
+            req.url = parsed.url;
+            req.params = parsed.params;
+            req.headers = parsed.headers;
+            req.auth = parsed.auth;
+            req.body = parsed.body;
+        } else {
+            self.active_request = Some(parsed);
+        }
+
+        // Switch to appropriate tab
+        if let Some(req) = &self.active_request {
+            if req.body != RequestBody::None {
+                self.active_tab_kind = RequestTabKind::Body;
+            } else if req.auth != Auth::None {
+                self.active_tab_kind = RequestTabKind::Auth;
+            } else if !req.params.is_empty() {
+                self.active_tab_kind = RequestTabKind::Params;
+            } else if !req.headers.is_empty() {
+                self.active_tab_kind = RequestTabKind::Headers;
+            }
+            self.url_input_has_query = false;
+            self.url_input_has_template = req.url.contains("{{");
+        }
+
+        self.is_dirty = true;
+        self.request_version = self.request_version.wrapping_add(1);
+        self.body_version = self.body_version.wrapping_add(1);
+    }
+
+    pub fn apply_imported_curl(&mut self, parsed: HttpRequestItem, cx: &mut Context<Self>) {
+        self.apply_imported_curl_data(parsed);
         cx.notify();
     }
 
@@ -797,6 +840,30 @@ mod tests {
             editor.active_request.as_ref().unwrap().script.as_ref().unwrap().post_response.as_deref(),
             Some("pm.test('ok', () => {});")
         );
+    }
+
+    #[test]
+    fn test_apply_imported_curl() {
+        let mut editor = EditorState::new();
+        assert_eq!(editor.request_version, 0);
+
+        let curl = "curl -X POST https://api.example.com/v1/users?source=web -H 'Authorization: Bearer token123' -H 'Content-Type: application/json' -d '{\"name\":\"Bob\"}'";
+        let parsed = restclient_core::curl::curl_to_request("ws1", curl).unwrap();
+        editor.apply_imported_curl_data(parsed);
+
+        assert!(editor.is_dirty);
+        assert_eq!(editor.request_version, 1);
+        assert_eq!(editor.active_tab_kind, RequestTabKind::Body);
+
+        let req = editor.active_request.as_ref().unwrap();
+        assert_eq!(req.method, HttpMethod::Post);
+        assert_eq!(req.url, "https://api.example.com/v1/users");
+        assert_eq!(req.params.len(), 1);
+        assert_eq!(req.params[0].key, "source");
+        assert_eq!(req.params[0].value, "web");
+        assert_eq!(req.name, "users");
+        assert_eq!(req.auth, Auth::Bearer { token: "token123".to_string() });
+        assert_eq!(req.body, RequestBody::Json("{\"name\":\"Bob\"}".to_string()));
     }
 }
 

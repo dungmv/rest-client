@@ -57,6 +57,7 @@ pub struct AppView {
     executor: Arc<ReqwestExecutor>,
     tokio_rt: Arc<tokio::runtime::Runtime>,
     last_synced_request_id: Option<String>,
+    last_synced_request_version: usize,
     last_synced_body_version: usize,
     last_synced_response_id: Option<String>,
     last_synced_response_view_mode: Option<ResponseViewMode>,
@@ -221,6 +222,43 @@ impl AppView {
             match event {
                 InputEvent::Change => {
                     let val = input.read(cx).value().to_string();
+                    if restclient_core::curl::is_curl_command(&val) {
+                        let ws_id = ed_url
+                            .read(cx)
+                            .active_request
+                            .as_ref()
+                            .map(|r| r.workspace_id.clone())
+                            .unwrap_or_else(|| "scratch".to_string());
+                        match restclient_core::curl::curl_to_request(&ws_id, &val) {
+                            Ok(parsed) => {
+                                let method_name = parsed.method.as_str().to_string();
+                                let target_url = parsed.url.clone();
+                                ed_url.update(cx, |ed, cx| {
+                                    ed.apply_imported_curl(parsed, cx);
+                                });
+                                save_active_request_without_redraw(&ed_url, &ws_url, cx);
+                                this.toast_state.update(cx, |t, cx| {
+                                    t.push_success(
+                                        "cURL Imported",
+                                        format!("Parsed {} request to {}", method_name, target_url),
+                                        cx,
+                                    );
+                                });
+                                return;
+                            }
+                            Err(e) => {
+                                if val.lines().count() > 1 || val.contains(" -") || val.contains(" --") {
+                                    this.toast_state.update(cx, |t, cx| {
+                                        t.push_error(
+                                            "cURL Parse Error",
+                                            format!("Failed to parse cURL: {}", e),
+                                            cx,
+                                        );
+                                    });
+                                }
+                            }
+                        }
+                    }
                     ed_url.update(cx, |ed, cx| {
                         ed.update_url_from_input(val, cx);
                     });
@@ -546,6 +584,7 @@ impl AppView {
             executor,
             tokio_rt,
             last_synced_request_id,
+            last_synced_request_version: 0,
             last_synced_body_version,
             last_synced_response_id: None,
             last_synced_response_view_mode: None,
@@ -896,7 +935,7 @@ impl Render for AppView {
 
         // Synchronize active request fields into InputState / TextareaState when switched or body version changed
         {
-            let (req_switched, body_ver_changed, ed_body_ver) = {
+            let (req_switched, req_ver_changed, body_ver_changed, ed_body_ver, ed_req_ver) = {
                 let ed = self.editor_state.read(cx);
                 let switched = match (&self.last_synced_request_id, &ed.active_request) {
                     (Some(last_id), Some(req)) => last_id != &req.id,
@@ -904,15 +943,17 @@ impl Render for AppView {
                     (Some(_), None) => true,
                     (None, None) => false,
                 };
-                let ver_changed = self.last_synced_body_version != ed.body_version;
-                (switched, ver_changed, ed.body_version)
+                let req_changed = self.last_synced_request_version != ed.request_version;
+                let body_changed = self.last_synced_body_version != ed.body_version;
+                (switched, req_changed, body_changed, ed.body_version, ed.request_version)
             };
 
-            if req_switched || body_ver_changed {
+            if req_switched || req_ver_changed || body_ver_changed {
                 let req_opt = self.editor_state.read(cx).active_request.clone();
                 if let Some(req) = req_opt {
-                    if req_switched {
+                    if req_switched || req_ver_changed {
                         self.last_synced_request_id = Some(req.id.clone());
+                        self.last_synced_request_version = ed_req_ver;
                         self.last_synced_body_version = ed_body_ver;
 
                         let tokenized_url = {
@@ -945,7 +986,23 @@ impl Render for AppView {
                                     inp.set_value(value.clone(), window, cx);
                                 });
                             }
-                            Auth::None => {}
+                            Auth::None => {
+                                self.bearer_token_input.update(cx, |inp, cx| {
+                                    inp.set_value(String::new(), window, cx);
+                                });
+                                self.basic_user_input.update(cx, |inp, cx| {
+                                    inp.set_value(String::new(), window, cx);
+                                });
+                                self.basic_pass_input.update(cx, |inp, cx| {
+                                    inp.set_value(String::new(), window, cx);
+                                });
+                                self.apikey_key_input.update(cx, |inp, cx| {
+                                    inp.set_value(String::new(), window, cx);
+                                });
+                                self.apikey_val_input.update(cx, |inp, cx| {
+                                    inp.set_value(String::new(), window, cx);
+                                });
+                            }
                         }
 
                         let pre_script = req.script.as_ref().and_then(|s| s.pre_request.clone()).unwrap_or_default();
@@ -958,7 +1015,7 @@ impl Render for AppView {
                         });
                     }
 
-                    if req_switched || body_ver_changed {
+                    if req_switched || req_ver_changed || body_ver_changed {
                         self.last_synced_body_version = ed_body_ver;
                         match &req.body {
                             RequestBody::Json(json_str) => {
@@ -976,7 +1033,14 @@ impl Render for AppView {
                                     txt.set_value(content.clone(), window, cx);
                                 });
                             }
-                            _ => {}
+                            RequestBody::None | RequestBody::FormUrlEncoded(_) | RequestBody::Multipart(_) | RequestBody::Binary { .. } => {
+                                self.json_editor.update(cx, |txt, cx| {
+                                    txt.set_value(String::new(), window, cx);
+                                });
+                                self.raw_textarea.update(cx, |txt, cx| {
+                                    txt.set_value(String::new(), window, cx);
+                                });
+                            }
                         }
                     }
                 }
