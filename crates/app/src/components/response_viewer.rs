@@ -7,6 +7,7 @@ use gpui::{
     RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::input::{Editor, EditorState as CodeEditorState};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::scroll::ScrollableElement as _;
 use restclient_core::models::HttpResponseRecord;
@@ -17,6 +18,7 @@ pub struct ResponseViewer {
     workspace_state: Entity<WorkspaceState>,
     editor_state: Entity<EditorState>,
     response_state: Entity<ResponseState>,
+    response_editor: Entity<CodeEditorState>,
 }
 
 impl ResponseViewer {
@@ -24,11 +26,13 @@ impl ResponseViewer {
         workspace_state: Entity<WorkspaceState>,
         editor_state: Entity<EditorState>,
         response_state: Entity<ResponseState>,
+        response_editor: Entity<CodeEditorState>,
     ) -> Self {
         Self {
             workspace_state,
             editor_state,
             response_state,
+            response_editor,
         }
     }
 }
@@ -734,14 +738,15 @@ impl RenderOnce for ResponseViewer {
                                                 )
                                         )
                                     })
-                                    // Response lines virtualized scrollable area
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .size_full()
-                                            .overflow_hidden()
-                                            .p(px(8.))
-                                            .child(
+                                    // Response lines area: Editor with folding/selection for normal payloads, uniform_list for large payloads
+                                    .child({
+                                        if is_large_payload {
+                                            div()
+                                                .flex_1()
+                                                .size_full()
+                                                .overflow_hidden()
+                                                .p(px(8.))
+                                                .child(
                                                 uniform_list("response-lines-virtual", lines.len(), {
                                                     let lines = lines.clone();
                                                     move |range, _window, _cx| {
@@ -785,7 +790,22 @@ impl RenderOnce for ResponseViewer {
                                                 .track_scroll(&resp_s.scroll_handle)
                                                 .size_full(),
                                             )
-                                    )
+                                        } else {
+                                            div()
+                                                .flex_1()
+                                                .size_full()
+                                                .overflow_hidden()
+                                                .py(px(4.))
+                                                .px(px(4.))
+                                                .child(
+                                                    Editor::new(&self.response_editor)
+                                                        .readonly(true)
+                                                        .appearance(false)
+                                                        .bordered(false)
+                                                        .h(gpui::relative(1.))
+                                                )
+                                        }
+                                    })
                                     .into_any_element()
                                 }
                             }

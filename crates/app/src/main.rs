@@ -44,7 +44,9 @@ pub struct AppView {
     toast_state: Entity<ToastState>,
     url_input: Entity<InputState>,
     json_editor: Entity<CodeEditorState>,
+    xml_editor: Entity<CodeEditorState>,
     raw_textarea: Entity<TextareaState>,
+    response_editor: Entity<CodeEditorState>,
     pre_script_editor: Entity<CodeEditorState>,
     test_script_editor: Entity<CodeEditorState>,
     bearer_token_input: Entity<InputState>,
@@ -56,6 +58,9 @@ pub struct AppView {
     tokio_rt: Arc<tokio::runtime::Runtime>,
     last_synced_request_id: Option<String>,
     last_synced_body_version: usize,
+    last_synced_response_id: Option<String>,
+    last_synced_response_view_mode: Option<ResponseViewMode>,
+    last_synced_example_name: Option<String>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -85,57 +90,52 @@ impl AppView {
         let toast_state = cx.new(|_| ToastState::new());
 
         let url_input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter request URL (e.g. https://httpbin.org/get)"));
+
+        let highlighter_factory: std::rc::Rc<dyn Fn(&str) -> Option<Box<dyn gpui_component::input::InputHighlighter>>> =
+            std::rc::Rc::new(|lang: &str| match lang {
+                "json" => Some(Box::new(crate::components::body_editor::JsonHighlighter::new())),
+                "xml" => Some(Box::new(crate::components::body_editor::XmlHighlighter::new())),
+                "javascript" | "js" => Some(Box::new(JavaScriptHighlighter::new())),
+                _ => None,
+            });
+
         let json_editor = cx.new(|cx| {
             let mut state = CodeEditorState::new(window, cx);
-            state.set_highlighter_factory(
-                std::rc::Rc::new(|lang: &str| {
-                    if lang == "json" {
-                        Some(Box::new(crate::components::body_editor::JsonHighlighter::new()))
-                    } else {
-                        None
-                    }
-                }),
-                cx,
-            );
+            state.set_highlighter_factory(highlighter_factory.clone(), cx);
             state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
                 crate::components::env_autocomplete::EnvCompletionProvider::new(workspace_state.clone()),
             ));
-            state.language("json").folding(false)
+            state.language("json").line_number(true).folding(true)
+        });
+        let xml_editor = cx.new(|cx| {
+            let mut state = CodeEditorState::new(window, cx);
+            state.set_highlighter_factory(highlighter_factory.clone(), cx);
+            state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
+                crate::components::env_autocomplete::EnvCompletionProvider::new(workspace_state.clone()),
+            ));
+            state.language("xml").line_number(true).folding(true)
         });
         let raw_textarea = cx.new(|cx| TextareaState::new(window, cx));
+        let response_editor = cx.new(|cx| {
+            let mut state = CodeEditorState::new(window, cx);
+            state.set_highlighter_factory(highlighter_factory.clone(), cx);
+            state.language("json").line_number(true).folding(true)
+        });
         let pre_script_editor = cx.new(|cx| {
             let mut state = CodeEditorState::new(window, cx);
-            state.set_highlighter_factory(
-                std::rc::Rc::new(|lang: &str| {
-                    if lang == "javascript" || lang == "js" {
-                        Some(Box::new(JavaScriptHighlighter::new()))
-                    } else {
-                        None
-                    }
-                }),
-                cx,
-            );
+            state.set_highlighter_factory(highlighter_factory.clone(), cx);
             state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
                 ScriptCompletionProvider::new(ScriptEditorKind::PreRequest),
             ));
-            state.language("javascript").line_number(true).folding(false)
+            state.language("javascript").line_number(true).folding(true)
         });
         let test_script_editor = cx.new(|cx| {
             let mut state = CodeEditorState::new(window, cx);
-            state.set_highlighter_factory(
-                std::rc::Rc::new(|lang: &str| {
-                    if lang == "javascript" || lang == "js" {
-                        Some(Box::new(JavaScriptHighlighter::new()))
-                    } else {
-                        None
-                    }
-                }),
-                cx,
-            );
+            state.set_highlighter_factory(highlighter_factory.clone(), cx);
             state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
                 ScriptCompletionProvider::new(ScriptEditorKind::Tests),
             ));
-            state.language("javascript").line_number(true).folding(false)
+            state.language("javascript").line_number(true).folding(true)
         });
 
         let bearer_token_input = cx.new(|cx| InputState::new(window, cx).placeholder("Enter Bearer token..."));
@@ -181,7 +181,12 @@ impl AppView {
                 json_editor.update(cx, |txt, cx| {
                     txt.set_value(json_content.clone(), window, cx);
                 });
-            } else if let RequestBody::Raw { content, .. } = &req.body {
+            } else if let RequestBody::Raw { content, content_type } = &req.body {
+                if content_type == "application/xml" || content_type == "text/xml" {
+                    xml_editor.update(cx, |txt, cx| {
+                        txt.set_value(content.clone(), window, cx);
+                    });
+                }
                 raw_textarea.update(cx, |txt, cx| {
                     txt.set_value(content.clone(), window, cx);
                 });
@@ -238,6 +243,19 @@ impl AppView {
                     ed.apply_set_body_json(val);
                 });
                 save_active_request_without_redraw(&ed_json, &ws_json, cx);
+            }
+        }));
+
+        // 2b. Subscribe to XML editor change
+        let ed_xml = editor_state.clone();
+        let ws_xml = workspace_state.clone();
+        _subscriptions.push(cx.subscribe(&xml_editor, move |_, txt, event, cx| {
+            if let InputEvent::Change = event {
+                let val = txt.read(cx).value().to_string();
+                ed_xml.update(cx, |ed, _cx| {
+                    ed.apply_set_raw_body(val, "application/xml".to_string());
+                });
+                save_active_request_without_redraw(&ed_xml, &ws_xml, cx);
             }
         }));
 
@@ -515,7 +533,9 @@ impl AppView {
             toast_state,
             url_input,
             json_editor,
+            xml_editor,
             raw_textarea,
+            response_editor,
             pre_script_editor,
             test_script_editor,
             bearer_token_input,
@@ -527,6 +547,9 @@ impl AppView {
             tokio_rt,
             last_synced_request_id,
             last_synced_body_version,
+            last_synced_response_id: None,
+            last_synced_response_view_mode: None,
+            last_synced_example_name: None,
             _subscriptions,
         }
     }
@@ -943,7 +966,12 @@ impl Render for AppView {
                                     txt.set_value(json_str.clone(), window, cx);
                                 });
                             }
-                            RequestBody::Raw { content, .. } => {
+                            RequestBody::Raw { content, content_type } => {
+                                if content_type == "application/xml" || content_type == "text/xml" {
+                                    self.xml_editor.update(cx, |txt, cx| {
+                                        txt.set_value(content.clone(), window, cx);
+                                    });
+                                }
                                 self.raw_textarea.update(cx, |txt, cx| {
                                     txt.set_value(content.clone(), window, cx);
                                 });
@@ -952,6 +980,49 @@ impl Render for AppView {
                         }
                     }
                 }
+            }
+        }
+
+        // Synchronize response_editor with ResponseState's formatted_body
+        {
+            let resp_s = self.response_state.read(cx);
+            let current_resp_id = resp_s.current_response.as_ref().map(|r| r.id.clone());
+            let current_mode = resp_s.view_mode;
+            let current_ex = resp_s.active_example_name.clone();
+
+            let resp_changed = current_resp_id != self.last_synced_response_id
+                || Some(current_mode) != self.last_synced_response_view_mode
+                || current_ex != self.last_synced_example_name;
+
+            if resp_changed {
+                self.last_synced_response_id = current_resp_id;
+                self.last_synced_response_view_mode = Some(current_mode);
+                self.last_synced_example_name = current_ex;
+
+                let (display_text, is_json, is_xml) = if let Some(fmt) = &resp_s.formatted_body {
+                    (fmt.display_text.to_string(), fmt.is_json, fmt.is_xml)
+                } else if let Some(resp) = &resp_s.current_response {
+                    let text = String::from_utf8_lossy(&resp.body).to_string();
+                    let is_j = resp.is_json() || text.trim_start().starts_with('{') || text.trim_start().starts_with('[');
+                    let is_x = !is_j && (resp.is_xml() || text.trim_start().starts_with("<?xml") || (text.trim_start().starts_with('<') && text.trim_end().ends_with('>')));
+                    (text, is_j, is_x)
+                } else {
+                    (String::new(), false, false)
+                };
+
+                let lang = if is_json {
+                    "json"
+                } else if is_xml {
+                    "xml"
+                } else {
+                    "plaintext"
+                };
+
+                self.response_editor.update(cx, |txt, cx| {
+                    txt.set_value(display_text, window, cx);
+                    txt.set_highlighter(lang, cx);
+                    txt.set_readonly(true, cx);
+                });
             }
         }
 
@@ -1269,6 +1340,7 @@ impl Render for AppView {
                                                                     BodyEditor::new(
                                                                         ed_entity.clone(),
                                                                         self.json_editor.clone(),
+                                                                        self.xml_editor.clone(),
                                                                         self.raw_textarea.clone(),
                                                                     )
                                                                     .workspace_state(ws_entity.clone())
@@ -1702,7 +1774,7 @@ impl Render for AppView {
                                                 )
                                             });
 
-                                        let response_pane = ResponseViewer::new(ws_entity.clone(), ed_entity.clone(), resp_entity.clone());
+                                        let response_pane = ResponseViewer::new(ws_entity.clone(), ed_entity.clone(), resp_entity.clone(), self.response_editor.clone());
 
                                         if is_vertical_split {
                                             div().size_full().child(

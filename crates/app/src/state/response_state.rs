@@ -12,6 +12,7 @@ pub struct FormattedResponseBody {
     pub display_text: Arc<String>,
     pub lines: Arc<Vec<String>>,
     pub is_json: bool,
+    pub is_xml: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -225,9 +226,17 @@ impl ResponseState {
                 || raw_str.trim_start().starts_with('{')
                 || raw_str.trim_start().starts_with('[');
 
+            let is_xml = !is_json && (
+                resp.is_xml()
+                || raw_str.trim_start().starts_with("<?xml")
+                || (raw_str.trim_start().starts_with('<') && raw_str.trim_end().ends_with('>'))
+            );
+
             let display_text = if matches!(self.view_mode, ResponseViewMode::Pretty) {
                 if let Some(parsed) = &parsed_json {
                     serde_json::to_string_pretty(parsed).unwrap_or(raw_str)
+                } else if is_xml {
+                    crate::components::body_editor::format_xml(&raw_str).unwrap_or(raw_str)
                 } else {
                     raw_str
                 }
@@ -240,6 +249,7 @@ impl ResponseState {
                 display_text: Arc::new(display_text),
                 lines: Arc::new(lines),
                 is_json,
+                is_xml,
             });
         } else {
             self.formatted_body = None;
@@ -482,6 +492,36 @@ mod tests {
         assert_eq!(resp.duration_ms, 42);
         assert_eq!(String::from_utf8_lossy(&resp.body), r#"{"token":"xyz"}"#);
         assert!(state.formatted_body.is_some());
+    }
+
+    #[test]
+    fn test_xml_response_body_formatting() {
+        let mut state = ResponseState::new();
+        let record = HttpResponseRecord {
+            id: "resp-xml".to_string(),
+            request_id: "req-1".to_string(),
+            status_code: 200,
+            status_text: "OK".to_string(),
+            headers: vec![("content-type".to_string(), "application/xml".to_string())],
+            cookies: vec![],
+            body: "<root><user><name>Bob</name></user></root>".as_bytes().to_vec(),
+            duration_ms: 10,
+            size_bytes: 42,
+            timing: Default::default(),
+            request_sent: None,
+            test_results: vec![],
+            console_logs: vec![],
+            created_at: chrono::Utc::now(),
+        };
+
+        state.current_response = Some(record);
+        state.view_mode = ResponseViewMode::Pretty;
+        state.refresh_formatted_body();
+
+        let fmt = state.formatted_body.expect("Formatted body should exist");
+        assert!(fmt.is_xml, "Should detect XML response");
+        assert!(fmt.display_text.contains("<root>\n"));
+        assert!(fmt.display_text.contains("  <user>\n"));
     }
 }
 

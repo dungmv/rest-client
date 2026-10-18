@@ -534,4 +534,13 @@ impl HttpResponseRecord {
             .iter()
             .any(|(k, v)| k.eq_ignore_ascii_case("content-type") && v.to_lowercase().contains("json"))
     }
+
+    pub fn is_xml(&self) -> bool {
+        self.headers
+            .iter()
+            .any(|(k, v)| {
+                k.eq_ignore_ascii_case("content-type")
+                    && (v.to_lowercase().contains("xml") || v.to_lowercase().contains("application/xml") || v.to_lowercase().contains("text/xml"))
+            })
+    }
 }
