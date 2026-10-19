@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=RestClient
+GenericName=REST Client
+Comment=Fast and native REST client GUI
+Exec=restclient %u
+Icon=restclient
+Terminal=false
+Categories=Development;Network;WebDevelopment;
+StartupWMClass=restclient
+Keywords=api;rest;http;graphql;client;postman;

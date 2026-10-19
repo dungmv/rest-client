@@ -88,15 +88,77 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Move-Item -Path $ArchiveName -Destination dist/
 
-      - name: Package archive (Unix)
-        if: runner.os != 'Windows'
+      - name: Package archive (macOS)
+        if: runner.os == 'macOS'
         shell: bash
         run: |
           TAG="${{ github.ref_name }}"
-          ARCHIVE_NAME="restclient-${TAG}-${{ matrix.platform_suffix }}.tar.gz"
-          tar -czvf "$ARCHIVE_NAME" -C "target/${{ matrix.target }}/release" "${{ matrix.binary_name }}"
+          VERSION="${TAG#v}"
+          APP_NAME="RestClient.app"
+          CONTENTS="$APP_NAME/Contents"
+
+          mkdir -p "$CONTENTS/MacOS"
+          mkdir -p "$CONTENTS/Resources"
+
+          # Copy binary and ensure execute permissions
+          cp "target/${{ matrix.target }}/release/restclient" "$CONTENTS/MacOS/restclient"
+          chmod +x "$CONTENTS/MacOS/restclient"
+
+          # Populate Info.plist
+          sed "s/__VERSION__/$VERSION/g" packaging/macos/Info.plist > "$CONTENTS/Info.plist"
+
+          # Generate macOS .icns iconset
+          ICONSET_DIR="AppIcon.iconset"
+          mkdir -p "$ICONSET_DIR"
+          sips -z 16 16     crates/app/resources/app_icon_16.png   --out "$ICONSET_DIR/icon_16x16.png"
+          sips -z 32 32     crates/app/resources/app_icon_32.png   --out "$ICONSET_DIR/icon_16x16@2x.png"
+          sips -z 32 32     crates/app/resources/app_icon_32.png   --out "$ICONSET_DIR/icon_32x32.png"
+          sips -z 64 64     crates/app/resources/app_icon_64.png   --out "$ICONSET_DIR/icon_32x32@2x.png"
+          sips -z 128 128   crates/app/resources/app_icon_128.png  --out "$ICONSET_DIR/icon_128x128.png"
+          sips -z 256 256   crates/app/resources/app_icon_256.png  --out "$ICONSET_DIR/icon_128x128@2x.png"
+          sips -z 256 256   crates/app/resources/app_icon_256.png  --out "$ICONSET_DIR/icon_256x256.png"
+          sips -z 512 512   crates/app/resources/app_icon.png      --out "$ICONSET_DIR/icon_256x256@2x.png"
+          sips -z 512 512   crates/app/resources/app_icon.png      --out "$ICONSET_DIR/icon_512x512.png"
+          iconutil -c icns "$ICONSET_DIR" -o "$CONTENTS/Resources/AppIcon.icns"
+          rm -rf "$ICONSET_DIR"
+
+          # Ad-hoc code sign bundle (required for Apple Silicon M-series & Gatekeeper integrity)
+          codesign --force --deep --sign - "$APP_NAME"
+
           mkdir -p dist
-          mv "$ARCHIVE_NAME" dist/
+
+          # Build .dmg with drag-to-Applications shortcut
+          DMG_TMP="dmg_root"
+          mkdir -p "$DMG_TMP"
+          cp -R "$APP_NAME" "$DMG_TMP/"
+          ln -s /Applications "$DMG_TMP/Applications"
+          hdiutil create -volname "RestClient" -srcfolder "$DMG_TMP" -ov -format UDZO "dist/restclient-${TAG}-${{ matrix.platform_suffix }}.dmg"
+          rm -rf "$DMG_TMP"
+
+          # Also package .zip containing RestClient.app
+          zip -r -y "dist/restclient-${TAG}-${{ matrix.platform_suffix }}.zip" "$APP_NAME"
+
+      - name: Package archive (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          PKG_NAME="restclient-${TAG}-${{ matrix.platform_suffix }}"
+          mkdir -p "$PKG_NAME"
+
+          # Copy binary and ensure execute permissions
+          cp "target/${{ matrix.target }}/release/restclient" "$PKG_NAME/restclient"
+          chmod +x "$PKG_NAME/restclient"
+
+          # Copy desktop integration files
+          cp packaging/linux/restclient.desktop "$PKG_NAME/"
+          cp packaging/linux/install.sh "$PKG_NAME/"
+          cp packaging/linux/uninstall.sh "$PKG_NAME/"
+          chmod +x "$PKG_NAME/install.sh" "$PKG_NAME/uninstall.sh"
+          cp crates/app/resources/app_icon_256.png "$PKG_NAME/restclient.png"
+
+          mkdir -p dist
+          tar -czvf "dist/${PKG_NAME}.tar.gz" "$PKG_NAME"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
