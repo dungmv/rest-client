@@ -107,6 +107,16 @@ impl RenderOnce for GitCommitModal {
                     });
                 }
             })
+            .on_key_down({
+                let ws_s = ws_clone.clone();
+                move |event, _, cx| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        ws_s.update(cx, |state, cx| {
+                            state.close_git_modal(cx);
+                        });
+                    }
+                }
+            })
             .child(
                 div()
                     .id("git-commit-modal-dialog")
@@ -121,6 +131,16 @@ impl RenderOnce for GitCommitModal {
                     .flex()
                     .flex_col()
                     .overflow_hidden()
+                    .on_key_down({
+                        let ws_s = ws_clone.clone();
+                        move |event, _, cx| {
+                            if event.keystroke.key.as_str() == "escape" {
+                                ws_s.update(cx, |state, cx| {
+                                    state.close_git_modal(cx);
+                                });
+                            }
+                        }
+                    })
                     // Header
                     .child(
                         div()
@@ -301,6 +321,16 @@ impl RenderOnce for GitHistoryModal {
                     });
                 }
             })
+            .on_key_down({
+                let ws_s = ws_clone.clone();
+                move |event, _, cx| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        ws_s.update(cx, |state, cx| {
+                            state.close_git_modal(cx);
+                        });
+                    }
+                }
+            })
             .child(
                 div()
                     .id("git-history-modal-dialog")
@@ -315,6 +345,16 @@ impl RenderOnce for GitHistoryModal {
                     .flex()
                     .flex_col()
                     .overflow_hidden()
+                    .on_key_down({
+                        let ws_s = ws_clone.clone();
+                        move |event, _, cx| {
+                            if event.keystroke.key.as_str() == "escape" {
+                                ws_s.update(cx, |state, cx| {
+                                    state.close_git_modal(cx);
+                                });
+                            }
+                        }
+                    })
                     // Header
                     .child(
                         div()
@@ -466,6 +506,16 @@ impl RenderOnce for GitBranchModal {
                     });
                 }
             })
+            .on_key_down({
+                let ws_s = ws_clone.clone();
+                move |event, _, cx| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        ws_s.update(cx, |state, cx| {
+                            state.close_git_modal(cx);
+                        });
+                    }
+                }
+            })
             .child(
                 div()
                     .id("git-branch-modal-dialog")
@@ -479,6 +529,16 @@ impl RenderOnce for GitBranchModal {
                     .flex()
                     .flex_col()
                     .overflow_hidden()
+                    .on_key_down({
+                        let ws_s = ws_clone.clone();
+                        move |event, _, cx| {
+                            if event.keystroke.key.as_str() == "escape" {
+                                ws_s.update(cx, |state, cx| {
+                                    state.close_git_modal(cx);
+                                });
+                            }
+                        }
+                    })
                     // Header
                     .child(
                         div()
@@ -614,6 +674,16 @@ impl RenderOnce for GitRemotesModal {
                     });
                 }
             })
+            .on_key_down({
+                let ws_s = ws_clone.clone();
+                move |event, _, cx| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        ws_s.update(cx, |state, cx| {
+                            state.close_git_modal(cx);
+                        });
+                    }
+                }
+            })
             .child(
                 div()
                     .id("git-remotes-modal-dialog")
@@ -628,6 +698,16 @@ impl RenderOnce for GitRemotesModal {
                     .flex()
                     .flex_col()
                     .overflow_hidden()
+                    .on_key_down({
+                        let ws_s = ws_clone.clone();
+                        move |event, _, cx| {
+                            if event.keystroke.key.as_str() == "escape" {
+                                ws_s.update(cx, |state, cx| {
+                                    state.close_git_modal(cx);
+                                });
+                            }
+                        }
+                    })
                     // Header
                     .child(
                         div()

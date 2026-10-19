@@ -57,6 +57,7 @@ pub struct WorkspaceState {
     pub show_command_palette: bool,
     pub show_settings_modal: bool,
     pub show_git_modal: bool,
+    pub show_rename_workspace_modal: bool,
     pub active_git_modal: Option<GitActiveModal>,
     pub git_tab: GitTab,
     pub git_status: Option<restclient_core::git::GitStatusResult>,
@@ -82,6 +83,8 @@ pub struct WorkspaceState {
     pub renaming_example: Option<(String, String)>,
     pub rename_example_input: Option<Entity<InputState>>,
     pub rename_example_subscription: Option<gpui::Subscription>,
+    pub rename_workspace_input: Option<Entity<InputState>>,
+    pub rename_workspace_subscription: Option<gpui::Subscription>,
     pub last_renamed_example: Option<(String, String, String)>,
     pub collapsed_folders: HashSet<String>,
     pub collapsed_requests: HashSet<String>,
@@ -111,9 +114,15 @@ impl WorkspaceState {
                 .unwrap_or_else(|| PathBuf::from("./my-workspace"))
         };
 
+        let default_name = ws_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Workspace")
+            .to_string();
+
         let store: Arc<dyn WorkspaceStore> = Arc::new(FsWorkspaceStore::new(&ws_dir));
         if !ws_dir.join("workspace.yaml").exists() {
-            let _ = store.init_workspace("My Workspace");
+            let _ = store.init_workspace(&default_name);
         }
 
         settings.add_recent_workspace(&ws_dir.to_string_lossy());
@@ -129,7 +138,7 @@ impl WorkspaceState {
             store,
             workspace_path: ws_dir,
             workspace_meta: WorkspaceMeta::default(),
-            active_workspace: Some(Workspace::new("My Workspace")),
+            active_workspace: Some(Workspace::new(&default_name)),
             folders: Vec::new(),
             requests: Vec::new(),
             parse_errors: HashMap::new(),
@@ -152,6 +161,7 @@ impl WorkspaceState {
             show_command_palette: false,
             show_settings_modal: false,
             show_git_modal: false,
+            show_rename_workspace_modal: false,
             active_git_modal: None,
             git_tab: GitTab::Changes,
             git_status,
@@ -177,6 +187,8 @@ impl WorkspaceState {
             renaming_example: None,
             rename_example_input: None,
             rename_example_subscription: None,
+            rename_workspace_input: None,
+            rename_workspace_subscription: None,
             last_renamed_example: None,
             collapsed_folders: HashSet::new(),
             collapsed_requests: HashSet::new(),
@@ -202,7 +214,7 @@ impl WorkspaceState {
     pub fn open_workspace(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let store: Arc<dyn WorkspaceStore> = Arc::new(FsWorkspaceStore::new(&path));
         if !path.join("workspace.yaml").exists() {
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("My Workspace");
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("Workspace");
             let _ = store.init_workspace(name);
         }
         let git_tracked_warning = store.ensure_gitignore().unwrap_or(false);
@@ -234,9 +246,19 @@ impl WorkspaceState {
         if let Ok(meta) = self.store.load_workspace_meta() {
             self.workspace_meta = meta;
         }
+        let folder_name = self
+            .workspace_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Workspace");
+        let initial_name = if self.workspace_meta.name.trim().is_empty() {
+            folder_name.to_string()
+        } else {
+            self.workspace_meta.name.clone()
+        };
         self.active_workspace = Some(Workspace {
             id: self.workspace_path.to_string_lossy().to_string(),
-            name: self.workspace_meta.name.clone(),
+            name: initial_name,
             description: String::new(),
             active_environment_id: self.active_environment_id.clone(),
         });
@@ -1397,9 +1419,154 @@ impl WorkspaceState {
         cx.notify();
     }
 
+    pub fn start_renaming_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let curr_name = self
+            .active_workspace
+            .as_ref()
+            .map(|w| w.name.clone())
+            .unwrap_or_else(|| self.workspace_meta.name.clone());
+        let input = cx.new(|cx| {
+            let mut s = InputState::new(window, cx);
+            s.set_value(curr_name, window, cx);
+            s.select_all(window, cx);
+            s.focus(window, cx);
+            s
+        });
+
+        let sub = cx.subscribe(&input, move |this, input, event: &gpui_component::input::InputEvent, cx| {
+            match event {
+                gpui_component::input::InputEvent::PressEnter { .. } => {
+                    let val = input.read(cx).value().to_string();
+                    this.finish_renaming_workspace(val, cx);
+                }
+                _ => {}
+            }
+        });
+
+        self.show_rename_workspace_modal = true;
+        self.rename_workspace_input = Some(input);
+        self.rename_workspace_subscription = Some(sub);
+        cx.notify();
+    }
+
+    pub fn finish_renaming_workspace(&mut self, new_name: String, cx: &mut Context<Self>) {
+        self.show_rename_workspace_modal = false;
+        self.rename_workspace_input = None;
+        self.rename_workspace_subscription = None;
+        let trimmed = new_name.trim();
+        if !trimmed.is_empty() {
+            self.rename_workspace(trimmed.to_string(), cx);
+        } else {
+            cx.notify();
+        }
+    }
+
+    pub fn cancel_renaming_workspace(&mut self, cx: &mut Context<Self>) {
+        self.show_rename_workspace_modal = false;
+        self.rename_workspace_input = None;
+        self.rename_workspace_subscription = None;
+        cx.notify();
+    }
+
+    pub fn rename_workspace_internal(&mut self, new_name: &str) -> bool {
+        let trimmed = new_name.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+        self.workspace_meta.name = trimmed.to_string();
+        let _ = self.store.save_workspace_meta(&self.workspace_meta);
+        if let Some(ws) = &mut self.active_workspace {
+            ws.name = trimmed.to_string();
+        }
+        true
+    }
+
+    pub fn rename_workspace(&mut self, new_name: String, cx: &mut Context<Self>) {
+        if self.rename_workspace_internal(&new_name) {
+            cx.notify();
+        }
+    }
+
+    pub fn open_workspace_folder(&self) {
+        let path = &self.workspace_path;
+        #[cfg(target_os = "windows")]
+        let _ = std::process::Command::new("explorer").arg(path).spawn();
+        #[cfg(target_os = "macos")]
+        let _ = std::process::Command::new("open").arg(path).spawn();
+        #[cfg(target_os = "linux")]
+        let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+    }
+
+    pub fn clean_history_internal(&mut self) {
+        self.recent_workspaces.clear();
+        let mut settings = AppSettings::load();
+        settings.recent_workspaces.clear();
+        let _ = settings.save();
+        self.nav_history.clear();
+        self.nav_index = 0;
+    }
+
+    pub fn clean_history(&mut self, cx: &mut Context<Self>) {
+        self.clean_history_internal();
+        cx.notify();
+    }
+
+    pub fn clear_cookies(&mut self, cx: &mut Context<Self>) {
+        let _ = self.store.save_cookies(&serde_json::json!({}));
+        cx.notify();
+    }
+
     pub fn toggle_command_palette(&mut self, cx: &mut Context<Self>) {
         self.show_command_palette = !self.show_command_palette;
         cx.notify();
+    }
+
+    pub fn dismiss_top_modal(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.show_command_palette {
+            self.show_command_palette = false;
+            cx.notify();
+            return true;
+        }
+        if self.show_rename_workspace_modal {
+            self.cancel_renaming_workspace(cx);
+            return true;
+        }
+        if self.show_git_modal {
+            self.close_git_modal(cx);
+            return true;
+        }
+        if self.show_cookies_modal {
+            self.show_cookies_modal = false;
+            cx.notify();
+            return true;
+        }
+        if self.show_settings_modal {
+            self.show_settings_modal = false;
+            cx.notify();
+            return true;
+        }
+        if self.show_env_modal {
+            self.show_env_modal = false;
+            cx.notify();
+            return true;
+        }
+        if self.renaming_request_id.is_some() {
+            self.cancel_renaming(cx);
+            return true;
+        }
+        if self.renaming_folder_id.is_some() {
+            self.cancel_renaming_folder(cx);
+            return true;
+        }
+        if self.renaming_env_id.is_some() {
+            self.cancel_renaming_environment(cx);
+            return true;
+        }
+        if self.renaming_example.is_some() {
+            self.cancel_renaming_example(cx);
+            return true;
+        }
+        false
     }
 
     pub fn toggle_settings_modal(&mut self, cx: &mut Context<Self>) {
@@ -1923,6 +2090,7 @@ mod tests {
             show_command_palette: false,
             show_settings_modal: false,
             show_git_modal: false,
+            show_rename_workspace_modal: false,
             active_git_modal: None,
             git_tab: GitTab::Changes,
             git_status: None,
@@ -1948,6 +2116,8 @@ mod tests {
             renaming_example: None,
             rename_example_input: None,
             rename_example_subscription: None,
+            rename_workspace_input: None,
+            rename_workspace_subscription: None,
             last_renamed_example: None,
             collapsed_folders: HashSet::new(),
             collapsed_requests: HashSet::new(),
@@ -2015,6 +2185,7 @@ mod tests {
             show_command_palette: false,
             show_settings_modal: false,
             show_git_modal: false,
+            show_rename_workspace_modal: false,
             active_git_modal: None,
             git_tab: GitTab::Changes,
             git_status: None,
@@ -2040,6 +2211,8 @@ mod tests {
             renaming_example: None,
             rename_example_input: None,
             rename_example_subscription: None,
+            rename_workspace_input: None,
+            rename_workspace_subscription: None,
             last_renamed_example: None,
             collapsed_folders: HashSet::new(),
             collapsed_requests: HashSet::new(),
@@ -2142,6 +2315,7 @@ mod tests {
             show_command_palette: false,
             show_settings_modal: false,
             show_git_modal: false,
+            show_rename_workspace_modal: false,
             active_git_modal: None,
             git_tab: GitTab::Changes,
             git_status: None,
@@ -2167,6 +2341,8 @@ mod tests {
             renaming_example: None,
             rename_example_input: None,
             rename_example_subscription: None,
+            rename_workspace_input: None,
+            rename_workspace_subscription: None,
             last_renamed_example: None,
             collapsed_folders: HashSet::new(),
             collapsed_requests: HashSet::new(),
@@ -2244,6 +2420,7 @@ mod tests {
             show_command_palette: false,
             show_settings_modal: false,
             show_git_modal: false,
+            show_rename_workspace_modal: false,
             active_git_modal: None,
             git_tab: GitTab::Changes,
             git_status: None,
@@ -2269,6 +2446,8 @@ mod tests {
             renaming_example: None,
             rename_example_input: None,
             rename_example_subscription: None,
+            rename_workspace_input: None,
+            rename_workspace_subscription: None,
             last_renamed_example: None,
             collapsed_folders: HashSet::new(),
             collapsed_requests: HashSet::new(),
@@ -2334,6 +2513,7 @@ mod tests {
             show_command_palette: false,
             show_settings_modal: false,
             show_git_modal: false,
+            show_rename_workspace_modal: false,
             active_git_modal: None,
             git_tab: GitTab::Changes,
             git_status: None,
@@ -2359,6 +2539,8 @@ mod tests {
             renaming_example: None,
             rename_example_input: None,
             rename_example_subscription: None,
+            rename_workspace_input: None,
+            rename_workspace_subscription: None,
             last_renamed_example: None,
             collapsed_folders: HashSet::new(),
             collapsed_requests: HashSet::new(),
@@ -2399,4 +2581,110 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
+
+    #[test]
+    fn test_rename_workspace() {
+        let temp_dir = std::env::temp_dir().join(format!("test_ws_rename_{}", uuid::Uuid::new_v4().simple()));
+        let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
+        store.init_workspace("Original Name").unwrap();
+
+        let mut ws_state = WorkspaceState {
+            store: store.clone(),
+            workspace_path: temp_dir.clone(),
+            workspace_meta: WorkspaceMeta {
+                name: "Original Name".to_string(),
+                ..Default::default()
+            },
+            active_workspace: Some(Workspace::new("Original Name")),
+            folders: Vec::new(),
+            requests: Vec::new(),
+            parse_errors: HashMap::new(),
+            pins: Vec::new(),
+            local_state: LocalState::default(),
+            environments: Vec::new(),
+            global_environment: Environment::new("default", "Globals"),
+            active_environment_id: None,
+            selected_env_modal_id: None,
+            env_filter_query: String::new(),
+            var_filter_query: String::new(),
+            git_branch: None,
+            git_tracked_warning: false,
+            filter_query: String::new(),
+            sidebar_collapsed: false,
+            sidebar_width: px(260.),
+            split_layout_vertical: false,
+            show_env_modal: false,
+            show_cookies_modal: false,
+            show_command_palette: false,
+            show_settings_modal: false,
+            show_git_modal: false,
+            show_rename_workspace_modal: false,
+            active_git_modal: None,
+            git_tab: GitTab::Changes,
+            git_status: None,
+            git_history: Vec::new(),
+            git_branches: Vec::new(),
+            git_remotes: Vec::new(),
+            git_selected_file: None,
+            git_diff_content: None,
+            git_selected_commit: None,
+            git_commit_message: String::new(),
+            git_error: None,
+            git_loading: false,
+            git_is_syncing: false,
+            renaming_request_id: None,
+            rename_input: None,
+            rename_subscription: None,
+            renaming_folder_id: None,
+            rename_folder_input: None,
+            rename_folder_subscription: None,
+            renaming_env_id: None,
+            rename_env_input: None,
+            rename_env_subscription: None,
+            renaming_example: None,
+            rename_example_input: None,
+            rename_example_subscription: None,
+            rename_workspace_input: None,
+            rename_workspace_subscription: None,
+            last_renamed_example: None,
+            collapsed_folders: HashSet::new(),
+            collapsed_requests: HashSet::new(),
+            unsaved_requests: HashSet::new(),
+            running_request_id: None,
+            recent_workspaces: vec!["/path/one".to_string(), "/path/two".to_string()],
+            nav_history: vec!["req-1".to_string()],
+            nav_index: 0,
+            state_save_task: None,
+            request_save_tasks: HashMap::new(),
+            env_save_task: None,
+            conflicts: HashMap::new(),
+            corrupt_secrets_warning: None,
+            last_renamed_request: None,
+            watcher: None,
+            watcher_task: None,
+        };
+
+        // Rename workspace
+        let success = ws_state.rename_workspace_internal("Production API");
+        assert!(success);
+        assert_eq!(ws_state.workspace_meta.name, "Production API");
+        assert_eq!(ws_state.active_workspace.as_ref().unwrap().name, "Production API");
+
+        // Verify persisted to storage
+        let meta = store.load_workspace_meta().unwrap();
+        assert_eq!(meta.name, "Production API");
+
+        // Blank name should fail
+        assert!(!ws_state.rename_workspace_internal("   "));
+        assert_eq!(ws_state.workspace_meta.name, "Production API");
+
+        // Clean history
+        ws_state.clean_history_internal();
+        assert!(ws_state.recent_workspaces.is_empty());
+        assert!(ws_state.nav_history.is_empty());
+        assert_eq!(ws_state.nav_index, 0);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }
+

@@ -917,33 +917,51 @@ impl RenderOnce for SidebarTree {
                     )
                     // Overflow menu (⋮) - create folder
                     .child({
-                        let ws_s = ws_clone.clone();
-                        div()
-                            .id("btn-sidebar-overflow")
+                        let ws_menu = ws_clone.clone();
+                        let ed_menu = ed_clone.clone();
+                        Button::new("btn-sidebar-new")
+                            .ghost()
+                            .compact()
                             .w(px(28.))
                             .h(px(28.))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded(px(4.))
-                            .cursor_pointer()
-                            .hover(|s| s.bg(t.bg_hover))
-                            .text_color(t.text_secondary)
-                            .on_click(move |_, window, cx| {
-                                let created = ws_s.update(cx, |state, cx| {
-                                    state.create_folder(None, "new-folder".to_string(), cx)
-                                });
-                                if let Some(new_id) = created {
-                                    ws_s.update(cx, |state, cx| {
-                                        state.start_renaming_folder(new_id, "new-folder".to_string(), window, cx);
-                                    });
-                                }
-                            })
                             .child(
-                                Icon::new(IconName::Folder)
+                                Icon::new(IconName::Plus)
                                     .size(px(15.))
                                     .text_color(t.text_secondary),
                             )
+                            .dropdown_menu_with_anchor(gpui::Anchor::TopRight, move |menu, _window, _cx| {
+                                let ws_req = ws_menu.clone();
+                                let ed_req = ed_menu.clone();
+                                let ws_folder = ws_menu.clone();
+
+                                menu
+                                    .item(
+                                        PopupMenuItem::new("New Request")
+                                            .icon(Icon::new(IconName::FileText))
+                                            .on_click(move |_, _, cx| {
+                                                let req = ws_req.update(cx, |state, cx| {
+                                                    state.create_request(None, cx)
+                                                });
+                                                ed_req.update(cx, |state, cx| {
+                                                    state.set_active_request(req, true, cx);
+                                                });
+                                            }),
+                                    )
+                                    .item(
+                                        PopupMenuItem::new("New Folder")
+                                            .icon(Icon::new(IconName::Folder))
+                                            .on_click(move |_, window, cx| {
+                                                let created = ws_folder.update(cx, |state, cx| {
+                                                    state.create_folder(None, "new-folder".to_string(), cx)
+                                                });
+                                                if let Some(new_id) = created {
+                                                    ws_folder.update(cx, |state, cx| {
+                                                        state.start_renaming_folder(new_id, "new-folder".to_string(), window, cx);
+                                                    });
+                                                }
+                                            }),
+                                    )
+                            })
                     }),
             )
             // Middle section: Folders & Requests tree

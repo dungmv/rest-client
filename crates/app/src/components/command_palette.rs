@@ -70,6 +70,7 @@ impl RenderOnce for CommandPalette {
         let q = search_input.read(cx).value().to_lowercase();
 
         div()
+            .id("cmd-palette-overlay")
             .absolute()
             .inset_0()
             .bg(gpui::Hsla { a: 0.6, ..t.bg_app })
@@ -77,8 +78,30 @@ impl RenderOnce for CommandPalette {
             .items_start()
             .justify_center()
             .pt(px(100.))
+            .on_click({
+                let ws_s = ws_clone.clone();
+                move |_, _, cx| {
+                    ws_s.update(cx, |state, cx| {
+                        state.show_command_palette = false;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_key_down({
+                let ws_s = ws_clone.clone();
+                move |event, _, cx| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        ws_s.update(cx, |state, cx| {
+                            state.show_command_palette = false;
+                            cx.notify();
+                        });
+                    }
+                }
+            })
             .child(
                 div()
+                    .id("cmd-palette-dialog")
+                    .occlude()
                     .w(px(560.))
                     .max_h(px(400.))
                     .rounded(px(8.))
@@ -88,6 +111,17 @@ impl RenderOnce for CommandPalette {
                     .shadow_2xl()
                     .flex()
                     .flex_col()
+                    .on_key_down({
+                        let ws_s = ws_clone.clone();
+                        move |event, _, cx| {
+                            if event.keystroke.key.as_str() == "escape" {
+                                ws_s.update(cx, |state, cx| {
+                                    state.show_command_palette = false;
+                                    cx.notify();
+                                });
+                            }
+                        }
+                    })
                     // Search bar
                     .child(
                         div()
@@ -102,6 +136,17 @@ impl RenderOnce for CommandPalette {
                             .child(
                                 div()
                                     .flex_1()
+                                    .on_key_down({
+                                        let ws_s = ws_clone.clone();
+                                        move |event, _, cx| {
+                                            if event.keystroke.key.as_str() == "escape" {
+                                                ws_s.update(cx, |state, cx| {
+                                                    state.show_command_palette = false;
+                                                    cx.notify();
+                                                });
+                                            }
+                                        }
+                                    })
                                     .child(
                                         Input::new(&search_input)
                                             .id("cmd-palette-input")

@@ -28,7 +28,7 @@ use state::*;
 use std::sync::Arc;
 use theme::theme;
 
-actions!(restclient, [SendRequest, ToggleCommandPalette, ToggleSidebar, ToggleSettings, ToggleGitModal, NavigateBack, NavigateForward]);
+actions!(restclient, [SendRequest, ToggleCommandPalette, ToggleSidebar, ToggleSettings, ToggleGitModal, NavigateBack, NavigateForward, DismissModal]);
 
 pub enum HttpSendEvent {
     Progress(String),
@@ -912,6 +912,7 @@ impl Render for AppView {
         let show_cookies_modal = self.workspace_state.read(cx).show_cookies_modal;
         let show_settings_modal = self.workspace_state.read(cx).show_settings_modal;
         let show_git_modal = self.workspace_state.read(cx).show_git_modal;
+        let show_rename_workspace_modal = self.workspace_state.read(cx).show_rename_workspace_modal;
         let show_command_palette = self.workspace_state.read(cx).show_command_palette;
 
         let active_tab_kind = self.editor_state.read(cx).active_tab_kind;
@@ -1168,6 +1169,24 @@ impl Render for AppView {
                     if let Some(req) = ws_c.update(cx, |ws, cx| ws.navigate_forward(cx)) {
                         ed_c.update(cx, |ed, cx| {
                             ed.set_active_request(req, false, cx);
+                        });
+                    }
+                }
+            })
+            .on_action({
+                let ws_c = ws_entity.clone();
+                move |_: &DismissModal, _, cx| {
+                    ws_c.update(cx, |state, cx| {
+                        state.dismiss_top_modal(cx);
+                    });
+                }
+            })
+            .on_key_down({
+                let ws_c = ws_entity.clone();
+                move |event, _, cx| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        ws_c.update(cx, |state, cx| {
+                            state.dismiss_top_modal(cx);
                         });
                     }
                 }
@@ -1903,6 +1922,9 @@ impl Render for AppView {
             .when(show_git_modal, |this| {
                 this.child(GitModal::new(ws_entity.clone()))
             })
+            .when(show_rename_workspace_modal, |this| {
+                this.child(RenameWorkspaceModal::new(ws_entity.clone()))
+            })
             .when(show_command_palette, |this| {
                 let view_handle = app_view_entity.clone();
                 this.child(CommandPalette::new(ws_entity.clone(), ed_entity.clone(), move |_, cx| {
@@ -1941,6 +1963,7 @@ fn main() {
             KeyBinding::new("cmd-[", NavigateBack, None),
             KeyBinding::new("ctrl-]", NavigateForward, None),
             KeyBinding::new("cmd-]", NavigateForward, None),
+            KeyBinding::new("escape", DismissModal, None),
         ]);
 
         cx.on_window_closed(|cx, _window_id| {

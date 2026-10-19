@@ -60,6 +60,17 @@ impl RenderOnce for SettingsModal {
                     });
                 }
             })
+            .on_key_down({
+                let ws_s = ws_clone.clone();
+                move |event, _, cx| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        ws_s.update(cx, |state, cx| {
+                            state.show_settings_modal = false;
+                            cx.notify();
+                        });
+                    }
+                }
+            })
             .child(
                 div()
                     .id("settings-modal-dialog")
@@ -74,6 +85,17 @@ impl RenderOnce for SettingsModal {
                     .flex()
                     .flex_col()
                     .overflow_hidden()
+                    .on_key_down({
+                        let ws_s = ws_clone.clone();
+                        move |event, _, cx| {
+                            if event.keystroke.key.as_str() == "escape" {
+                                ws_s.update(cx, |state, cx| {
+                                    state.show_settings_modal = false;
+                                    cx.notify();
+                                });
+                            }
+                        }
+                    })
                     // Modal Header
                     .child(
                         div()
@@ -419,6 +441,93 @@ impl RenderOnce for SettingsModal {
                                                     .text_color(t.text_secondary)
                                                     .child(".restclient/workspaces/"),
                                             ),
+                                    ),
+                            )
+                            // Separator
+                            .child(div().h(px(1.)).bg(t.border))
+                            // Cookies & Session section
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(t.text_secondary)
+                                    .child("COOKIES & SESSION"),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .gap(px(12.))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(2.))
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                    .text_color(t.text_primary)
+                                                    .child("Cookie Jar"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(t.text_muted)
+                                                    .child("Inspect session cookies, clear stored cookies, or manage cookie jar."),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(8.))
+                                            .child({
+                                                let ws_s = ws_clone.clone();
+                                                div()
+                                                    .id("btn-settings-clear-cookies")
+                                                    .px(px(10.))
+                                                    .py(px(5.))
+                                                    .rounded(px(4.))
+                                                    .bg(t.bg_input)
+                                                    .border_1()
+                                                    .border_color(t.border)
+                                                    .text_color(t.text_secondary)
+                                                    .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
+                                                    .cursor_pointer()
+                                                    .text_xs()
+                                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                                    .on_click(move |_, _, cx| {
+                                                        ws_s.update(cx, |state, cx| {
+                                                            state.clear_cookies(cx);
+                                                        });
+                                                    })
+                                                    .child("Clear")
+                                            })
+                                            .child({
+                                                let ws_s = ws_clone.clone();
+                                                div()
+                                                    .id("btn-settings-open-cookies")
+                                                    .px(px(10.))
+                                                    .py(px(5.))
+                                                    .rounded(px(4.))
+                                                    .bg(t.primary)
+                                                    .text_color(t.primary_foreground)
+                                                    .hover(|s| s.opacity(0.9))
+                                                    .cursor_pointer()
+                                                    .text_xs()
+                                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                                    .on_click(move |_, _, cx| {
+                                                        ws_s.update(cx, |state, cx| {
+                                                            state.show_settings_modal = false;
+                                                            state.show_cookies_modal = true;
+                                                            cx.notify();
+                                                        });
+                                                    })
+                                                    .child("🍪 Manage Cookies...")
+                                            }),
                                     ),
                             )
                             // Separator

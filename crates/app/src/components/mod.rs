@@ -16,6 +16,7 @@ pub mod test_results_panel;
 pub mod tabs_with_badge;
 pub mod titlebar;
 pub mod toast;
+pub mod rename_workspace_modal;
 pub mod git_modal;
 
 pub use body_editor::*;
@@ -36,3 +37,4 @@ pub use test_results_panel::*;
 pub use titlebar::*;
 pub use toast::*;
 pub use git_modal::*;
+pub use rename_workspace_modal::*;

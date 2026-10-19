@@ -116,14 +116,37 @@ impl RenderOnce for EnvironmentModal {
             && active_custom_env.as_ref().map(|e| e.id.as_str()) == active_env_id.as_deref();
 
         div()
+            .id("env-modal-overlay")
             .absolute()
             .inset_0()
             .bg(gpui::Hsla { a: 0.65, ..t.bg_app })
             .flex()
             .items_center()
             .justify_center()
+            .on_click({
+                let ws_s = ws_clone.clone();
+                move |_, _, cx| {
+                    ws_s.update(cx, |state, cx| {
+                        state.show_env_modal = false;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_key_down({
+                let ws_s = ws_clone.clone();
+                move |event, _, cx| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        ws_s.update(cx, |state, cx| {
+                            state.show_env_modal = false;
+                            cx.notify();
+                        });
+                    }
+                }
+            })
             .child(
                 div()
+                    .id("env-modal-dialog")
+                    .occlude()
                     .w(px(980.))
                     .h(px(580.))
                     .rounded(px(10.))
@@ -134,6 +157,17 @@ impl RenderOnce for EnvironmentModal {
                     .flex()
                     .flex_col()
                     .overflow_hidden()
+                    .on_key_down({
+                        let ws_s = ws_clone.clone();
+                        move |event, _, cx| {
+                            if event.keystroke.key.as_str() == "escape" {
+                                ws_s.update(cx, |state, cx| {
+                                    state.show_env_modal = false;
+                                    cx.notify();
+                                });
+                            }
+                        }
+                    })
                     // Modal Header
                     .child(
                         div()

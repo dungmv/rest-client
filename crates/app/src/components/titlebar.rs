@@ -45,11 +45,24 @@ impl RenderOnce for AppTitleBar {
         let ws = self.workspace_state.read(cx);
         let ed = self.editor_state.read(cx);
 
+        let folder_name = ws
+            .workspace_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Workspace")
+            .to_string();
+
         let ws_name = ws
             .active_workspace
             .as_ref()
-            .map(|w| w.name.clone())
-            .unwrap_or_else(|| "api".to_string());
+            .map(|w| {
+                if !w.name.trim().is_empty() {
+                    w.name.clone()
+                } else {
+                    folder_name.clone()
+                }
+            })
+            .unwrap_or(folder_name);
 
         let env_name = ws
             .active_environment()
@@ -108,7 +121,7 @@ impl RenderOnce for AppTitleBar {
                     })
                     .child("◫")
             })
-            // Workspace switcher pill dropdown: [icon + RestClient • ws_name ▾]
+            // Workspace switcher pill dropdown: [icon + ws_name ▾]
             .child({
                 let ws_s = ws_clone.clone();
                 let recent = ws.recent_workspaces.clone();
@@ -135,7 +148,7 @@ impl RenderOnce for AppTitleBar {
                             .text_xs()
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(t.text_primary)
-                            .child(format!("RestClient • {}", ws_name))
+                            .child(ws_name)
                     )
                     .child(
                         div()
@@ -146,7 +159,36 @@ impl RenderOnce for AppTitleBar {
                     .dropdown_menu(move |menu, _window, _cx| {
                         let ws_new = ws_s.clone();
                         let ws_open = ws_s.clone();
+                        let ws_rename = ws_s.clone();
+                        let ws_folder = ws_s.clone();
+                        let ws_clean = ws_s.clone();
+
                         let mut m = menu
+                            .item(
+                                PopupMenuItem::new("✏️ Rename Workspace...")
+                                    .on_click(move |_, window, cx| {
+                                        ws_rename.update(cx, |state, cx| {
+                                            state.start_renaming_workspace(window, cx);
+                                        });
+                                    })
+                            )
+                            .item(
+                                PopupMenuItem::new("📂 Open Folder")
+                                    .on_click(move |_, _, cx| {
+                                        ws_folder.update(cx, |state, _| {
+                                            state.open_workspace_folder();
+                                        });
+                                    })
+                            )
+                            .item(
+                                PopupMenuItem::new("🧹 Clean History")
+                                    .on_click(move |_, _, cx| {
+                                        ws_clean.update(cx, |state, cx| {
+                                            state.clean_history(cx);
+                                        });
+                                    })
+                            )
+                            .separator()
                             .item(
                                 PopupMenuItem::new("📁 Open Workspace...")
                                     .on_click(move |_, _, cx| {
@@ -161,8 +203,13 @@ impl RenderOnce for AppTitleBar {
                                 PopupMenuItem::new("✨ New Workspace...")
                                     .on_click(move |_, _, cx| {
                                         if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+                                            let name = folder
+                                                .file_name()
+                                                .and_then(|n| n.to_str())
+                                                .unwrap_or("Workspace")
+                                                .to_string();
                                             ws_new.update(cx, |state, cx| {
-                                                state.new_workspace(folder, "My Workspace", cx);
+                                                state.new_workspace(folder, &name, cx);
                                             });
                                         }
                                     })
@@ -278,28 +325,9 @@ impl RenderOnce for AppTitleBar {
 
                         m
                     })
-            })
-            // Cookie jar button
-            .child({
-                let ws_s = ws_clone.clone();
-                div()
-                    .id("btn-cookies")
-                    .occlude()
-                    .px(px(6.))
-                    .py(px(3.))
-                    .rounded(px(4.))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(t.bg_hover))
-                    .text_color(t.text_secondary)
-                    .on_click(move |_, _, cx| {
-                        ws_s.update(cx, |state, cx| {
-                            state.toggle_cookies_modal(cx);
-                        });
-                    })
-                    .child("🍪")
             });
 
-        // Center section: current request title (truncated domain / custom name)
+        // Center section: search button + current request name
         let center_section = div()
             .flex_1()
             .min_w(px(0.))
@@ -309,18 +337,70 @@ impl RenderOnce for AppTitleBar {
             .flex()
             .items_center()
             .justify_center()
-            .child(
-                div()
-                    .max_w(px(340.))
-                    .overflow_hidden()
-                    .truncate()
-                    .text_xs()
-                    .font_family(".SystemMonoFont")
-                    .text_color(t.text_secondary)
-                    .child(current_title),
-            );
+            .child({
+                let ws_s = ws_clone.clone();
+                let has_title = !current_title.trim().is_empty();
+                let label = if has_title {
+                    current_title.clone()
+                } else {
+                    "Search requests, commands...".to_string()
+                };
 
-        // Right toolbar buttons: split toggle, search, settings
+                div()
+                    .id("btn-titlebar-search")
+                    .occlude()
+                    .h(px(24.))
+                    .w(px(320.))
+                    .max_w(px(400.))
+                    .px(px(8.))
+                    .rounded(px(5.))
+                    .bg(t.bg_card)
+                    .border_1()
+                    .border_color(t.border)
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(6.))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(t.bg_hover).border_color(t.border_focus))
+                    .on_click(move |_, _, cx| {
+                        ws_s.update(cx, |state, cx| {
+                            state.toggle_command_palette(cx);
+                        });
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .min_w(px(0.))
+                            .flex_1()
+                            .overflow_hidden()
+                            .child(
+                                div()
+                                    .truncate()
+                                    .text_xs()
+                                    .font_family(".SystemMonoFont")
+                                    .text_color(if has_title { t.text_primary } else { t.text_muted })
+                                    .child(label),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .px(px(4.))
+                            .py(px(1.))
+                            .rounded(px(3.))
+                            .bg(t.bg_input)
+                            .border_1()
+                            .border_color(t.border)
+                            .text_color(t.text_muted)
+                            .font_family(".SystemMonoFont")
+                            .text_size(px(10.))
+                            .child("Ctrl+K"),
+                    )
+            });
+
+        // Right toolbar buttons: split toggle, settings
         let right_toolbar = div()
             .flex()
             .items_center()
@@ -346,26 +426,6 @@ impl RenderOnce for AppTitleBar {
                         });
                     })
                     .child(if is_vert { "⬒" } else { "◫" })
-            })
-
-            // Command palette search button
-            .child({
-                let ws_s = ws_clone.clone();
-                div()
-                    .id("btn-cmd-palette")
-                    .occlude()
-                    .px(px(6.))
-                    .py(px(3.))
-                    .rounded(px(4.))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(t.bg_hover))
-                    .text_color(t.text_secondary)
-                    .on_click(move |_, _, cx| {
-                        ws_s.update(cx, |state, cx| {
-                            state.toggle_command_palette(cx);
-                        });
-                    })
-                    .child("🔍")
             })
             // Settings button
             .child({
