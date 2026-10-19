@@ -97,12 +97,6 @@ impl RenderOnce for SettingsModal {
                                             .font_weight(gpui::FontWeight::BOLD)
                                             .text_color(t.text_primary)
                                             .child("Settings"),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(t.text_muted)
-                                            .child("• Request & network configuration"),
                                     ),
                             )
                             .child({
@@ -178,7 +172,7 @@ impl RenderOnce for SettingsModal {
                                     .text_xs()
                                     .font_weight(gpui::FontWeight::BOLD)
                                     .text_color(t.text_secondary)
-                                    .child("NETWORK & REQUEST EXECUTION"),
+                                    .child("Network & Execution"),
                             )
                             // 1. Timeout presets
                             .child(

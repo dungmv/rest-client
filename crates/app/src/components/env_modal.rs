@@ -156,12 +156,6 @@ impl RenderOnce for EnvironmentModal {
                                             .font_weight(gpui::FontWeight::BOLD)
                                             .text_color(t.text_primary)
                                             .child("Environments & Variables"),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(t.text_muted)
-                                            .child("• Manage shared globals and custom environment configurations"),
                                     ),
                             )
                             .child({

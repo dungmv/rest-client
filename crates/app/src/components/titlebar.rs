@@ -347,25 +347,7 @@ impl RenderOnce for AppTitleBar {
                     })
                     .child(if is_vert { "⬒" } else { "◫" })
             })
-            // Git Source Control button
-            .child({
-                let ws_s = ws_clone.clone();
-                div()
-                    .id("btn-git-source-control")
-                    .occlude()
-                    .px(px(6.))
-                    .py(px(3.))
-                    .rounded(px(4.))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(t.bg_hover))
-                    .text_color(t.text_secondary)
-                    .on_click(move |_, _, cx| {
-                        ws_s.update(cx, |state, cx| {
-                            state.toggle_git_modal(cx);
-                        });
-                    })
-                    .child("⎇")
-            })
+
             // Command palette search button
             .child({
                 let ws_s = ws_clone.clone();

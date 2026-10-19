@@ -80,6 +80,17 @@ impl RenderOnce for GitCommitModal {
         );
         let commit_input = commit_input_holder.read(cx).0.clone();
 
+        let view_mode_holder = window.use_keyed_state(
+            gpui::SharedString::from("git-diff-view-mode"),
+            cx,
+            |_window, cx| {
+                let st = cx.new(|_cx| DiffViewMode::Split);
+                (st, ())
+            },
+        );
+        let view_mode_entity = view_mode_holder.read(cx).0.clone();
+        let view_mode = *view_mode_entity.read(cx);
+
         div()
             .id("git-commit-modal-overlay")
             .absolute()
@@ -100,8 +111,8 @@ impl RenderOnce for GitCommitModal {
                 div()
                     .id("git-commit-modal-dialog")
                     .occlude()
-                    .w(px(980.))
-                    .h(px(640.))
+                    .w(px(1060.))
+                    .h(px(680.))
                     .rounded(px(8.))
                     .bg(t.bg_card)
                     .border_1()
@@ -183,7 +194,7 @@ impl RenderOnce for GitCommitModal {
                                                         ws.refresh_git_status(cx);
                                                     });
                                                 })
-                                                .child("🔄 Refresh"),
+                                                .child("⟳ Refresh"),
                                         )
                                     })
                                     .child(
@@ -226,6 +237,8 @@ impl RenderOnce for GitCommitModal {
                                     selected_file,
                                     diff_content,
                                     commit_input,
+                                    view_mode,
+                                    view_mode_entity,
                                 )
                             }),
                     ),
@@ -250,7 +263,7 @@ impl GitHistoryModal {
 }
 
 impl RenderOnce for GitHistoryModal {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
         let ws = self.workspace_state.read(cx);
         let ws_clone = self.workspace_state.clone();
@@ -260,6 +273,17 @@ impl RenderOnce for GitHistoryModal {
         let history = ws.git_history.clone();
         let selected_commit = ws.git_selected_commit.clone();
         let git_error = ws.git_error.clone();
+
+        let view_mode_holder = window.use_keyed_state(
+            gpui::SharedString::from("git-diff-view-mode"),
+            cx,
+            |_window, cx| {
+                let st = cx.new(|_cx| DiffViewMode::Split);
+                (st, ())
+            },
+        );
+        let view_mode_entity = view_mode_holder.read(cx).0.clone();
+        let view_mode = *view_mode_entity.read(cx);
 
         div()
             .id("git-history-modal-overlay")
@@ -281,8 +305,8 @@ impl RenderOnce for GitHistoryModal {
                 div()
                     .id("git-history-modal-dialog")
                     .occlude()
-                    .w(px(980.))
-                    .h(px(640.))
+                    .w(px(1060.))
+                    .h(px(680.))
                     .rounded(px(8.))
                     .bg(t.bg_card)
                     .border_1()
@@ -311,7 +335,7 @@ impl RenderOnce for GitHistoryModal {
                                         div()
                                             .text_base()
                                             .text_color(t.primary)
-                                            .child("📜"),
+                                            .child("◷"),
                                     )
                                     .child(
                                         div()
@@ -381,7 +405,7 @@ impl RenderOnce for GitHistoryModal {
                             .child(if !is_repo {
                                 render_not_a_repo_view(ws_clone.clone())
                             } else {
-                                render_history_view(ws_clone.clone(), history, selected_commit)
+                                render_history_view(ws_clone.clone(), history, selected_commit, view_mode, view_mode_entity)
                             }),
                     ),
             )
@@ -412,7 +436,6 @@ impl RenderOnce for GitBranchModal {
 
         let is_repo = ws.git_status.as_ref().map(|s| s.is_repo).unwrap_or(false);
         let current_branch = ws.git_branch.clone().unwrap_or_else(|| "main".to_string());
-        let branches = ws.git_branches.clone();
         let git_error = ws.git_error.clone();
 
         let branch_input_holder = window.use_keyed_state(
@@ -447,8 +470,7 @@ impl RenderOnce for GitBranchModal {
                 div()
                     .id("git-branch-modal-dialog")
                     .occlude()
-                    .w(px(580.))
-                    .h(px(500.))
+                    .w(px(420.))
                     .rounded(px(8.))
                     .bg(t.bg_card)
                     .border_1()
@@ -460,7 +482,7 @@ impl RenderOnce for GitBranchModal {
                     // Header
                     .child(
                         div()
-                            .h(px(46.))
+                            .h(px(44.))
                             .px(px(16.))
                             .border_b_1()
                             .border_color(t.border)
@@ -472,35 +494,20 @@ impl RenderOnce for GitBranchModal {
                                 div()
                                     .flex()
                                     .items_center()
-                                    .gap(px(10.))
+                                    .gap(px(8.))
                                     .child(
                                         div()
                                             .text_base()
                                             .text_color(t.primary)
-                                            .child("🌱"),
+                                            .child("⎇"),
                                     )
                                     .child(
                                         div()
                                             .text_sm()
                                             .font_weight(gpui::FontWeight::BOLD)
                                             .text_color(t.text_primary)
-                                            .child("Git Branches"),
-                                    )
-                                    .when(is_repo, |this| {
-                                        this.child(
-                                            div()
-                                                .px(px(6.))
-                                                .py(px(2.))
-                                                .rounded(px(4.))
-                                                .bg(t.bg_hover)
-                                                .border_1()
-                                                .border_color(t.border)
-                                                .text_xs()
-                                                .font_family(".SystemMonoFont")
-                                                .text_color(t.text_secondary)
-                                                .child(format!("Current: {}", current_branch)),
-                                        )
-                                    }),
+                                            .child("New Branch"),
+                                    ),
                             )
                             .child(
                                 div()
@@ -529,14 +536,11 @@ impl RenderOnce for GitBranchModal {
                     })
                     // Body
                     .child(
-                        div()
-                            .flex_1()
-                            .overflow_hidden()
-                            .child(if !is_repo {
-                                render_not_a_repo_view(ws_clone.clone())
-                            } else {
-                                render_branches_view(ws_clone.clone(), branches, current_branch, branch_input)
-                            }),
+                        if !is_repo {
+                            render_not_a_repo_view(ws_clone.clone())
+                        } else {
+                            render_new_branch_view(ws_clone.clone(), current_branch, branch_input)
+                        },
                     ),
             )
             .into_any_element()
@@ -614,8 +618,8 @@ impl RenderOnce for GitRemotesModal {
                 div()
                     .id("git-remotes-modal-dialog")
                     .occlude()
-                    .w(px(600.))
-                    .h(px(480.))
+                    .w(px(480.))
+                    .h(px(340.))
                     .rounded(px(8.))
                     .bg(t.bg_card)
                     .border_1()
@@ -627,7 +631,7 @@ impl RenderOnce for GitRemotesModal {
                     // Header
                     .child(
                         div()
-                            .h(px(46.))
+                            .h(px(44.))
                             .px(px(16.))
                             .border_b_1()
                             .border_color(t.border)
@@ -639,12 +643,12 @@ impl RenderOnce for GitRemotesModal {
                                 div()
                                     .flex()
                                     .items_center()
-                                    .gap(px(10.))
+                                    .gap(px(8.))
                                     .child(
                                         div()
                                             .text_base()
                                             .text_color(t.primary)
-                                            .child("🌐"),
+                                            .child("⇄"),
                                     )
                                     .child(
                                         div()
@@ -802,6 +806,8 @@ fn render_changes_view(
     selected_file: Option<(String, bool)>,
     diff_content: Option<String>,
     commit_input: Entity<InputState>,
+    view_mode: DiffViewMode,
+    mode_entity: Entity<DiffViewMode>,
 ) -> gpui::AnyElement {
     let t = theme();
 
@@ -814,88 +820,17 @@ fn render_changes_view(
     div()
         .size_full()
         .flex()
-        // Left Column: Staging lists and Commit input (width: 360px)
+        // Left Column: Staging lists and Commit input (width: 350px)
         .child(
             div()
-                .w(px(360.))
+                .w(px(350.))
                 .h_full()
                 .border_r_1()
                 .border_color(t.border)
                 .bg(t.bg_sidebar)
                 .flex()
                 .flex_col()
-                // Commit Section
-                .child(
-                    div()
-                        .p(px(12.))
-                        .border_b_1()
-                        .border_color(t.border)
-                        .flex()
-                        .flex_col()
-                        .gap(px(8.))
-                        .child(
-                            div()
-                                .text_xs()
-                                .font_weight(gpui::FontWeight::BOLD)
-                                .text_color(t.text_secondary)
-                                .child("COMMIT MESSAGE"),
-                        )
-                        .child(
-                            div()
-                                .bg(t.bg_card)
-                                .border_1()
-                                .border_color(t.border)
-                                .rounded(px(6.))
-                                .p(px(4.))
-                                .child(Input::new(&commit_input)),
-                        )
-                        .child({
-                            let ws_commit = ws_clone.clone();
-                            let inp = commit_input.clone();
-                            let can_commit = total_staged > 0;
-
-                            div()
-                                .id("btn-commit-action")
-                                .h(px(30.))
-                                .rounded(px(6.))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .when(can_commit, |s| {
-                                    s.bg(t.primary)
-                                        .cursor_pointer()
-                                        .text_color(gpui::rgb(0xffffff))
-                                        .hover(|h| h.opacity(0.9))
-                                })
-                                .when(!can_commit, |s| {
-                                    s.bg(t.bg_hover)
-                                        .text_color(t.text_muted)
-                                })
-                                .text_xs()
-                                .font_weight(gpui::FontWeight::BOLD)
-                                .on_click(move |_, window, cx| {
-                                    if !can_commit {
-                                        return;
-                                    }
-                                    let msg = inp.read(cx).value().to_string();
-                                    if msg.trim().is_empty() {
-                                        return;
-                                    }
-                                    let ws_s = ws_commit.clone();
-                                    let inp_clear = inp.clone();
-                                    ws_s.update(cx, |ws, cx| {
-                                        if ws.git_commit(&msg, cx).is_ok() {
-                                            inp_clear.update(cx, |inp_st, cx| {
-                                                inp_st.set_value("", window, cx);
-                                            });
-                                            ws.close_git_modal(cx);
-                                        }
-                                    });
-                                })
-                                .child(format!("✓ Commit Changes ({} staged)", total_staged))
-                        }),
-                )
-                // Staged & Working Files Lists (Scrollable)
+                // 1. Staged & Working Files Lists (Scrollable top area)
                 .child(
                     div()
                         .flex_1()
@@ -904,7 +839,7 @@ fn render_changes_view(
                         .flex()
                         .flex_col()
                         .gap(px(12.))
-                        // 1. Staged Changes Section
+                        // Staged Changes Section
                         .child(
                             div()
                                 .flex()
@@ -919,9 +854,9 @@ fn render_changes_view(
                                         .child(
                                             div()
                                                 .text_xs()
-                                                .font_weight(gpui::FontWeight::BOLD)
+                                                .font_weight(gpui::FontWeight::SEMIBOLD)
                                                 .text_color(t.text_secondary)
-                                                .child(format!("STAGED CHANGES ({})", total_staged)),
+                                                .child(format!("Staged ({})", total_staged)),
                                         )
                                         .when(total_staged > 0, |this| {
                                             let ws_unstage_all = ws_clone.clone();
@@ -1000,7 +935,7 @@ fn render_changes_view(
                                         )
                                 })),
                         )
-                        // 2. Unstaged / Working Changes Section
+                        // Working Changes Section
                         .child(
                             div()
                                 .flex()
@@ -1015,9 +950,9 @@ fn render_changes_view(
                                         .child(
                                             div()
                                                 .text_xs()
-                                                .font_weight(gpui::FontWeight::BOLD)
+                                                .font_weight(gpui::FontWeight::SEMIBOLD)
                                                 .text_color(t.text_secondary)
-                                                .child(format!("CHANGES ({})", unstaged_files.len() + untracked_files.len())),
+                                                .child(format!("Changes ({})", unstaged_files.len() + untracked_files.len())),
                                         )
                                         .when(!unstaged_files.is_empty() || !untracked_files.is_empty(), |this| {
                                             let ws_stage_all = ws_clone.clone();
@@ -1122,6 +1057,78 @@ fn render_changes_view(
                                         )
                                 })),
                         ),
+                )
+                // 2. Commit Section (Moved to bottom with taller input)
+                .child(
+                    div()
+                        .p(px(10.))
+                        .border_t_1()
+                        .border_color(t.border)
+                        .bg(t.bg_card)
+                        .flex()
+                        .flex_col()
+                        .gap(px(8.))
+                        .child(
+                            div()
+                                .bg(t.bg_app)
+                                .border_1()
+                                .border_color(t.border)
+                                .rounded(px(6.))
+                                .p(px(6.))
+                                .h(px(68.))
+                                .flex()
+                                .flex_col()
+                                .child(
+                                    Input::new(&commit_input)
+                                        .appearance(false)
+                                        .bordered(false)
+                                ),
+                        )
+                        .child({
+                            let ws_commit = ws_clone.clone();
+                            let inp = commit_input.clone();
+                            let can_commit = total_staged > 0;
+
+                            div()
+                                .id("btn-commit-action")
+                                .h(px(32.))
+                                .rounded(px(6.))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .when(can_commit, |s| {
+                                    s.bg(t.primary)
+                                        .cursor_pointer()
+                                        .text_color(gpui::rgb(0xffffff))
+                                        .hover(|h| h.opacity(0.9))
+                                })
+                                .when(!can_commit, |s| {
+                                    s.bg(t.bg_hover)
+                                        .text_color(t.text_muted)
+                                })
+                                .text_xs()
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .on_click(move |_, window, cx| {
+                                    if !can_commit {
+                                        return;
+                                    }
+                                    let msg = inp.read(cx).value().to_string();
+                                    if msg.trim().is_empty() {
+                                        return;
+                                    }
+                                    let ws_s = ws_commit.clone();
+                                    let inp_clear = inp.clone();
+                                    ws_s.update(cx, |ws, cx| {
+                                        if ws.git_commit(&msg, cx).is_ok() {
+                                            inp_clear.update(cx, |inp_st, cx| {
+                                                inp_st.set_value("", window, cx);
+                                            });
+                                            ws.close_git_modal(cx);
+                                        }
+                                    });
+                                })
+                                .child(format!("✓ Commit Changes ({} staged)", total_staged))
+                        }),
                 ),
         )
         // Right Column: Diff Viewer (Flex-1)
@@ -1134,7 +1141,7 @@ fn render_changes_view(
                 .flex_col()
                 .child(
                     div()
-                        .h(px(36.))
+                        .h(px(40.))
                         .px(px(14.))
                         .border_b_1()
                         .border_color(t.border)
@@ -1146,31 +1153,46 @@ fn render_changes_view(
                             div()
                                 .flex()
                                 .items_center()
-                                .gap(px(6.))
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .font_weight(gpui::FontWeight::BOLD)
-                                        .text_color(t.text_secondary)
-                                        .child("DIFF PREVIEW:"),
-                                )
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .font_family(".SystemMonoFont")
-                                        .text_color(t.text_primary)
-                                        .child(selected_file.as_ref().map(|(p, staged)| {
-                                            format!("{} ({})", p, if *staged { "staged" } else { "working tree" })
-                                        }).unwrap_or_else(|| "No file selected".to_string())),
-                                ),
-                        ),
+                                .gap(px(8.))
+                                .when_some(selected_file.as_ref(), |this, (p, staged)| {
+                                    this.child(
+                                        div()
+                                            .px(px(6.))
+                                            .py(px(2.))
+                                            .rounded(px(4.))
+                                            .bg(t.bg_hover)
+                                            .border_1()
+                                            .border_color(t.border)
+                                            .text_xs()
+                                            .text_color(if *staged { t.primary } else { t.text_secondary })
+                                            .child(if *staged { "staged" } else { "working tree" }),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .font_family(".SystemMonoFont")
+                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                            .text_color(t.text_primary)
+                                            .child(p.clone()),
+                                    )
+                                })
+                                .when(selected_file.is_none(), |this| {
+                                    this.child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(t.text_muted)
+                                            .child("No file selected"),
+                                    )
+                                }),
+                        )
+                        .child(render_diff_view_toggle(view_mode, mode_entity.clone())),
                 )
                 .child(
                     div()
                         .flex_1()
                         .overflow_y_scrollbar()
-                        .p(px(12.))
-                        .child(render_diff_content(diff_content)),
+                        .p(px(8.))
+                        .child(render_diff_content(diff_content, view_mode)),
                 ),
         )
         .into_any_element()
@@ -1180,32 +1202,24 @@ fn render_history_view(
     ws_clone: Entity<WorkspaceState>,
     history: Vec<restclient_core::git::GitCommitInfo>,
     selected_commit: Option<restclient_core::git::GitCommitDetail>,
+    view_mode: DiffViewMode,
+    mode_entity: Entity<DiffViewMode>,
 ) -> gpui::AnyElement {
     let t = theme();
 
     div()
         .size_full()
         .flex()
-        // Left Column: Commit Log (width: 360px)
+        // Left Column: Commit Log (width: 350px)
         .child(
             div()
-                .w(px(360.))
+                .w(px(350.))
                 .h_full()
                 .border_r_1()
                 .border_color(t.border)
                 .bg(t.bg_sidebar)
                 .flex()
                 .flex_col()
-                .child(
-                    div()
-                        .p(px(10.))
-                        .border_b_1()
-                        .border_color(t.border)
-                        .text_xs()
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .text_color(t.text_secondary)
-                        .child(format!("COMMITS ({})", history.len())),
-                )
                 .child(
                     div()
                         .flex_1()
@@ -1295,10 +1309,17 @@ fn render_history_view(
                             .gap(px(6.))
                             .child(
                                 div()
-                                    .text_sm()
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(t.text_primary)
-                                    .child(commit_detail.commit.message.clone()),
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .text_color(t.text_primary)
+                                            .child(commit_detail.commit.message.clone()),
+                                    )
+                                    .child(render_diff_view_toggle(view_mode, mode_entity.clone())),
                             )
                             .child(
                                 div()
@@ -1337,8 +1358,8 @@ fn render_history_view(
                         div()
                             .flex_1()
                             .overflow_y_scrollbar()
-                            .p(px(12.))
-                            .child(render_diff_content(Some(commit_detail.diff))),
+                            .p(px(8.))
+                            .child(render_diff_content(Some(commit_detail.diff), view_mode)),
                     )
                     .into_any_element()
             } else {
@@ -1358,211 +1379,122 @@ fn render_history_view(
         .into_any_element()
 }
 
-fn render_branches_view(
+fn render_new_branch_view(
     ws_clone: Entity<WorkspaceState>,
-    branches: Vec<restclient_core::git::GitBranchInfo>,
     current_branch: String,
     branch_input: Entity<InputState>,
 ) -> gpui::AnyElement {
     let t = theme();
+    let ws_create = ws_clone.clone();
+    let ws_cancel = ws_clone.clone();
+    let inp = branch_input.clone();
+    let inp_val = branch_input.clone();
 
     div()
-        .size_full()
-        .p(px(16.))
+        .p(px(20.))
         .flex()
         .flex_col()
-        .gap(px(16.))
-        // Top: Create New Branch Card
+        .gap(px(14.))
         .child(
             div()
-                .p(px(14.))
-                .rounded(px(8.))
-                .bg(t.bg_sidebar)
-                .border_1()
-                .border_color(t.border)
                 .flex()
                 .flex_col()
-                .gap(px(10.))
+                .gap(px(6.))
                 .child(
                     div()
-                        .text_xs()
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .text_color(t.text_secondary)
-                        .child("CREATE NEW BRANCH"),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .child(
-                            div()
-                                .flex_1()
-                                .bg(t.bg_card)
-                                .border_1()
-                                .border_color(t.border)
-                                .rounded(px(6.))
-                                .p(px(4.))
-                                .child(Input::new(&branch_input)),
-                        )
-                        .child({
-                            let ws_create = ws_clone.clone();
-                            let inp = branch_input.clone();
-                            div()
-                                .id("btn-create-branch-action")
-                                .px(px(14.))
-                                .h(px(32.))
-                                .rounded(px(6.))
-                                .bg(t.primary)
-                                .cursor_pointer()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .text_xs()
-                                .font_weight(gpui::FontWeight::BOLD)
-                                .text_color(gpui::rgb(0xffffff))
-                                .hover(|s| s.opacity(0.9))
-                                .on_click(move |_, window, cx| {
-                                    let name = inp.read(cx).value().to_string();
-                                    if name.trim().is_empty() {
-                                        return;
-                                    }
-                                    let ws_s = ws_create.clone();
-                                    let inp_clear = inp.clone();
-                                    ws_s.update(cx, |ws, cx| {
-                                        if ws.git_create_branch(&name, cx).is_ok() {
-                                            inp_clear.update(cx, |inp_st, cx| {
-                                                inp_st.set_value("", window, cx);
-                                            });
-                                            ws.close_git_modal(cx);
-                                        }
-                                    });
-                                })
-                                .child("✨ Create & Checkout")
-                        }),
-                ),
-        )
-        // Bottom: Branches List
-        .child(
-            div()
-                .flex_1()
-                .overflow_y_scrollbar()
-                .rounded(px(8.))
-                .bg(t.bg_sidebar)
-                .border_1()
-                .border_color(t.border)
-                .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .px(px(14.))
-                        .py(px(10.))
-                        .border_b_1()
-                        .border_color(t.border)
-                        .text_xs()
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .text_color(t.text_secondary)
-                        .child("LOCAL BRANCHES"),
-                )
-                .children(branches.into_iter().map(|b| {
-                    let ws_checkout = ws_clone.clone();
-                    let ws_delete = ws_clone.clone();
-                    let b_name = b.name.clone();
-                    let b_del = b.name.clone();
-                    let is_active = b.is_current || b.name == current_branch;
-
-                    div()
-                        .id(format!("branch-row-{}", b.name))
-                        .px(px(14.))
-                        .py(px(8.))
-                        .border_b_1()
-                        .border_color(t.border)
                         .flex()
                         .items_center()
                         .justify_between()
-                        .hover(|s| s.bg(t.bg_hover))
                         .child(
                             div()
-                                .flex()
-                                .items_center()
-                                .gap(px(8.))
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(if is_active { t.primary } else { t.text_muted })
-                                        .child(if is_active { "✓" } else { "⎇" }),
-                                )
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .font_family(".SystemMonoFont")
-                                        .font_weight(if is_active { gpui::FontWeight::BOLD } else { gpui::FontWeight::NORMAL })
-                                        .text_color(if is_active { t.primary } else { t.text_primary })
-                                        .child(b.name.clone()),
-                                )
-                                .when(is_active, |this| {
-                                    this.child(
-                                        div()
-                                            .px(px(6.))
-                                            .py(px(1.))
-                                            .rounded(px(3.))
-                                            .bg(gpui::Hsla { h: 142.0 / 360.0, s: 0.7, l: 0.45, a: 0.2 })
-                                            .text_xs()
-                                            .font_weight(gpui::FontWeight::BOLD)
-                                            .text_color(gpui::rgb(0x4ade80))
-                                            .child("Current"),
-                                    )
-                                }),
+                                .text_xs()
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .text_color(t.text_primary)
+                                .child("Branch name"),
                         )
                         .child(
                             div()
-                                .flex()
-                                .items_center()
-                                .gap(px(6.))
-                                .when(!is_active, |this| {
-                                    let ws_co = ws_checkout.clone();
-                                    let b_target = b_name.clone();
-                                    this.child(
-                                        div()
-                                            .id(format!("btn-checkout-{}", b_name))
-                                            .px(px(8.))
-                                            .py(px(3.))
-                                            .rounded(px(4.))
-                                            .bg(t.bg_card)
-                                            .border_1()
-                                            .border_color(t.border)
-                                            .cursor_pointer()
-                                            .text_xs()
-                                            .text_color(t.text_secondary)
-                                            .hover(|s| s.bg(t.primary).text_color(gpui::rgb(0xffffff)))
-                                            .on_click(move |_, _, cx| {
-                                                ws_co.update(cx, |ws, cx| {
-                                                    let _ = ws.git_checkout(&b_target, cx);
-                                                    ws.close_git_modal(cx);
-                                                });
-                                            })
-                                            .child("Checkout"),
-                                    )
-                                    .child(
-                                        div()
-                                            .id(format!("btn-delete-branch-{}", b_del))
-                                            .px(px(6.))
-                                            .py(px(3.))
-                                            .rounded(px(4.))
-                                            .cursor_pointer()
-                                            .text_xs()
-                                            .text_color(t.text_muted)
-                                            .hover(|s| s.text_color(t.status_5xx))
-                                            .on_click(move |_, _, cx| {
-                                                ws_delete.update(cx, |ws, cx| {
-                                                    let _ = ws.git_delete_branch(&b_del, cx);
-                                                });
-                                            })
-                                            .child("🗑"),
-                                    )
-                                }),
-                        )
-                })),
+                                .text_xs()
+                                .text_color(t.text_muted)
+                                .child(format!("Based on: {}", current_branch)),
+                        ),
+                )
+                .child(
+                    div()
+                        .bg(t.bg_sidebar)
+                        .border_1()
+                        .border_color(t.border)
+                        .rounded(px(6.))
+                        .p(px(4.))
+                        .child(Input::new(&branch_input)),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(t.text_muted)
+                        .child("The new branch will be created and checked out automatically."),
+                ),
+        )
+        // Buttons
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_end()
+                .gap(px(8.))
+                .pt(px(6.))
+                .child(
+                    div()
+                        .id("btn-cancel-branch")
+                        .px(px(14.))
+                        .py(px(6.))
+                        .rounded(px(6.))
+                        .border_1()
+                        .border_color(t.border)
+                        .cursor_pointer()
+                        .text_xs()
+                        .text_color(t.text_secondary)
+                        .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
+                        .on_click(move |_, _, cx| {
+                            ws_cancel.update(cx, |ws, cx| {
+                                ws.close_git_modal(cx);
+                            });
+                        })
+                        .child("Cancel"),
+                )
+                .child(
+                    div()
+                        .id("btn-create-branch-action")
+                        .px(px(14.))
+                        .py(px(6.))
+                        .rounded(px(6.))
+                        .bg(t.primary)
+                        .cursor_pointer()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_xs()
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .text_color(gpui::rgb(0xffffff))
+                        .hover(|s| s.opacity(0.9))
+                        .on_click(move |_, window, cx| {
+                            let name = inp_val.read(cx).value().trim().to_string();
+                            if name.is_empty() {
+                                return;
+                            }
+                            let ws_s = ws_create.clone();
+                            let inp_clear = inp.clone();
+                            ws_s.update(cx, |ws, cx| {
+                                if ws.git_create_branch(&name, cx).is_ok() {
+                                    inp_clear.update(cx, |inp_st, cx| {
+                                        inp_st.set_value("", window, cx);
+                                    });
+                                    ws.close_git_modal(cx);
+                                }
+                            });
+                        })
+                        .child("Create Branch"),
+                ),
         )
         .into_any_element()
 }
@@ -1577,160 +1509,64 @@ fn render_remotes_view(
 
     div()
         .size_full()
-        .p(px(16.))
         .flex()
         .flex_col()
-        .gap(px(16.))
-        // Top: Add Remote Card
-        .child(
-            div()
-                .p(px(14.))
-                .rounded(px(8.))
-                .bg(t.bg_sidebar)
-                .border_1()
-                .border_color(t.border)
-                .flex()
-                .flex_col()
-                .gap(px(10.))
-                .child(
-                    div()
-                        .text_xs()
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .text_color(t.text_secondary)
-                        .child("ADD REMOTE REPOSITORY"),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .child(
-                            div()
-                                .w(px(110.))
-                                .bg(t.bg_card)
-                                .border_1()
-                                .border_color(t.border)
-                                .rounded(px(6.))
-                                .p(px(4.))
-                                .child(Input::new(&remote_name_input)),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .bg(t.bg_card)
-                                .border_1()
-                                .border_color(t.border)
-                                .rounded(px(6.))
-                                .p(px(4.))
-                                .child(Input::new(&remote_url_input)),
-                        )
-                        .child({
-                            let ws_add = ws_clone.clone();
-                            let inp_n = remote_name_input.clone();
-                            let inp_u = remote_url_input.clone();
-                            div()
-                                .id("btn-add-remote-action")
-                                .px(px(14.))
-                                .h(px(32.))
-                                .rounded(px(6.))
-                                .bg(t.primary)
-                                .cursor_pointer()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .text_xs()
-                                .font_weight(gpui::FontWeight::BOLD)
-                                .text_color(gpui::rgb(0xffffff))
-                                .hover(|s| s.opacity(0.9))
-                                .on_click(move |_, window, cx| {
-                                    let name = inp_n.read(cx).value().to_string();
-                                    let url = inp_u.read(cx).value().to_string();
-                                    if name.trim().is_empty() || url.trim().is_empty() {
-                                        return;
-                                    }
-                                    let ws_s = ws_add.clone();
-                                    let inp_u_clear = inp_u.clone();
-                                    ws_s.update(cx, |ws, cx| {
-                                        if ws.git_add_remote(&name, &url, cx).is_ok() {
-                                            inp_u_clear.update(cx, |inp_st, cx| {
-                                                inp_st.set_value("", window, cx);
-                                            });
-                                        }
-                                    });
-                                })
-                                .child("+ Add Remote")
-                        }),
-                ),
-        )
-        // Bottom: Remotes List
+        // Top/Middle: Remotes List (Scrollable)
         .child(
             div()
                 .flex_1()
                 .overflow_y_scrollbar()
-                .rounded(px(8.))
-                .bg(t.bg_sidebar)
-                .border_1()
-                .border_color(t.border)
+                .p(px(12.))
                 .flex()
                 .flex_col()
-                .child(
-                    div()
-                        .px(px(14.))
-                        .py(px(10.))
-                        .border_b_1()
-                        .border_color(t.border)
-                        .text_xs()
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .text_color(t.text_secondary)
-                        .child(format!("CONFIGURED REMOTES ({})", remotes.len())),
-                )
+                .gap(px(6.))
+                .when(remotes.is_empty(), |this| {
+                    this.child(
+                        div()
+                            .py(px(24.))
+                            .text_center()
+                            .text_xs()
+                            .text_color(t.text_muted)
+                            .child("No git remotes configured yet."),
+                    )
+                })
                 .children(remotes.into_iter().map(|r| {
                     let ws_del = ws_clone.clone();
                     let r_name = r.name.clone();
 
                     div()
                         .id(format!("remote-row-{}", r.name))
-                        .px(px(14.))
+                        .px(px(10.))
                         .py(px(8.))
-                        .border_b_1()
+                        .rounded(px(6.))
+                        .bg(t.bg_sidebar)
+                        .border_1()
                         .border_color(t.border)
                         .flex()
                         .items_center()
                         .justify_between()
-                        .hover(|s| s.bg(t.bg_hover))
+                        .gap(px(8.))
                         .child(
                             div()
+                                .flex_1()
                                 .flex()
                                 .flex_col()
                                 .gap(px(2.))
+                                .overflow_hidden()
                                 .child(
                                     div()
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(8.))
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .font_weight(gpui::FontWeight::BOLD)
-                                                .text_color(t.text_primary)
-                                                .child(r.name.clone()),
-                                        )
-                                        .child(
-                                            div()
-                                                .px(px(4.))
-                                                .py(px(1.))
-                                                .rounded(px(3.))
-                                                .bg(t.bg_card)
-                                                .text_xs()
-                                                .text_color(t.text_muted)
-                                                .child("fetch & push"),
-                                        ),
+                                        .text_xs()
+                                        .font_weight(gpui::FontWeight::BOLD)
+                                        .font_family(".SystemMonoFont")
+                                        .text_color(t.primary)
+                                        .child(r.name.clone()),
                                 )
                                 .child(
                                     div()
                                         .text_xs()
                                         .font_family(".SystemMonoFont")
                                         .text_color(t.text_secondary)
+                                        .truncate()
                                         .child(r.fetch_url.clone()),
                                 ),
                         )
@@ -1738,12 +1574,12 @@ fn render_remotes_view(
                             div()
                                 .id(format!("btn-remove-remote-{}", r.name))
                                 .px(px(8.))
-                                .py(px(3.))
+                                .py(px(4.))
                                 .rounded(px(4.))
                                 .cursor_pointer()
                                 .text_xs()
                                 .text_color(t.text_muted)
-                                .hover(|s| s.text_color(t.status_5xx))
+                                .hover(|s| s.bg(t.bg_card).text_color(t.status_5xx))
                                 .on_click(move |_, _, cx| {
                                     ws_del.update(cx, |ws, cx| {
                                         let _ = ws.git_remove_remote(&r_name, cx);
@@ -1752,6 +1588,73 @@ fn render_remotes_view(
                                 .child("Remove"),
                         )
                 })),
+        )
+        // Bottom: Add Remote Form
+        .child(
+            div()
+                .border_t_1()
+                .border_color(t.border)
+                .p(px(12.))
+                .bg(t.bg_sidebar)
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(
+                    div()
+                        .w(px(84.))
+                        .bg(t.bg_card)
+                        .border_1()
+                        .border_color(t.border)
+                        .rounded(px(6.))
+                        .p(px(4.))
+                        .child(Input::new(&remote_name_input)),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .bg(t.bg_card)
+                        .border_1()
+                        .border_color(t.border)
+                        .rounded(px(6.))
+                        .p(px(4.))
+                        .child(Input::new(&remote_url_input)),
+                )
+                .child({
+                    let ws_add = ws_clone.clone();
+                    let inp_n = remote_name_input.clone();
+                    let inp_u = remote_url_input.clone();
+                    div()
+                        .id("btn-add-remote-action")
+                        .px(px(12.))
+                        .h(px(30.))
+                        .rounded(px(6.))
+                        .bg(t.primary)
+                        .cursor_pointer()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_xs()
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .text_color(gpui::rgb(0xffffff))
+                        .hover(|s| s.opacity(0.9))
+                        .on_click(move |_, window, cx| {
+                            let name = inp_n.read(cx).value().trim().to_string();
+                            let url = inp_u.read(cx).value().trim().to_string();
+                            if name.is_empty() || url.is_empty() {
+                                return;
+                            }
+                            let ws_s = ws_add.clone();
+                            let inp_u_clear = inp_u.clone();
+                            ws_s.update(cx, |ws, cx| {
+                                if ws.git_add_remote(&name, &url, cx).is_ok() {
+                                    inp_u_clear.update(cx, |inp_st, cx| {
+                                        inp_st.set_value("", window, cx);
+                                    });
+                                }
+                            });
+                        })
+                        .child("+ Add")
+                }),
         )
         .into_any_element()
 }
@@ -1779,7 +1682,178 @@ fn render_status_badge(status: GitFileStatus) -> gpui::AnyElement {
         .into_any_element()
 }
 
-fn render_diff_content(diff_content: Option<String>) -> gpui::AnyElement {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum DiffViewMode {
+    Split,
+    Unified,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum DiffLineKind {
+    Normal,
+    Added,
+    Deleted,
+}
+
+#[derive(Clone)]
+pub struct DiffSideLine {
+    pub line_no: Option<usize>,
+    pub content: String,
+    pub kind: DiffLineKind,
+}
+
+#[derive(Clone)]
+pub enum SideBySideRow {
+    HunkHeader(String),
+    Diff {
+        left: Option<DiffSideLine>,
+        right: Option<DiffSideLine>,
+    },
+}
+
+fn parse_side_by_side_diff(diff: &str) -> Vec<SideBySideRow> {
+    let mut rows = Vec::new();
+    let mut old_line = 1usize;
+    let mut new_line = 1usize;
+    let mut pending_deleted: Vec<String> = Vec::new();
+    let mut pending_added: Vec<String> = Vec::new();
+
+    let flush_pending = |deleted: &mut Vec<String>, added: &mut Vec<String>, old_cur: &mut usize, new_cur: &mut usize, rows: &mut Vec<SideBySideRow>| {
+        let max_len = deleted.len().max(added.len());
+        for i in 0..max_len {
+            let left = if i < deleted.len() {
+                let ln = *old_cur;
+                *old_cur += 1;
+                Some(DiffSideLine {
+                    line_no: Some(ln),
+                    content: deleted[i].clone(),
+                    kind: DiffLineKind::Deleted,
+                })
+            } else {
+                None
+            };
+
+            let right = if i < added.len() {
+                let ln = *new_cur;
+                *new_cur += 1;
+                Some(DiffSideLine {
+                    line_no: Some(ln),
+                    content: added[i].clone(),
+                    kind: DiffLineKind::Added,
+                })
+            } else {
+                None
+            };
+
+            rows.push(SideBySideRow::Diff { left, right });
+        }
+        deleted.clear();
+        added.clear();
+    };
+
+    for line in diff.lines() {
+        if line.starts_with("diff --git") || line.starts_with("index ") || line.starts_with("---") || line.starts_with("+++") {
+            continue;
+        }
+
+        if line.starts_with("@@") {
+            flush_pending(&mut pending_deleted, &mut pending_added, &mut old_line, &mut new_line, &mut rows);
+            if let Some(hunk_parts) = line.split("@@").nth(1) {
+                let parts: Vec<&str> = hunk_parts.split_whitespace().collect();
+                for p in parts {
+                    if p.starts_with('-') {
+                        let num = p[1..].split(',').next().and_then(|n| n.parse::<usize>().ok()).unwrap_or(1);
+                        old_line = num;
+                    } else if p.starts_with('+') {
+                        let num = p[1..].split(',').next().and_then(|n| n.parse::<usize>().ok()).unwrap_or(1);
+                        new_line = num;
+                    }
+                }
+            }
+            rows.push(SideBySideRow::HunkHeader(line.to_string()));
+        } else if line.starts_with('-') {
+            pending_deleted.push(line[1..].to_string());
+        } else if line.starts_with('+') {
+            pending_added.push(line[1..].to_string());
+        } else {
+            flush_pending(&mut pending_deleted, &mut pending_added, &mut old_line, &mut new_line, &mut rows);
+            let content = if line.starts_with(' ') { &line[1..] } else { line };
+            let ln_old = old_line;
+            let ln_new = new_line;
+            old_line += 1;
+            new_line += 1;
+            rows.push(SideBySideRow::Diff {
+                left: Some(DiffSideLine {
+                    line_no: Some(ln_old),
+                    content: content.to_string(),
+                    kind: DiffLineKind::Normal,
+                }),
+                right: Some(DiffSideLine {
+                    line_no: Some(ln_new),
+                    content: content.to_string(),
+                    kind: DiffLineKind::Normal,
+                }),
+            });
+        }
+    }
+
+    flush_pending(&mut pending_deleted, &mut pending_added, &mut old_line, &mut new_line, &mut rows);
+    rows
+}
+
+fn render_diff_view_toggle(view_mode: DiffViewMode, view_mode_entity: Entity<DiffViewMode>) -> gpui::AnyElement {
+    let t = theme();
+    div()
+        .flex()
+        .items_center()
+        .gap(px(2.))
+        .p(px(2.))
+        .rounded(px(4.))
+        .bg(t.bg_sidebar)
+        .border_1()
+        .border_color(t.border)
+        .child({
+            let st = view_mode_entity.clone();
+            div()
+                .id("btn-diff-split")
+                .px(px(6.))
+                .py(px(2.))
+                .rounded(px(3.))
+                .cursor_pointer()
+                .text_xs()
+                .when(view_mode == DiffViewMode::Split, |s| s.bg(t.bg_card).text_color(t.text_primary).font_weight(gpui::FontWeight::SEMIBOLD))
+                .when(view_mode != DiffViewMode::Split, |s| s.text_color(t.text_muted).hover(|h| h.text_color(t.text_secondary)))
+                .on_click(move |_, _, cx| {
+                    st.update(cx, |m, cx| {
+                        *m = DiffViewMode::Split;
+                        cx.notify();
+                    });
+                })
+                .child("◫ Split")
+        })
+        .child({
+            let st = view_mode_entity.clone();
+            div()
+                .id("btn-diff-unified")
+                .px(px(6.))
+                .py(px(2.))
+                .rounded(px(3.))
+                .cursor_pointer()
+                .text_xs()
+                .when(view_mode == DiffViewMode::Unified, |s| s.bg(t.bg_card).text_color(t.text_primary).font_weight(gpui::FontWeight::SEMIBOLD))
+                .when(view_mode != DiffViewMode::Unified, |s| s.text_color(t.text_muted).hover(|h| h.text_color(t.text_secondary)))
+                .on_click(move |_, _, cx| {
+                    st.update(cx, |m, cx| {
+                        *m = DiffViewMode::Unified;
+                        cx.notify();
+                    });
+                })
+                .child("▤ Unified")
+        })
+        .into_any_element()
+}
+
+fn render_diff_content(diff_content: Option<String>, view_mode: DiffViewMode) -> gpui::AnyElement {
     let t = theme();
 
     match diff_content {
@@ -1790,30 +1864,153 @@ fn render_diff_content(diff_content: Option<String>) -> gpui::AnyElement {
             let red_text: gpui::Hsla = gpui::rgb(0xef4444).into();
             let gray_text = t.text_muted;
 
-            div()
-                .flex()
-                .flex_col()
-                .font_family(".SystemMonoFont")
-                .text_xs()
-                .children(diff.lines().map(|line| {
-                    let (bg, text_color) = if line.starts_with('+') && !line.starts_with("+++") {
-                        (Some(green_bg), green_text)
-                    } else if line.starts_with('-') && !line.starts_with("---") {
-                        (Some(red_bg), red_text)
-                    } else if line.starts_with("@@") {
-                        (None, t.primary)
-                    } else {
-                        (None, gray_text)
-                    };
-
+            match view_mode {
+                DiffViewMode::Split => {
+                    let rows = parse_side_by_side_diff(&diff);
                     div()
-                        .px(px(6.))
-                        .py(px(1.))
-                        .when_some(bg, |this, b| this.bg(b))
-                        .text_color(text_color)
-                        .child(line.to_string())
-                }))
-                .into_any_element()
+                        .w_full()
+                        .flex()
+                        .flex_col()
+                        .font_family(".SystemMonoFont")
+                        .text_xs()
+                        .children(rows.into_iter().map(|row| {
+                            match row {
+                                SideBySideRow::HunkHeader(hunk) => {
+                                    div()
+                                        .w_full()
+                                        .px(px(8.))
+                                        .py(px(2.))
+                                        .bg(t.bg_sidebar)
+                                        .border_y_1()
+                                        .border_color(t.border)
+                                        .text_color(t.primary)
+                                        .child(hunk)
+                                }
+                                SideBySideRow::Diff { left, right } => {
+                                    div()
+                                        .w_full()
+                                        .flex()
+                                        .border_b_1()
+                                        .border_color(gpui::Hsla { a: 0.25, ..t.border })
+                                        // Left column (Old)
+                                        .child({
+                                            let (bg, txt_color, line_num, txt) = match left {
+                                                Some(l) => {
+                                                    let (bg, col) = match l.kind {
+                                                        DiffLineKind::Deleted => (Some(red_bg), red_text),
+                                                        DiffLineKind::Added => (Some(green_bg), green_text),
+                                                        DiffLineKind::Normal => (None, gray_text),
+                                                    };
+                                                    (bg, col, l.line_no.map(|n| n.to_string()).unwrap_or_default(), l.content)
+                                                }
+                                                None => (Some(gpui::Hsla { a: 0.15, ..t.bg_card }), gray_text, String::new(), String::new()),
+                                            };
+
+                                            div()
+                                                .flex_1()
+                                                .min_w(px(0.))
+                                                .border_r_1()
+                                                .border_color(t.border)
+                                                .when_some(bg, |this, b| this.bg(b))
+                                                .flex()
+                                                .items_start()
+                                                .overflow_hidden()
+                                                .child(
+                                                    div()
+                                                        .w(px(34.))
+                                                        .flex_shrink_0()
+                                                        .px(px(4.))
+                                                        .py(px(1.))
+                                                        .text_right()
+                                                        .text_color(t.text_muted)
+                                                        .child(line_num),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .flex_1()
+                                                        .min_w(px(0.))
+                                                        .px(px(6.))
+                                                        .py(px(1.))
+                                                        .text_color(txt_color)
+                                                        .overflow_hidden()
+                                                        .child(txt),
+                                                )
+                                        })
+                                        // Right column (New)
+                                        .child({
+                                            let (bg, txt_color, line_num, txt) = match right {
+                                                Some(r) => {
+                                                    let (bg, col) = match r.kind {
+                                                        DiffLineKind::Added => (Some(green_bg), green_text),
+                                                        DiffLineKind::Deleted => (Some(red_bg), red_text),
+                                                        DiffLineKind::Normal => (None, t.text_primary),
+                                                    };
+                                                    (bg, col, r.line_no.map(|n| n.to_string()).unwrap_or_default(), r.content)
+                                                }
+                                                None => (Some(gpui::Hsla { a: 0.15, ..t.bg_card }), gray_text, String::new(), String::new()),
+                                            };
+
+                                            div()
+                                                .flex_1()
+                                                .min_w(px(0.))
+                                                .when_some(bg, |this, b| this.bg(b))
+                                                .flex()
+                                                .items_start()
+                                                .overflow_hidden()
+                                                .child(
+                                                    div()
+                                                        .w(px(34.))
+                                                        .flex_shrink_0()
+                                                        .px(px(4.))
+                                                        .py(px(1.))
+                                                        .text_right()
+                                                        .text_color(t.text_muted)
+                                                        .child(line_num),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .flex_1()
+                                                        .min_w(px(0.))
+                                                        .px(px(6.))
+                                                        .py(px(1.))
+                                                        .text_color(txt_color)
+                                                        .overflow_hidden()
+                                                        .child(txt),
+                                                )
+                                        })
+                                }
+                            }
+                        }))
+                        .into_any_element()
+                }
+                DiffViewMode::Unified => {
+                    div()
+                        .w_full()
+                        .flex()
+                        .flex_col()
+                        .font_family(".SystemMonoFont")
+                        .text_xs()
+                        .children(diff.lines().map(|line| {
+                            let (bg, text_color) = if line.starts_with('+') && !line.starts_with("+++") {
+                                (Some(green_bg), green_text)
+                            } else if line.starts_with('-') && !line.starts_with("---") {
+                                (Some(red_bg), red_text)
+                            } else if line.starts_with("@@") {
+                                (None, t.primary)
+                            } else {
+                                (None, gray_text)
+                            };
+
+                            div()
+                                .px(px(6.))
+                                .py(px(1.))
+                                .when_some(bg, |this, b| this.bg(b))
+                                .text_color(text_color)
+                                .child(line.to_string())
+                        }))
+                        .into_any_element()
+                }
+            }
         }
         Some(_) => {
             div()
