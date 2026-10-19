@@ -1,5 +1,5 @@
 use crate::components::status_badge::MethodBadge;
-use crate::state::{EditorState, WorkspaceState};
+use crate::state::{EditorState, GitTab, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -207,6 +207,126 @@ impl RenderOnce for CommandPalette {
                                                 ),
                                         )
                                         .child(div().text_xs().text_color(t.text_muted).child("Ctrl+,"))
+                                )
+                            })
+                            // Action: Git Source Control
+                            .when(q.is_empty() || "git".contains(&q) || "source control".contains(&q) || "commit".contains(&q) || "diff".contains(&q), |this| {
+                                let ws_s = ws_clone.clone();
+                                this.child(
+                                    div()
+                                        .id("cmd-open-git")
+                                        .px(px(8.))
+                                        .py(px(6.))
+                                        .rounded(px(4.))
+                                        .hover(|s| s.bg(t.bg_hover))
+                                        .cursor_pointer()
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .on_click(move |_, _, cx| {
+                                            ws_s.update(cx, |state, cx| {
+                                                state.toggle_command_palette(cx);
+                                                state.set_git_tab(GitTab::Changes, cx);
+                                                if !state.show_git_modal {
+                                                    state.toggle_git_modal(cx);
+                                                }
+                                            });
+                                        })
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(8.))
+                                                .child("⎇")
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                        .text_color(t.text_primary)
+                                                        .child("Git: Open Source Control (Commit & Diff)"),
+                                                ),
+                                        )
+                                        .child(div().text_xs().text_color(t.text_muted).child("Ctrl+Shift+G"))
+                                )
+                            })
+                            // Action: Git Switch Branch / Checkout
+                            .when(q.is_empty() || "git".contains(&q) || "branch".contains(&q) || "checkout".contains(&q), |this| {
+                                let ws_s = ws_clone.clone();
+                                this.child(
+                                    div()
+                                        .id("cmd-git-checkout")
+                                        .px(px(8.))
+                                        .py(px(6.))
+                                        .rounded(px(4.))
+                                        .hover(|s| s.bg(t.bg_hover))
+                                        .cursor_pointer()
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .on_click(move |_, _, cx| {
+                                            ws_s.update(cx, |state, cx| {
+                                                state.toggle_command_palette(cx);
+                                                state.set_git_tab(GitTab::Branches, cx);
+                                                if !state.show_git_modal {
+                                                    state.toggle_git_modal(cx);
+                                                }
+                                            });
+                                        })
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(8.))
+                                                .child("⎇")
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                        .text_color(t.text_primary)
+                                                        .child("Git: Switch Branch / Checkout"),
+                                                ),
+                                        )
+                                        .child(div().text_xs().text_color(t.text_muted).child("Git"))
+                                )
+                            })
+                            // Action: Git Commit History
+                            .when(q.is_empty() || "git".contains(&q) || "history".contains(&q) || "log".contains(&q), |this| {
+                                let ws_s = ws_clone.clone();
+                                this.child(
+                                    div()
+                                        .id("cmd-git-history")
+                                        .px(px(8.))
+                                        .py(px(6.))
+                                        .rounded(px(4.))
+                                        .hover(|s| s.bg(t.bg_hover))
+                                        .cursor_pointer()
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .on_click(move |_, _, cx| {
+                                            ws_s.update(cx, |state, cx| {
+                                                state.toggle_command_palette(cx);
+                                                state.set_git_tab(GitTab::History, cx);
+                                                if !state.show_git_modal {
+                                                    state.toggle_git_modal(cx);
+                                                }
+                                            });
+                                        })
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(8.))
+                                                .child("📜")
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                        .text_color(t.text_primary)
+                                                        .child("Git: View Commit History"),
+                                                ),
+                                        )
+                                        .child(div().text_xs().text_color(t.text_muted).child("Git"))
                                 )
                             })
                             // List Requests

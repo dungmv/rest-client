@@ -122,6 +122,7 @@ restclient/
 |---|---|
 | `Ctrl + Enter` (or `Cmd + Enter`) | Send active request (or Cancel if in-flight) |
 | `Ctrl + K` (or `Cmd + K`) | Toggle Command Palette |
+| `Ctrl + Shift + G` (or `Cmd + Shift + G`) | Toggle Git Source Control (Commit, Diff, History, Checkout) |
 | `Ctrl + [` (or `Cmd + [`) | Navigate back in history |
 | `Ctrl + ]` (or `Cmd + ]`) | Navigate forward in history |
 | `Ctrl + F` (or `Cmd + F`) | Focus search / filter |

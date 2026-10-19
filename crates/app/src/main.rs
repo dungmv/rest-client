@@ -28,7 +28,7 @@ use state::*;
 use std::sync::Arc;
 use theme::theme;
 
-actions!(restclient, [SendRequest, ToggleCommandPalette, ToggleSidebar, ToggleSettings, NavigateBack, NavigateForward]);
+actions!(restclient, [SendRequest, ToggleCommandPalette, ToggleSidebar, ToggleSettings, ToggleGitModal, NavigateBack, NavigateForward]);
 
 pub enum HttpSendEvent {
     Progress(String),
@@ -911,6 +911,7 @@ impl Render for AppView {
         let show_env_modal = self.workspace_state.read(cx).show_env_modal;
         let show_cookies_modal = self.workspace_state.read(cx).show_cookies_modal;
         let show_settings_modal = self.workspace_state.read(cx).show_settings_modal;
+        let show_git_modal = self.workspace_state.read(cx).show_git_modal;
         let show_command_palette = self.workspace_state.read(cx).show_command_palette;
 
         let active_tab_kind = self.editor_state.read(cx).active_tab_kind;
@@ -1138,6 +1139,14 @@ impl Render for AppView {
                 move |_: &ToggleSettings, _, cx| {
                     ws_c.update(cx, |state, cx| {
                         state.toggle_settings_modal(cx);
+                    });
+                }
+            })
+            .on_action({
+                let ws_c = ws_entity.clone();
+                move |_: &ToggleGitModal, _, cx| {
+                    ws_c.update(cx, |state, cx| {
+                        state.toggle_git_modal(cx);
                     });
                 }
             })
@@ -1863,7 +1872,7 @@ impl Render for AppView {
                                     resizable_panel()
                                         .size(sidebar_width)
                                         .size_range(px(200.)..px(480.))
-                                        .child(SidebarTree::new(ws_entity.clone(), ed_entity.clone(), resp_entity.clone())),
+                                        .child(SidebarTree::new(ws_entity.clone(), ed_entity.clone(), resp_entity.clone(), toast_entity.clone())),
                                 )
                                 .child(resizable_panel().child(main_content))
                                 .on_resize({
@@ -1890,6 +1899,9 @@ impl Render for AppView {
             })
             .when(show_settings_modal, |this| {
                 this.child(SettingsModal::new(ws_entity.clone(), ed_entity.clone()))
+            })
+            .when(show_git_modal, |this| {
+                this.child(GitModal::new(ws_entity.clone()))
             })
             .when(show_command_palette, |this| {
                 let view_handle = app_view_entity.clone();
@@ -1923,6 +1935,8 @@ fn main() {
             KeyBinding::new("cmd-b", ToggleSidebar, None),
             KeyBinding::new("ctrl-,", ToggleSettings, None),
             KeyBinding::new("cmd-,", ToggleSettings, None),
+            KeyBinding::new("ctrl-shift-g", ToggleGitModal, None),
+            KeyBinding::new("cmd-shift-g", ToggleGitModal, None),
             KeyBinding::new("ctrl-[", NavigateBack, None),
             KeyBinding::new("cmd-[", NavigateBack, None),
             KeyBinding::new("ctrl-]", NavigateForward, None),

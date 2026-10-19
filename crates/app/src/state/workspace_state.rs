@@ -14,6 +14,22 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GitTab {
+    #[default]
+    Changes,
+    History,
+    Branches,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GitActiveModal {
+    Commit,
+    History,
+    NewBranch,
+    Remotes,
+}
+
 pub struct WorkspaceState {
     pub store: Arc<dyn WorkspaceStore>,
     pub workspace_path: PathBuf,
@@ -40,6 +56,20 @@ pub struct WorkspaceState {
     pub show_cookies_modal: bool,
     pub show_command_palette: bool,
     pub show_settings_modal: bool,
+    pub show_git_modal: bool,
+    pub active_git_modal: Option<GitActiveModal>,
+    pub git_tab: GitTab,
+    pub git_status: Option<restclient_core::git::GitStatusResult>,
+    pub git_history: Vec<restclient_core::git::GitCommitInfo>,
+    pub git_branches: Vec<restclient_core::git::GitBranchInfo>,
+    pub git_remotes: Vec<restclient_core::git::GitRemote>,
+    pub git_selected_file: Option<(String, bool)>,
+    pub git_diff_content: Option<String>,
+    pub git_selected_commit: Option<restclient_core::git::GitCommitDetail>,
+    pub git_commit_message: String,
+    pub git_error: Option<String>,
+    pub git_loading: bool,
+    pub git_is_syncing: bool,
     pub renaming_request_id: Option<String>,
     pub rename_input: Option<Entity<InputState>>,
     pub rename_subscription: Option<gpui::Subscription>,
@@ -87,7 +117,12 @@ impl WorkspaceState {
         }
 
         settings.add_recent_workspace(&ws_dir.to_string_lossy());
-        let git_branch = detect_git_branch(Some(&ws_dir));
+        let git_status = restclient_core::git::git_status(&ws_dir).ok();
+        let git_branches = restclient_core::git::git_branches(&ws_dir).unwrap_or_default();
+        let git_branch = git_status
+            .as_ref()
+            .and_then(|s| if !s.branch.is_empty() { Some(s.branch.clone()) } else { None })
+            .or_else(|| detect_git_branch(Some(&ws_dir)));
         let git_tracked_warning = store.ensure_gitignore().unwrap_or(false);
 
         let mut state = Self {
@@ -116,6 +151,20 @@ impl WorkspaceState {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            show_git_modal: false,
+            active_git_modal: None,
+            git_tab: GitTab::Changes,
+            git_status,
+            git_history: Vec::new(),
+            git_branches,
+            git_remotes: Vec::new(),
+            git_selected_file: None,
+            git_diff_content: None,
+            git_selected_commit: None,
+            git_commit_message: String::new(),
+            git_error: None,
+            git_loading: false,
+            git_is_syncing: false,
             renaming_request_id: None,
             rename_input: None,
             rename_subscription: None,
@@ -169,6 +218,8 @@ impl WorkspaceState {
         self.recent_workspaces = settings.recent_workspaces;
 
         self.reload_all();
+        self.refresh_git_status(cx);
+        self.refresh_git_branches(cx);
         self.start_watcher(cx);
         cx.notify();
     }
@@ -426,6 +477,7 @@ impl WorkspaceState {
 
         self.requests.push(item.clone());
         self.reload_tree();
+        self.refresh_git_status(cx);
         cx.notify();
         item
     }
@@ -451,6 +503,7 @@ impl WorkspaceState {
         let _ = self.store.write_request(&rel_path, &req_file);
         self.reload_tree();
         let dup = self.requests.iter().find(|r| r.id == rel_path).cloned();
+        self.refresh_git_status(cx);
         cx.notify();
         dup
     }
@@ -469,6 +522,7 @@ impl WorkspaceState {
 
         self.requests.retain(|r| r.id != req_id);
         self.reload_tree();
+        self.refresh_git_status(cx);
         cx.notify();
     }
 
@@ -554,6 +608,7 @@ impl WorkspaceState {
                     self.conflicts.insert(new_rel_path, c);
                 }
                 self.reload_tree();
+                self.refresh_git_status(cx);
             }
         }
         cx.notify();
@@ -690,6 +745,7 @@ impl WorkspaceState {
             if let Some(this_ent) = this.upgrade() {
                 this_ent.update(cx, |ws, cx| {
                     ws.unsaved_requests.remove(&req_id);
+                    ws.refresh_git_status(cx);
                     cx.notify();
                 });
             }
@@ -735,8 +791,10 @@ impl WorkspaceState {
 
             let final_req_id = task_req_id.clone();
             if let Some(this_ent) = this.upgrade() {
-                this_ent.update(cx, |ws, _cx| {
+                this_ent.update(cx, |ws, cx| {
                     ws.unsaved_requests.remove(&final_req_id);
+                    ws.refresh_git_status(cx);
+                    cx.notify();
                 });
             }
         });
@@ -796,8 +854,10 @@ impl WorkspaceState {
 
             let final_req_id = task_req_id.clone();
             if let Some(this_ent) = this.upgrade() {
-                this_ent.update(cx, |ws, _cx| {
+                this_ent.update(cx, |ws, cx| {
                     ws.unsaved_requests.remove(&final_req_id);
+                    ws.refresh_git_status(cx);
+                    cx.notify();
                 });
             }
         });
@@ -816,6 +876,7 @@ impl WorkspaceState {
     pub fn save_request_file(&mut self, req_id: &str, req_file: &RequestFile, cx: &mut Context<Self>) {
         let _ = self.store.write_request(req_id, req_file);
         self.reload_tree();
+        self.refresh_git_status(cx);
         cx.notify();
     }
 
@@ -835,6 +896,7 @@ impl WorkspaceState {
             });
             self.watcher_task = Some(task);
         }
+        self.fetch_in_background(cx);
     }
 
     pub fn handle_fs_event(&mut self, event: restclient_core::storage::FsEvent, cx: &mut Context<Self>) {
@@ -926,10 +988,12 @@ impl WorkspaceState {
             }
             if let Ok((_dir_name, rel_path)) = self.store.create_group(parent_id.as_deref(), trimmed) {
                 self.reload_tree();
+                self.refresh_git_status(cx);
                 cx.notify();
                 return Some(rel_path);
             }
             self.reload_tree();
+            self.refresh_git_status(cx);
             cx.notify();
         }
         None
@@ -944,6 +1008,7 @@ impl WorkspaceState {
         self.collapsed_folders.remove(folder_id);
         let _ = self.store.delete_group(folder_id);
         self.reload_tree();
+        self.refresh_git_status(cx);
         cx.notify();
     }
 
@@ -1174,6 +1239,7 @@ impl WorkspaceState {
     ) {
         let _ = self.store.move_request(src_req_id, target_folder_id.as_deref());
         self.reload_tree();
+        self.refresh_git_status(cx);
         cx.notify();
     }
 
@@ -1341,6 +1407,400 @@ impl WorkspaceState {
         cx.notify();
     }
 
+    pub fn open_git_modal(&mut self, modal: GitActiveModal, cx: &mut Context<Self>) {
+        self.active_git_modal = Some(modal);
+        self.show_git_modal = true;
+        self.git_error = None;
+        match modal {
+            GitActiveModal::Commit => {
+                self.refresh_git_status(cx);
+            }
+            GitActiveModal::History => {
+                self.refresh_git_history(cx);
+            }
+            GitActiveModal::NewBranch => {
+                self.refresh_git_branches(cx);
+            }
+            GitActiveModal::Remotes => {
+                self.refresh_git_remotes(cx);
+            }
+        }
+        cx.notify();
+    }
+
+    pub fn close_git_modal(&mut self, cx: &mut Context<Self>) {
+        self.active_git_modal = None;
+        self.show_git_modal = false;
+        self.git_error = None;
+        cx.notify();
+    }
+
+    pub fn toggle_git_modal(&mut self, cx: &mut Context<Self>) {
+        if self.active_git_modal.is_some() || self.show_git_modal {
+            self.close_git_modal(cx);
+        } else {
+            self.open_git_modal(GitActiveModal::Commit, cx);
+        }
+    }
+
+    pub fn set_git_tab(&mut self, tab: GitTab, cx: &mut Context<Self>) {
+        self.git_tab = tab;
+        match tab {
+            GitTab::Changes => self.refresh_git_status(cx),
+            GitTab::History => self.refresh_git_history(cx),
+            GitTab::Branches => self.refresh_git_branches(cx),
+        }
+        cx.notify();
+    }
+
+    pub fn refresh_git_all(&mut self, cx: &mut Context<Self>) {
+        self.refresh_git_status(cx);
+        self.refresh_git_history(cx);
+        self.refresh_git_branches(cx);
+        self.refresh_git_remotes(cx);
+    }
+
+    pub fn refresh_git_remotes(&mut self, cx: &mut Context<Self>) {
+        if let Ok(remotes) = restclient_core::git::git_get_remotes(&self.workspace_path) {
+            self.git_remotes = remotes;
+        }
+        cx.notify();
+    }
+
+    pub fn git_add_remote(&mut self, name: &str, url: &str, cx: &mut Context<Self>) -> Result<(), String> {
+        match restclient_core::git::git_add_remote(&self.workspace_path, name, url) {
+            Ok(_) => {
+                self.git_error = None;
+                self.refresh_git_remotes(cx);
+                Ok(())
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                self.git_error = Some(err_str.clone());
+                cx.notify();
+                Err(err_str)
+            }
+        }
+    }
+
+    pub fn git_remove_remote(&mut self, name: &str, cx: &mut Context<Self>) -> Result<(), String> {
+        match restclient_core::git::git_remove_remote(&self.workspace_path, name) {
+            Ok(_) => {
+                self.git_error = None;
+                self.refresh_git_remotes(cx);
+                Ok(())
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                self.git_error = Some(err_str.clone());
+                cx.notify();
+                Err(err_str)
+            }
+        }
+    }
+
+    pub fn git_delete_branch(&mut self, name: &str, cx: &mut Context<Self>) -> Result<(), String> {
+        match restclient_core::git::git_delete_branch(&self.workspace_path, name, false) {
+            Ok(_) => {
+                self.git_error = None;
+                self.refresh_git_branches(cx);
+                Ok(())
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                self.git_error = Some(err_str.clone());
+                cx.notify();
+                Err(err_str)
+            }
+        }
+    }
+
+    pub fn git_fetch(&mut self, cx: &mut Context<Self>) -> Result<String, String> {
+        match restclient_core::git::git_fetch(&self.workspace_path) {
+            Ok(msg) => {
+                self.git_error = None;
+                self.refresh_git_status(cx);
+                Ok(msg)
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                self.git_error = Some(err_str.clone());
+                cx.notify();
+                Err(err_str)
+            }
+        }
+    }
+
+    pub fn discard_request_changes(
+        &mut self,
+        req_id: &str,
+        editor: &Entity<EditorState>,
+        cx: &mut Context<Self>,
+    ) {
+        let norm_req = req_id.replace('\\', "/");
+        let coll_rel = format!("collections/{}", norm_req);
+        let path_to_discard = if let Some(git) = &self.git_status {
+            let matches = |p: &str| -> bool {
+                let p = p.replace('\\', "/");
+                p == norm_req
+                    || p == coll_rel
+                    || p.ends_with(&format!("/{}", norm_req))
+                    || p.ends_with(&format!("/{}", coll_rel))
+            };
+            git.untracked_files.iter().find(|i| matches(&i.path))
+                .or_else(|| git.unstaged_files.iter().find(|i| matches(&i.path)))
+                .or_else(|| git.staged_files.iter().find(|i| matches(&i.path)))
+                .map(|i| i.path.clone())
+                .unwrap_or(coll_rel)
+        } else {
+            coll_rel
+        };
+
+        let _ = restclient_core::git::git_discard_file(&self.workspace_path, &path_to_discard);
+        self.unsaved_requests.remove(req_id);
+        self.reload_all();
+        self.refresh_git_status(cx);
+
+        let active_id = editor.read(cx).active_request.as_ref().map(|r| r.id.clone());
+        if active_id.as_deref() == Some(req_id) {
+            if let Some(reloaded_req) = self.find_request(req_id) {
+                editor.update(cx, |ed, cx| {
+                    ed.set_active_request(reloaded_req.clone(), false, cx);
+                });
+            } else {
+                editor.update(cx, |ed, cx| {
+                    ed.close_tab(req_id, cx);
+                });
+            }
+        }
+    }
+
+    pub fn refresh_git_status(&mut self, cx: &mut Context<Self>) {
+        if let Ok(st) = restclient_core::git::git_status(&self.workspace_path) {
+            if st.is_repo && !st.branch.is_empty() {
+                self.git_branch = Some(st.branch.clone());
+            }
+            if let Some((path, staged)) = self.git_selected_file.clone() {
+                self.load_git_diff(&path, staged, cx);
+            } else if let Some(first) = st.staged_files.first() {
+                let p = first.path.clone();
+                self.git_selected_file = Some((p.clone(), true));
+                self.load_git_diff(&p, true, cx);
+            } else if let Some(first) = st.unstaged_files.first() {
+                let p = first.path.clone();
+                self.git_selected_file = Some((p.clone(), false));
+                self.load_git_diff(&p, false, cx);
+            } else if let Some(first) = st.untracked_files.first() {
+                let p = first.path.clone();
+                self.git_selected_file = Some((p.clone(), false));
+                self.load_git_diff(&p, false, cx);
+            } else {
+                self.git_diff_content = None;
+            }
+            self.git_status = Some(st);
+        }
+        if self.git_branches.is_empty() {
+            if let Ok(branches) = restclient_core::git::git_branches(&self.workspace_path) {
+                self.git_branches = branches;
+            }
+        }
+        cx.notify();
+    }
+
+    pub fn load_git_diff(&mut self, file_path: &str, staged: bool, cx: &mut Context<Self>) {
+        match restclient_core::git::git_diff(&self.workspace_path, Some(file_path), staged) {
+            Ok(d) => self.git_diff_content = Some(d),
+            Err(e) => self.git_diff_content = Some(format!("Error loading diff: {}", e)),
+        }
+        cx.notify();
+    }
+
+    pub fn refresh_git_history(&mut self, cx: &mut Context<Self>) {
+        if let Ok(commits) = restclient_core::git::git_history(&self.workspace_path, 50) {
+            if self.git_selected_commit.is_none() && !commits.is_empty() {
+                if let Some(first) = commits.first() {
+                    self.select_git_commit(&first.hash, cx);
+                }
+            }
+            self.git_history = commits;
+        }
+        cx.notify();
+    }
+
+    pub fn refresh_git_branches(&mut self, cx: &mut Context<Self>) {
+        if let Ok(branches) = restclient_core::git::git_branches(&self.workspace_path) {
+            self.git_branches = branches;
+        }
+        cx.notify();
+    }
+
+    pub fn select_git_file(&mut self, path: String, staged: bool, cx: &mut Context<Self>) {
+        self.git_selected_file = Some((path.clone(), staged));
+        self.load_git_diff(&path, staged, cx);
+    }
+
+    pub fn select_git_commit(&mut self, hash: &str, cx: &mut Context<Self>) {
+        if let Ok(detail) = restclient_core::git::git_commit_detail(&self.workspace_path, hash) {
+            self.git_selected_commit = Some(detail);
+        }
+        cx.notify();
+    }
+
+    pub fn git_stage_file(&mut self, path: &str, cx: &mut Context<Self>) {
+        let _ = restclient_core::git::git_stage_file(&self.workspace_path, path);
+        self.refresh_git_status(cx);
+    }
+
+    pub fn git_unstage_file(&mut self, path: &str, cx: &mut Context<Self>) {
+        let _ = restclient_core::git::git_unstage_file(&self.workspace_path, path);
+        self.refresh_git_status(cx);
+    }
+
+    pub fn git_stage_all(&mut self, cx: &mut Context<Self>) {
+        let _ = restclient_core::git::git_stage_all(&self.workspace_path);
+        self.refresh_git_status(cx);
+    }
+
+    pub fn git_unstage_all(&mut self, cx: &mut Context<Self>) {
+        let _ = restclient_core::git::git_unstage_all(&self.workspace_path);
+        self.refresh_git_status(cx);
+    }
+
+    pub fn git_discard_file(&mut self, path: &str, cx: &mut Context<Self>) {
+        let _ = restclient_core::git::git_discard_file(&self.workspace_path, path);
+        if let Some((sel, _)) = &self.git_selected_file {
+            if sel == path {
+                self.git_selected_file = None;
+                self.git_diff_content = None;
+            }
+        }
+        self.reload_all();
+        self.refresh_git_status(cx);
+    }
+
+    pub fn git_commit(&mut self, message: &str, cx: &mut Context<Self>) -> Result<(), String> {
+        match restclient_core::git::git_commit(&self.workspace_path, message) {
+            Ok(_) => {
+                self.git_commit_message.clear();
+                self.git_error = None;
+                self.git_selected_file = None;
+                self.git_diff_content = None;
+                self.refresh_git_all(cx);
+                Ok(())
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                self.git_error = Some(err_str.clone());
+                cx.notify();
+                Err(err_str)
+            }
+        }
+    }
+
+    pub fn git_checkout(&mut self, branch: &str, cx: &mut Context<Self>) -> Result<(), String> {
+        match restclient_core::git::git_checkout(&self.workspace_path, branch) {
+            Ok(_) => {
+                self.git_branch = Some(branch.to_string());
+                self.git_error = None;
+                self.reload_all();
+                self.refresh_git_all(cx);
+                Ok(())
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                self.git_error = Some(err_str.clone());
+                cx.notify();
+                Err(err_str)
+            }
+        }
+    }
+
+    pub fn git_create_branch(&mut self, name: &str, cx: &mut Context<Self>) -> Result<(), String> {
+        match restclient_core::git::git_create_branch(&self.workspace_path, name) {
+            Ok(_) => {
+                self.git_branch = Some(name.to_string());
+                self.git_error = None;
+                self.refresh_git_all(cx);
+                Ok(())
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                self.git_error = Some(err_str.clone());
+                cx.notify();
+                Err(err_str)
+            }
+        }
+    }
+
+    pub fn git_pull(&mut self, cx: &mut Context<Self>) -> Result<String, String> {
+        self.git_is_syncing = true;
+        cx.notify();
+        let res = restclient_core::git::git_pull(&self.workspace_path);
+        self.git_is_syncing = false;
+        match res {
+            Ok(msg) => {
+                self.git_error = None;
+                self.reload_all();
+                self.refresh_git_all(cx);
+                Ok(msg)
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                self.git_error = Some(err_str.clone());
+                cx.notify();
+                Err(err_str)
+            }
+        }
+    }
+
+    pub fn fetch_in_background(&mut self, cx: &mut Context<Self>) {
+        let ws_path = self.workspace_path.clone();
+        cx.spawn(async move |this, cx| {
+            let res = cx.background_executor().spawn(async move {
+                restclient_core::git::git_fetch(&ws_path)
+            }).await;
+            if res.is_ok() {
+                if let Some(this) = this.upgrade() {
+                    this.update(cx, |ws, cx| {
+                        ws.refresh_git_status(cx);
+                    });
+                }
+            }
+        }).detach();
+    }
+
+    pub fn git_push(&mut self, cx: &mut Context<Self>) -> Result<String, String> {
+        match restclient_core::git::git_push(&self.workspace_path) {
+            Ok(msg) => {
+                self.git_error = None;
+                self.refresh_git_status(cx);
+                Ok(msg)
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                self.git_error = Some(err_str.clone());
+                cx.notify();
+                Err(err_str)
+            }
+        }
+    }
+
+    pub fn git_init_repo(&mut self, cx: &mut Context<Self>) -> Result<(), String> {
+        match restclient_core::git::git_init(&self.workspace_path) {
+            Ok(_) => {
+                self.git_error = None;
+                self.refresh_git_all(cx);
+                Ok(())
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                self.git_error = Some(err_str.clone());
+                cx.notify();
+                Err(err_str)
+            }
+        }
+    }
+
     pub fn save_environments(&mut self, envs: Vec<Environment>, cx: &mut Context<Self>) {
         self.env_save_task = None;
         for env in &envs {
@@ -1462,6 +1922,20 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            show_git_modal: false,
+            active_git_modal: None,
+            git_tab: GitTab::Changes,
+            git_status: None,
+            git_history: Vec::new(),
+            git_branches: Vec::new(),
+            git_remotes: Vec::new(),
+            git_selected_file: None,
+            git_diff_content: None,
+            git_selected_commit: None,
+            git_commit_message: String::new(),
+            git_error: None,
+            git_loading: false,
+            git_is_syncing: false,
             renaming_request_id: None,
             rename_input: None,
             rename_subscription: None,
@@ -1540,6 +2014,20 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            show_git_modal: false,
+            active_git_modal: None,
+            git_tab: GitTab::Changes,
+            git_status: None,
+            git_history: Vec::new(),
+            git_branches: Vec::new(),
+            git_remotes: Vec::new(),
+            git_selected_file: None,
+            git_diff_content: None,
+            git_selected_commit: None,
+            git_commit_message: String::new(),
+            git_error: None,
+            git_loading: false,
+            git_is_syncing: false,
             renaming_request_id: None,
             rename_input: None,
             rename_subscription: None,
@@ -1653,6 +2141,20 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            show_git_modal: false,
+            active_git_modal: None,
+            git_tab: GitTab::Changes,
+            git_status: None,
+            git_history: Vec::new(),
+            git_branches: Vec::new(),
+            git_remotes: Vec::new(),
+            git_selected_file: None,
+            git_diff_content: None,
+            git_selected_commit: None,
+            git_commit_message: String::new(),
+            git_error: None,
+            git_loading: false,
+            git_is_syncing: false,
             renaming_request_id: None,
             rename_input: None,
             rename_subscription: None,
@@ -1741,6 +2243,20 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            show_git_modal: false,
+            active_git_modal: None,
+            git_tab: GitTab::Changes,
+            git_status: None,
+            git_history: Vec::new(),
+            git_branches: Vec::new(),
+            git_remotes: Vec::new(),
+            git_selected_file: None,
+            git_diff_content: None,
+            git_selected_commit: None,
+            git_commit_message: String::new(),
+            git_error: None,
+            git_loading: false,
+            git_is_syncing: false,
             renaming_request_id: None,
             rename_input: None,
             rename_subscription: None,
@@ -1817,6 +2333,20 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            show_git_modal: false,
+            active_git_modal: None,
+            git_tab: GitTab::Changes,
+            git_status: None,
+            git_history: Vec::new(),
+            git_branches: Vec::new(),
+            git_remotes: Vec::new(),
+            git_selected_file: None,
+            git_diff_content: None,
+            git_selected_commit: None,
+            git_commit_message: String::new(),
+            git_error: None,
+            git_loading: false,
+            git_is_syncing: false,
             renaming_request_id: None,
             rename_input: None,
             rename_subscription: None,

@@ -1,12 +1,13 @@
 use crate::components::status_badge::{MethodBadge, StatusCodeBadge};
-use crate::state::{EditorState, ResponseState, WorkspaceState};
+use crate::state::{EditorState, GitActiveModal, ResponseState, ToastState, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     div, px, AnyElement, App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
     MouseButton, ParentElement, Render, RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
-use gpui_component::menu::ContextMenuExt as _;
+use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenuItem};
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::{Icon, IconName};
 use restclient_core::models::{Folder, HttpMethod, HttpRequestItem};
@@ -125,6 +126,7 @@ pub struct SidebarTree {
     workspace_state: Entity<WorkspaceState>,
     editor_state: Entity<EditorState>,
     response_state: Entity<ResponseState>,
+    toast_state: Entity<ToastState>,
 }
 
 impl SidebarTree {
@@ -132,11 +134,13 @@ impl SidebarTree {
         workspace_state: Entity<WorkspaceState>,
         editor_state: Entity<EditorState>,
         response_state: Entity<ResponseState>,
+        toast_state: Entity<ToastState>,
     ) -> Self {
         Self {
             workspace_state,
             editor_state,
             response_state,
+            toast_state,
         }
     }
 }
@@ -144,7 +148,7 @@ impl SidebarTree {
 impl RenderOnce for SidebarTree {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
-        let (git_branch, query, filter_query_raw, folders, requests, renaming_req_id, rename_input, renaming_folder_id, rename_folder_input, renaming_example, rename_example_input, collapsed_folders, collapsed_requests, pins, parse_errors, unsaved_requests, running_request_id) = {
+        let (git_branch, git_status, git_is_syncing, query, filter_query_raw, folders, requests, renaming_req_id, rename_input, renaming_folder_id, rename_folder_input, renaming_example, rename_example_input, collapsed_folders, collapsed_requests, pins, parse_errors, unsaved_requests, running_request_id) = {
             let ws = self.workspace_state.read(cx);
             let req_items: Vec<SidebarReqItem> = ws.requests.iter().map(|r| {
                 let initial_name = {
@@ -174,6 +178,8 @@ impl RenderOnce for SidebarTree {
 
             (
                 ws.git_branch.clone().unwrap_or_else(|| "main".to_string()),
+                ws.git_status.clone(),
+                ws.git_is_syncing,
                 ws.filter_query.to_lowercase(),
                 ws.filter_query.clone(),
                 ws.folders.clone(),
@@ -192,6 +198,11 @@ impl RenderOnce for SidebarTree {
                 ws.running_request_id.clone(),
             )
         };
+        let is_repo = git_status.as_ref().map(|s| s.is_repo).unwrap_or(false);
+        let behind = git_status.as_ref().map(|s| s.behind).unwrap_or(0);
+        let ahead = git_status.as_ref().map(|s| s.ahead).unwrap_or(0);
+        let is_syncing = git_is_syncing;
+
         let active_req_id = self.editor_state.read(cx).active_request.as_ref().map(|r| r.id.clone());
         let active_example_name = self.response_state.read(cx).active_example_name.clone();
         let has_nothing = folders.is_empty() && requests.is_empty();
@@ -199,6 +210,7 @@ impl RenderOnce for SidebarTree {
         let ws_clone = self.workspace_state.clone();
         let ed_clone = self.editor_state.clone();
         let resp_clone = self.response_state.clone();
+        let toast_clone = self.toast_state.clone();
 
         let ws_search = ws_clone.clone();
         let search_holder = window.use_keyed_state(
@@ -255,6 +267,17 @@ impl RenderOnce for SidebarTree {
             };
             let ws_req_drop = ws_clone.clone();
             let target_req_id = req.id.clone();
+
+            let git_green: gpui::Hsla = gpui::rgb(0x4ade80).into();
+            let git_yellow: gpui::Hsla = gpui::rgb(0xfacc15).into();
+            let is_unsaved = unsaved_requests.contains(&req.id);
+            let req_git_status = calculate_request_git_status(&req.id, git_status.as_ref(), is_unsaved);
+
+            let req_name_color = match req_git_status {
+                SidebarGitStatus::New => git_green,
+                SidebarGitStatus::Modified => git_yellow,
+                SidebarGitStatus::Clean => t.text_primary,
+            };
 
             let parent_row = div()
                 .id(format!("req-item-{}", req.id))
@@ -336,7 +359,9 @@ impl RenderOnce for SidebarTree {
                     let r_id_menu = r_id_menu.clone();
                     let init_name_menu = initial_name_menu.clone();
                     let ed_menu = ed_clone.clone();
+                    let toast_menu = toast_clone.clone();
                     let is_pinned = pins.contains(&r_id_menu);
+                    let is_dirty_git = req_git_status != SidebarGitStatus::Clean;
 
                     move |menu, _window, _cx| {
                         let ws_r = ws_menu.clone();
@@ -359,9 +384,9 @@ impl RenderOnce for SidebarTree {
                         let ws_curl = ws_menu.clone();
                         let r_id_curl = r_id_menu.clone();
 
-                        menu
+                        let mut m = menu
                             .item(
-                                gpui_component::menu::PopupMenuItem::new("Copy as YAML")
+                                PopupMenuItem::new("Copy as YAML")
                                     .on_click(move |_, _, cx| {
                                         if let Some(r) = ws_yaml.read(cx).find_request(&r_id_yaml) {
                                             let rf = RequestFile::from_item(r);
@@ -372,7 +397,7 @@ impl RenderOnce for SidebarTree {
                                     }),
                             )
                             .item(
-                                gpui_component::menu::PopupMenuItem::new("Copy as cURL")
+                                PopupMenuItem::new("Copy as cURL")
                                     .on_click(move |_, _, cx| {
                                         if let Some(r) = ws_curl.read(cx).find_request(&r_id_curl) {
                                             let curl = restclient_core::curl::request_to_curl(r, None);
@@ -382,7 +407,7 @@ impl RenderOnce for SidebarTree {
                             )
                             .separator()
                             .item(
-                                gpui_component::menu::PopupMenuItem::new(if is_pinned { "Unpin" } else { "Pin to top" })
+                                PopupMenuItem::new(if is_pinned { "Unpin" } else { "Pin to top" })
                                     .on_click(move |_, _, cx| {
                                         ws_p.update(cx, |state, cx| {
                                             state.toggle_pin(&r_id_p, cx);
@@ -390,7 +415,7 @@ impl RenderOnce for SidebarTree {
                                     }),
                             )
                             .item(
-                                gpui_component::menu::PopupMenuItem::new("Rename")
+                                PopupMenuItem::new("Rename")
                                     .on_click(move |_, window, cx| {
                                         ws_r.update(cx, |state, cx| {
                                             state.start_renaming_request(r_id_r.clone(), init_r.clone(), window, cx);
@@ -398,7 +423,7 @@ impl RenderOnce for SidebarTree {
                                     }),
                             )
                             .item(
-                                gpui_component::menu::PopupMenuItem::new("Duplicate")
+                                PopupMenuItem::new("Duplicate")
                                     .on_click(move |_, _, cx| {
                                         if let Some(dup) = ws_d.update(cx, |state, cx| {
                                             state.duplicate_request(&r_id_d, cx)
@@ -408,14 +433,35 @@ impl RenderOnce for SidebarTree {
                                             });
                                         }
                                     }),
-                            )
-                            .separator()
-                            .item(
-                                gpui_component::menu::PopupMenuItem::new("Delete")
+                            );
+
+                        if is_dirty_git {
+                            let ws_disc = ws_menu.clone();
+                            let ed_disc = ed_menu.clone();
+                            let r_id_disc = r_id_menu.clone();
+                            let toast_disc = toast_menu.clone();
+                            let r_name_disc = init_name_menu.clone();
+
+                            m = m.separator().item(
+                                PopupMenuItem::new("Discard Changes")
                                     .on_click(move |_, _, cx| {
-                                        delete_request_item(&ws_del, &ed_del, &r_id_del, cx);
+                                        let req_name = r_name_disc.clone();
+                                        ws_disc.update(cx, |ws, cx| {
+                                            ws.discard_request_changes(&r_id_disc, &ed_disc, cx);
+                                        });
+                                        toast_disc.update(cx, |ts, cx| {
+                                            ts.push_info("Git Discard", format!("Discarded changes in '{}'", req_name), cx);
+                                        });
                                     }),
-                            )
+                            );
+                        }
+
+                        m.separator().item(
+                            PopupMenuItem::new("Delete")
+                                .on_click(move |_, _, cx| {
+                                    delete_request_item(&ws_del, &ed_del, &r_id_del, cx);
+                                }),
+                        )
                     }
                 })
                 .child(
@@ -495,7 +541,12 @@ impl RenderOnce for SidebarTree {
                             div()
                                 .text_xs()
                                 .font_family(".SystemMonoFont")
-                                .text_color(if is_selected || is_viewing_example { t.text_primary } else { t.text_secondary })
+                                .font_weight(if req_git_status != SidebarGitStatus::Clean {
+                                    gpui::FontWeight::MEDIUM
+                                } else {
+                                    gpui::FontWeight::NORMAL
+                                })
+                                .text_color(req_name_color)
                                 .truncate()
                                 .child(req.display_name.clone())
                                 .into_any_element()
@@ -530,6 +581,25 @@ impl RenderOnce for SidebarTree {
                                     .text_color(t.primary)
                                     .child("●"),
                             )
+                        })
+                        .when(req_git_status != SidebarGitStatus::Clean, |this| {
+                            match req_git_status {
+                                SidebarGitStatus::New => this.child(
+                                    div()
+                                        .text_xs()
+                                        .font_weight(gpui::FontWeight::BOLD)
+                                        .text_color(git_green)
+                                        .child("U"),
+                                ),
+                                SidebarGitStatus::Modified => this.child(
+                                    div()
+                                        .text_xs()
+                                        .font_weight(gpui::FontWeight::BOLD)
+                                        .text_color(git_yellow)
+                                        .child("M"),
+                                ),
+                                SidebarGitStatus::Clean => this,
+                            }
                         })
                         .when_some(req.last_status_code, |this, code| {
                             this.child(StatusCodeBadge::new(code))
@@ -1003,6 +1073,8 @@ impl RenderOnce for SidebarTree {
                                 &ws_clone,
                                 &ed_clone,
                                 &render_req_item,
+                                git_status.as_ref(),
+                                &unsaved_requests,
                             )
                         })
                     })
@@ -1036,28 +1108,330 @@ impl RenderOnce for SidebarTree {
                                     state.move_request_to_folder(&drag.id, None, cx);
                                 });
                             })
-                    }),
+                    })
             )
-            // Footer: git branch chip
-            .child(
+            // Footer at bottom of sidebar: Branch info on left, Pull button on right
+            .child({
+                let ws_footer = ws_clone.clone();
+                let toast_footer = toast_clone.clone();
+                let current_branch_name = git_branch.clone();
+
                 div()
-                    .h(px(32.))
-                    .px(px(10.))
+                    .id("sidebar-footer-bar")
+                    .h(px(28.))
+                    .w_full()
+                    .bg(t.bg_sidebar)
                     .border_t_1()
                     .border_color(t.border)
+                    .px(px(8.))
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .justify_between()
                     .text_xs()
-                    .text_color(t.text_muted)
-                    .child("⎇")
-                    .child(
+                    // Branch chip & dropdown menu
+                    .child(if is_repo {
+                        let ws_menu = ws_footer.clone();
+                        let toast_menu = toast_footer.clone();
+                        let active_b = current_branch_name.clone();
+
+                        Button::new("sidebar-footer-branch-chip")
+                            .ghost()
+                            .compact()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .px(px(4.))
+                            .py(px(2.))
+                            .h(px(24.))
+                            .rounded(px(4.))
+                            .child(
+                                div()
+                                    .w_full()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(4.))
+                                            .overflow_hidden()
+                                            .child(
+                                                div()
+                                                    .text_color(t.primary)
+                                                    .child("⎇"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_color(t.text_secondary)
+                                                    .font_family(".SystemMonoFont")
+                                                    .max_w(px(140.))
+                                                    .overflow_hidden()
+                                                    .text_ellipsis()
+                                                    .child(git_branch),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(4.))
+                                            .when(is_syncing, |s| {
+                                                s.child(
+                                                    div()
+                                                        .text_xs()
+                                                        .text_color(t.primary)
+                                                        .child("⟳"),
+                                                )
+                                            })
+                                            .when(ahead > 0, |s| {
+                                                s.child(
+                                                    div()
+                                                        .text_color(t.text_muted)
+                                                        .child(format!("↑{}", ahead)),
+                                                )
+                                            })
+                                            .when(behind > 0, |s| {
+                                                s.child(
+                                                    div()
+                                                        .text_color(t.primary)
+                                                        .font_weight(gpui::FontWeight::BOLD)
+                                                        .child(format!("↓{}", behind)),
+                                                )
+                                            })
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(t.text_muted)
+                                                    .child("▾"),
+                                            ),
+                                    ),
+                            )
+                            .dropdown_menu(move |menu, window, cx| {
+                                let ws_commit = ws_menu.clone();
+                                let ws_history = ws_menu.clone();
+                                let ws_new_branch = ws_menu.clone();
+                                let ws_remotes = ws_menu.clone();
+                                let ws_fetch = ws_menu.clone();
+                                let ws_pull = ws_menu.clone();
+                                let ws_push = ws_menu.clone();
+                                let toast_fetch = toast_menu.clone();
+                                let toast_pull = toast_menu.clone();
+                                let toast_push = toast_menu.clone();
+
+                                let ws_checkout_parent = ws_menu.clone();
+                                let toast_checkout_parent = toast_menu.clone();
+                                let (branches_list, current_b) = {
+                                    let ws = ws_menu.read(cx);
+                                    let branches = if !ws.git_branches.is_empty() {
+                                        ws.git_branches.clone()
+                                    } else {
+                                        restclient_core::git::git_branches(&ws.workspace_path).unwrap_or_default()
+                                    };
+                                    let current = ws.git_branch.clone().unwrap_or_else(|| active_b.clone());
+                                    (branches, current)
+                                };
+
+                                let mut m = menu;
+
+                                // 1. Commit...
+                                m = m.item(
+                                    PopupMenuItem::new("Commit...")
+                                        .on_click(move |_, _, cx| {
+                                            ws_commit.update(cx, |ws, cx| {
+                                                ws.open_git_modal(GitActiveModal::Commit, cx);
+                                            });
+                                        })
+                                );
+
+                                // 2. History
+                                m = m.item(
+                                    PopupMenuItem::new("History")
+                                        .on_click(move |_, _, cx| {
+                                            ws_history.update(cx, |ws, cx| {
+                                                ws.open_git_modal(GitActiveModal::History, cx);
+                                            });
+                                        })
+                                );
+
+                                // 3. Branch submenu: named after the current branch
+                                m = m.submenu(
+                                    current_b.clone(),
+                                    window,
+                                    cx,
+                                    move |sub, _w, _cx| {
+                                        let mut s = sub;
+                                        if branches_list.is_empty() {
+                                            s = s.item(
+                                                PopupMenuItem::new(if current_b.is_empty() { "No branches".to_string() } else { current_b.clone() })
+                                                    .checked(true)
+                                            );
+                                        } else {
+                                            for b in &branches_list {
+                                                let b_name = b.name.clone();
+                                                let is_curr = b.is_current || b.name == current_b;
+                                                let ws_b = ws_checkout_parent.clone();
+                                                let toast_b = toast_checkout_parent.clone();
+                                                let b_target = b_name.clone();
+
+                                                s = s.item(
+                                                    PopupMenuItem::new(b_name)
+                                                        .checked(is_curr)
+                                                        .on_click(move |_, _, cx| {
+                                                            if !is_curr {
+                                                                ws_b.update(cx, |ws, cx| {
+                                                                    match ws.git_checkout(&b_target, cx) {
+                                                                        Ok(_) => {
+                                                                            toast_b.update(cx, |ts, cx| {
+                                                                                ts.push_success("Git Checkout", format!("Switched to branch '{}'", b_target), cx);
+                                                                            });
+                                                                        }
+                                                                        Err(err) => {
+                                                                            toast_b.update(cx, |ts, cx| {
+                                                                                ts.push_error("Git Checkout Failed", err, cx);
+                                                                            });
+                                                                        }
+                                                                    }
+                                                                });
+                                                            }
+                                                        })
+                                                );
+                                            }
+                                        }
+                                        s
+                                    }
+                                );
+
+                                // 4. New Branch...
+                                m = m.item(
+                                    PopupMenuItem::new("New Branch...")
+                                        .on_click(move |_, _, cx| {
+                                            ws_new_branch.update(cx, |ws, cx| {
+                                                ws.open_git_modal(GitActiveModal::NewBranch, cx);
+                                            });
+                                        })
+                                );
+
+                                m = m.separator();
+
+                                // 5. Fetch
+                                m = m.item(
+                                    PopupMenuItem::new("Fetch")
+                                        .on_click(move |_, _, cx| {
+                                            let ws_s = ws_fetch.clone();
+                                            let toast_s = toast_fetch.clone();
+                                            ws_s.update(cx, |ws, cx| {
+                                                match ws.git_fetch(cx) {
+                                                    Ok(msg) => {
+                                                        let trimmed = msg.trim();
+                                                        toast_s.update(cx, |ts, cx| {
+                                                            ts.push_success("Git Fetch", if trimmed.is_empty() { "Fetched latest references.".to_string() } else { trimmed.to_string() }, cx);
+                                                        });
+                                                    }
+                                                    Err(e) => {
+                                                        toast_s.update(cx, |ts, cx| {
+                                                            ts.push_error("Git Fetch Failed", e, cx);
+                                                        });
+                                                    }
+                                                }
+                                            });
+                                        })
+                                );
+
+                                // 6. Pull
+                                m = m.item(
+                                    PopupMenuItem::new("Pull")
+                                        .on_click(move |_, _, cx| {
+                                            let ws_s = ws_pull.clone();
+                                            let toast_s = toast_pull.clone();
+                                            ws_s.update(cx, |ws, cx| {
+                                                match ws.git_pull(cx) {
+                                                    Ok(msg) => {
+                                                        let trimmed = msg.trim();
+                                                        if trimmed.contains("Already up to date") {
+                                                            toast_s.update(cx, |ts, cx| {
+                                                                ts.push_info("Git Sync", "Already up to date.", cx);
+                                                            });
+                                                        } else {
+                                                            toast_s.update(cx, |ts, cx| {
+                                                                ts.push_success("Git Pull", format!("Successfully pulled: {}", trimmed), cx);
+                                                            });
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        toast_s.update(cx, |ts, cx| {
+                                                            ts.push_error("Git Pull Failed", e, cx);
+                                                        });
+                                                    }
+                                                }
+                                            });
+                                        })
+                                );
+
+                                // 7. Push
+                                m = m.item(
+                                    PopupMenuItem::new("Push")
+                                        .on_click(move |_, _, cx| {
+                                            let ws_s = ws_push.clone();
+                                            let toast_s = toast_push.clone();
+                                            ws_s.update(cx, |ws, cx| {
+                                                match ws.git_push(cx) {
+                                                    Ok(msg) => {
+                                                        let trimmed = msg.trim();
+                                                        toast_s.update(cx, |ts, cx| {
+                                                            ts.push_success("Git Push", if trimmed.is_empty() { "Pushed commits to remote.".to_string() } else { trimmed.to_string() }, cx);
+                                                        });
+                                                    }
+                                                    Err(e) => {
+                                                        toast_s.update(cx, |ts, cx| {
+                                                            ts.push_error("Git Push Failed", e, cx);
+                                                        });
+                                                    }
+                                                }
+                                            });
+                                        })
+                                );
+
+                                m = m.separator();
+
+                                // 8. Manage Remotes...
+                                m = m.item(
+                                    PopupMenuItem::new("Manage Remotes...")
+                                        .on_click(move |_, _, cx| {
+                                            ws_remotes.update(cx, |ws, cx| {
+                                                ws.open_git_modal(GitActiveModal::Remotes, cx);
+                                            });
+                                        })
+                                );
+
+                                m
+                            })
+                            .into_any_element()
+                    } else {
+                        let ws_init = ws_footer.clone();
                         div()
-                            .text_color(t.text_secondary)
-                            .font_family(".SystemMonoFont")
-                            .child(git_branch),
-                    ),
-            );
+                            .id("sidebar-footer-no-git")
+                            .flex_1()
+                            .cursor_pointer()
+                            .px(px(4.))
+                            .py(px(2.))
+                            .rounded(px(4.))
+                            .hover(|s| s.bg(t.bg_hover))
+                            .flex()
+                            .items_center()
+                            .gap(px(4.))
+                            .on_click(move |_, _, cx| {
+                                ws_init.update(cx, |ws, cx| {
+                                    ws.open_git_modal(GitActiveModal::Commit, cx);
+                                });
+                            })
+                            .child(
+                                div()
+                                    .text_color(t.text_muted)
+                                    .child("No Git"),
+                            )
+                            .into_any_element()
+                    })
+            });
 
         res
     }
@@ -1140,6 +1514,107 @@ fn folder_has_matches(
     false
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SidebarGitStatus {
+    New,      // File mới (Untracked '??', Staged Added 'A') -> Green
+    Modified, // File có thay đổi ('M', 'R', 'C', '!', or unsaved) -> Yellow
+    Clean,    // Đã commit -> Normal (White)
+}
+
+pub fn calculate_request_git_status(
+    req_id: &str,
+    git_status: Option<&restclient_core::git::GitStatusResult>,
+    is_unsaved: bool,
+) -> SidebarGitStatus {
+    if is_unsaved {
+        return SidebarGitStatus::Modified;
+    }
+
+    let Some(git) = git_status else {
+        return SidebarGitStatus::Clean;
+    };
+
+    if !git.is_repo {
+        return SidebarGitStatus::Clean;
+    }
+
+    let norm_req = req_id.replace('\\', "/");
+    let coll_rel = format!("collections/{}", norm_req);
+
+    let matches = |p: &str| -> bool {
+        let p = p.replace('\\', "/");
+        p == norm_req
+            || p == coll_rel
+            || p.ends_with(&format!("/{}", norm_req))
+            || p.ends_with(&format!("/{}", coll_rel))
+    };
+
+    // 1. Untracked (new file)
+    if git.untracked_files.iter().any(|item| matches(&item.path)) {
+        return SidebarGitStatus::New;
+    }
+
+    // 2. Staged
+    if let Some(item) = git.staged_files.iter().find(|item| matches(&item.path)) {
+        return match item.status {
+            restclient_core::git::GitFileStatus::Added => SidebarGitStatus::New,
+            _ => SidebarGitStatus::Modified,
+        };
+    }
+
+    // 3. Unstaged (working tree changes)
+    if git.unstaged_files.iter().any(|item| matches(&item.path)) {
+        return SidebarGitStatus::Modified;
+    }
+
+    SidebarGitStatus::Clean
+}
+
+pub fn calculate_folder_git_status(
+    folder_id: &str,
+    folders: &[Folder],
+    requests: &[SidebarReqItem],
+    git_status: Option<&restclient_core::git::GitStatusResult>,
+    unsaved_requests: &std::collections::HashSet<String>,
+) -> SidebarGitStatus {
+    let mut descendant_folders = std::collections::HashSet::new();
+    descendant_folders.insert(folder_id.to_string());
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for f in folders {
+            if let Some(ref pid) = f.parent_id {
+                if descendant_folders.contains(pid) && descendant_folders.insert(f.id.clone()) {
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    let mut has_new = false;
+    for req in requests {
+        if let Some(ref fid) = req.folder_id {
+            if descendant_folders.contains(fid) {
+                let st = calculate_request_git_status(&req.id, git_status, unsaved_requests.contains(&req.id));
+                if st == SidebarGitStatus::Modified {
+                    return SidebarGitStatus::Modified;
+                }
+                if st == SidebarGitStatus::New {
+                    has_new = true;
+                }
+            }
+        }
+    }
+
+    if has_new {
+        SidebarGitStatus::New
+    } else {
+        SidebarGitStatus::Clean
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn render_folder_node(
     folder: &Folder,
     folders: &[Folder],
@@ -1151,12 +1626,30 @@ fn render_folder_node(
     ws_clone: &Entity<WorkspaceState>,
     ed_clone: &Entity<EditorState>,
     render_req_item: &dyn Fn(&SidebarReqItem, bool) -> AnyElement,
+    git_status: Option<&restclient_core::git::GitStatusResult>,
+    unsaved_requests: &std::collections::HashSet<String>,
 ) -> Option<AnyElement> {
     if !folder_has_matches(&folder.id, folders, requests, query) {
         return None;
     }
 
     let t = theme();
+    let git_green: gpui::Hsla = gpui::rgb(0x4ade80).into();
+    let git_yellow: gpui::Hsla = gpui::rgb(0xfacc15).into();
+
+    let folder_git_status = calculate_folder_git_status(
+        &folder.id,
+        folders,
+        requests,
+        git_status,
+        unsaved_requests,
+    );
+    let folder_color = match folder_git_status {
+        SidebarGitStatus::New => git_green,
+        SidebarGitStatus::Modified => git_yellow,
+        SidebarGitStatus::Clean => t.text_primary,
+    };
+
     let f_id = folder.id.clone();
     let is_renaming_folder = renaming_folder_id == Some(f_id.as_str());
     let is_collapsed = collapsed_folders.contains(&f_id) && query.is_empty();
@@ -1353,7 +1846,7 @@ fn render_folder_node(
                                 IconName::FolderOpen
                             })
                             .size(px(14.))
-                            .text_color(t.text_secondary),
+                            .text_color(folder_color),
                         )
                         .child(if let (true, Some(inp)) = (is_renaming_folder, rename_folder_input.as_ref()) {
                             let ws_esc = ws_clone.clone();
@@ -1390,12 +1883,31 @@ fn render_folder_node(
                         } else {
                             div()
                                 .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .text_color(t.text_primary)
+                                .text_color(folder_color)
                                 .truncate()
                                 .child(folder.name.clone())
                                 .into_any_element()
                         }),
-                ),
+                )
+                .when(folder_git_status != SidebarGitStatus::Clean, |this| {
+                    match folder_git_status {
+                        SidebarGitStatus::New => this.child(
+                            div()
+                                .text_xs()
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .text_color(git_green)
+                                .child("U"),
+                        ),
+                        SidebarGitStatus::Modified => this.child(
+                            div()
+                                .text_xs()
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .text_color(git_yellow)
+                                .child("M"),
+                        ),
+                        SidebarGitStatus::Clean => this,
+                    }
+                }),
         )
         // Folder items
         .when(!is_collapsed, |this| {
@@ -1413,6 +1925,8 @@ fn render_folder_node(
                     ws_clone,
                     ed_clone,
                     render_req_item,
+                    git_status,
+                    unsaved_requests,
                 ) {
                     child_elements.push(child_el);
                 }
@@ -1439,3 +1953,197 @@ fn render_folder_node(
     Some(node.into_any_element())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use restclient_core::git::{GitFileStatus, GitStatusItem, GitStatusResult};
+    use restclient_core::models::HttpMethod;
+    use std::collections::HashSet;
+
+    #[test]
+    fn test_calculate_request_git_status_untracked_is_new() {
+        let status = GitStatusResult {
+            is_repo: true,
+            untracked_files: vec![GitStatusItem {
+                path: "collections/users/get.yaml".to_string(),
+                status: GitFileStatus::Untracked,
+                staged: false,
+            }],
+            ..Default::default()
+        };
+
+        let result = calculate_request_git_status("users/get.yaml", Some(&status), false);
+        assert_eq!(result, SidebarGitStatus::New);
+    }
+
+    #[test]
+    fn test_calculate_request_git_status_staged_added_is_new() {
+        let status = GitStatusResult {
+            is_repo: true,
+            staged_files: vec![GitStatusItem {
+                path: "collections/login.yaml".to_string(),
+                status: GitFileStatus::Added,
+                staged: true,
+            }],
+            ..Default::default()
+        };
+
+        let result = calculate_request_git_status("login.yaml", Some(&status), false);
+        assert_eq!(result, SidebarGitStatus::New);
+    }
+
+    #[test]
+    fn test_calculate_request_git_status_unstaged_modified_is_modified() {
+        let status = GitStatusResult {
+            is_repo: true,
+            unstaged_files: vec![GitStatusItem {
+                path: "collections/auth/login.yaml".to_string(),
+                status: GitFileStatus::Modified,
+                staged: false,
+            }],
+            ..Default::default()
+        };
+
+        let result = calculate_request_git_status("auth/login.yaml", Some(&status), false);
+        assert_eq!(result, SidebarGitStatus::Modified);
+    }
+
+    #[test]
+    fn test_calculate_request_git_status_staged_modified_is_modified() {
+        let status = GitStatusResult {
+            is_repo: true,
+            staged_files: vec![GitStatusItem {
+                path: "collections/checkout.yaml".to_string(),
+                status: GitFileStatus::Modified,
+                staged: true,
+            }],
+            ..Default::default()
+        };
+
+        let result = calculate_request_git_status("checkout.yaml", Some(&status), false);
+        assert_eq!(result, SidebarGitStatus::Modified);
+    }
+
+    #[test]
+    fn test_calculate_request_git_status_unsaved_is_modified() {
+        let status = GitStatusResult {
+            is_repo: true,
+            ..Default::default()
+        };
+
+        let result = calculate_request_git_status("req1.yaml", Some(&status), true);
+        assert_eq!(result, SidebarGitStatus::Modified);
+    }
+
+    #[test]
+    fn test_calculate_request_git_status_clean_is_clean() {
+        let status = GitStatusResult {
+            is_repo: true,
+            staged_files: vec![GitStatusItem {
+                path: "collections/other.yaml".to_string(),
+                status: GitFileStatus::Modified,
+                staged: true,
+            }],
+            ..Default::default()
+        };
+
+        let result = calculate_request_git_status("req_clean.yaml", Some(&status), false);
+        assert_eq!(result, SidebarGitStatus::Clean);
+    }
+
+    #[test]
+    fn test_calculate_request_git_status_non_repo_is_clean() {
+        let status = GitStatusResult {
+            is_repo: false,
+            ..Default::default()
+        };
+
+        let result = calculate_request_git_status("req.yaml", Some(&status), false);
+        assert_eq!(result, SidebarGitStatus::Clean);
+    }
+
+    #[test]
+    fn test_calculate_folder_git_status() {
+        let folders = vec![
+            Folder {
+                id: "auth".to_string(),
+                workspace_id: "ws".to_string(),
+                parent_id: None,
+                name: "Auth".to_string(),
+                sort_order: 0,
+            },
+            Folder {
+                id: "auth/sub".to_string(),
+                workspace_id: "ws".to_string(),
+                parent_id: Some("auth".to_string()),
+                name: "Sub".to_string(),
+                sort_order: 0,
+            },
+        ];
+
+        let requests = vec![
+            SidebarReqItem {
+                id: "auth/sub/token.yaml".to_string(),
+                folder_id: Some("auth/sub".to_string()),
+                name: "Token".to_string(),
+                display_name: "Token".to_string(),
+                method: HttpMethod::Post,
+                url: "".to_string(),
+                last_status_code: None,
+                examples: vec![],
+            },
+            SidebarReqItem {
+                id: "auth/login.yaml".to_string(),
+                folder_id: Some("auth".to_string()),
+                name: "Login".to_string(),
+                display_name: "Login".to_string(),
+                method: HttpMethod::Post,
+                url: "".to_string(),
+                last_status_code: None,
+                examples: vec![],
+            },
+        ];
+
+        let unsaved = HashSet::new();
+
+        // 1. When child is modified, parent folder is modified
+        let status_mod = GitStatusResult {
+            is_repo: true,
+            unstaged_files: vec![GitStatusItem {
+                path: "collections/auth/sub/token.yaml".to_string(),
+                status: GitFileStatus::Modified,
+                staged: false,
+            }],
+            ..Default::default()
+        };
+        assert_eq!(
+            calculate_folder_git_status("auth", &folders, &requests, Some(&status_mod), &unsaved),
+            SidebarGitStatus::Modified
+        );
+
+        // 2. When child is new, parent folder is new
+        let status_new = GitStatusResult {
+            is_repo: true,
+            untracked_files: vec![GitStatusItem {
+                path: "collections/auth/login.yaml".to_string(),
+                status: GitFileStatus::Untracked,
+                staged: false,
+            }],
+            ..Default::default()
+        };
+        assert_eq!(
+            calculate_folder_git_status("auth", &folders, &requests, Some(&status_new), &unsaved),
+            SidebarGitStatus::New
+        );
+
+        // 3. When all clean, folder is clean
+        let status_clean = GitStatusResult {
+            is_repo: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            calculate_folder_git_status("auth", &folders, &requests, Some(&status_clean), &unsaved),
+            SidebarGitStatus::Clean
+        );
+    }
+}

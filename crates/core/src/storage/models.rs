@@ -457,11 +457,7 @@ impl EnvironmentFile {
                     .cloned()
                     .or_else(|| secrets.get(&v.name).cloned())
                     .unwrap_or_default();
-                let cur = if secrets.contains_key(&format!("{}:init", v.name)) {
-                    secrets.get(&v.name).cloned().unwrap_or_default()
-                } else {
-                    secrets.get(&v.name).cloned().unwrap_or_default()
-                };
+                let cur = secrets.get(&v.name).cloned().unwrap_or_default();
                 (init, cur)
             } else {
                 let init = v.value.clone().unwrap_or_default();

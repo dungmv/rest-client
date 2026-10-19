@@ -4,3 +4,4 @@ pub mod storage;
 pub mod http;
 pub mod curl;
 pub mod scripting;
+pub mod git;

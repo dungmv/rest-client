@@ -16,6 +16,7 @@ pub mod test_results_panel;
 pub mod tabs_with_badge;
 pub mod titlebar;
 pub mod toast;
+pub mod git_modal;
 
 pub use body_editor::*;
 pub use command_palette::*;
@@ -34,3 +35,4 @@ pub use tabs_with_badge::*;
 pub use test_results_panel::*;
 pub use titlebar::*;
 pub use toast::*;
+pub use git_modal::*;
