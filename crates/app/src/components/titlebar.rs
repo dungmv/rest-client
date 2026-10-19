@@ -40,7 +40,7 @@ impl AppTitleBar {
 }
 
 impl RenderOnce for AppTitleBar {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
         let ws = self.workspace_state.read(cx);
         let ed = self.editor_state.read(cx);
@@ -465,7 +465,7 @@ impl RenderOnce for AppTitleBar {
 
         #[cfg(not(target_os = "macos"))]
         {
-            let is_max = window.is_maximized();
+            let is_max = _window.is_maximized();
             let icon_color = t.text_primary;
 
             bar = bar.child(
