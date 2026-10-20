@@ -62,7 +62,13 @@ impl ScriptSandbox {
 
             let client = Object::new(ctx.clone()).map_err(|e| format!("{:?}", e))?;
             client
-                .set("environment", env_obj)
+                .set("environment", env_obj.clone())
+                .map_err(|e| format!("{:?}", e))?;
+            client
+                .set("global", env_obj.clone())
+                .map_err(|e| format!("{:?}", e))?;
+            client
+                .set("globals", env_obj.clone())
                 .map_err(|e| format!("{:?}", e))?;
             client
                 .set("variables", vars_obj)
@@ -179,7 +185,13 @@ impl ScriptSandbox {
 
             let client = Object::new(ctx.clone()).map_err(|e| format!("{:?}", e))?;
             client
-                .set("environment", env_obj)
+                .set("environment", env_obj.clone())
+                .map_err(|e| format!("{:?}", e))?;
+            client
+                .set("global", env_obj.clone())
+                .map_err(|e| format!("{:?}", e))?;
+            client
+                .set("globals", env_obj.clone())
                 .map_err(|e| format!("{:?}", e))?;
             client
                 .set("variables", vars_obj)
@@ -341,16 +353,39 @@ fn build_variables_object<'js>(
     for v in env_vars {
         var_map.insert(v.key.clone(), v.resolved_value().to_string());
     }
-    let map_cell = Rc::new(var_map);
+    let map_cell = Rc::new(RefCell::new(var_map));
 
     let obj = Object::new(ctx.clone())?;
+
+    let map_for_get = map_cell.clone();
     let get_fn = Function::new(
         ctx.clone(),
         move |key: String| -> Option<String> {
-            map_cell.get(&key).cloned()
+            map_for_get.borrow().get(&key).cloned()
         },
     )?;
     obj.set("get", get_fn)?;
+
+    let map_for_set = map_cell.clone();
+    let set_fn = Function::new(
+        ctx.clone(),
+        move |ctx: rquickjs::Ctx<'js>, key: String, val: Value<'js>| -> rquickjs::Result<()> {
+            let val_str = js_val_to_string(&ctx, &val)?;
+            map_for_set.borrow_mut().insert(key, val_str);
+            Ok(())
+        },
+    )?;
+    obj.set("set", set_fn)?;
+
+    let map_for_has = map_cell;
+    let has_fn = Function::new(
+        ctx.clone(),
+        move |key: String| -> bool {
+            map_for_has.borrow().contains_key(&key)
+        },
+    )?;
+    obj.set("has", has_fn)?;
+
     Ok(obj)
 }
 

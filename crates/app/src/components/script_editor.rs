@@ -1,3 +1,5 @@
+use crate::components::env_autocomplete::{detect_unclosed_env_var, get_env_completions};
+use crate::state::WorkspaceState;
 use crate::theme::theme;
 use anyhow::Result;
 use gpui::prelude::FluentBuilder as _;
@@ -432,11 +434,16 @@ struct CandidateDef {
 
 pub struct ScriptCompletionProvider {
     kind: ScriptEditorKind,
+    workspace_state: Option<Entity<WorkspaceState>>,
 }
 
 impl ScriptCompletionProvider {
     pub fn new(kind: ScriptEditorKind) -> Self {
-        Self { kind }
+        Self { kind, workspace_state: None }
+    }
+
+    pub fn with_workspace(kind: ScriptEditorKind, ws: Entity<WorkspaceState>) -> Self {
+        Self { kind, workspace_state: Some(ws) }
     }
 
     fn get_candidates(&self, base_path: &str) -> Vec<CandidateDef> {
@@ -911,7 +918,10 @@ impl ScriptCompletionProvider {
         }
     }
     pub fn should_trigger(new_text: &str) -> bool {
-        new_text.chars().any(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '$')
+        new_text.contains('{')
+            || new_text.contains('"')
+            || new_text.contains('\'')
+            || new_text.chars().any(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '$')
     }
 }
 
@@ -922,11 +932,85 @@ impl CompletionProvider for ScriptCompletionProvider {
         offset: usize,
         _trigger: CompletionContext,
         _window: &mut Window,
-        _cx: &mut App,
+        cx: &mut App,
     ) -> Task<Result<CompletionResponse>> {
         let full_text = rope.to_string();
         let safe_offset = offset.min(full_text.len());
         let slice = &full_text[..safe_offset];
+
+        // 1. Check for unclosed {{ or {{prefix in script
+        if let Some((start_pos_byte, _end_pos_byte, q)) = detect_unclosed_env_var(slice) {
+            if let Some(ws_entity) = &self.workspace_state {
+                let ws = ws_entity.read(cx);
+                let candidates = get_env_completions(ws, &q);
+                let start_pos = rope.offset_to_position(start_pos_byte);
+                let end_pos = rope.offset_to_position(safe_offset);
+                let items: Vec<CompletionItem> = candidates
+                    .into_iter()
+                    .map(|c| CompletionItem {
+                        label: format!("{{{{{}}}}}", c.name),
+                        filter_text: Some(c.name.clone()),
+                        kind: Some(CompletionItemKind::VARIABLE),
+                        detail: Some(format!("{} • {}", c.value, c.scope)),
+                        documentation: Some(Documentation::String(format!(
+                            "Environment Variable: {}\nValue: {}\nScope: {}",
+                            c.name, c.value, c.scope
+                        ))),
+                        text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                            range: LspRange {
+                                start: start_pos,
+                                end: end_pos,
+                            },
+                            new_text: format!("{{{{{}}}}}", c.name),
+                        })),
+                        ..Default::default()
+                    })
+                    .collect();
+                return Task::ready(Ok(CompletionResponse::Array(items)));
+            }
+        }
+
+        // 2. Check for variable key inside client.environment.get("...", pm.variables.get("...", etc.
+        if let Some(quote_idx) = slice.rfind(['"', '\'']) {
+            let before_quote = slice[..quote_idx].trim_end();
+            if before_quote.ends_with(".get(")
+                || before_quote.ends_with(".has(")
+                || before_quote.ends_with(".unset(")
+                || before_quote.ends_with(".set(")
+            {
+                let var_query = &slice[quote_idx + 1..];
+                if !var_query.contains(['"', '\'', '\n']) {
+                    if let Some(ws_entity) = &self.workspace_state {
+                        let ws = ws_entity.read(cx);
+                        let candidates = get_env_completions(ws, var_query);
+                        let start_lsp = rope.offset_to_position(quote_idx + 1);
+                        let end_lsp = rope.offset_to_position(safe_offset);
+                        let items: Vec<CompletionItem> = candidates
+                            .into_iter()
+                            .map(|c| CompletionItem {
+                                label: c.name.clone(),
+                                filter_text: Some(c.name.clone()),
+                                kind: Some(CompletionItemKind::VARIABLE),
+                                detail: Some(format!("{} • {}", c.value, c.scope)),
+                                documentation: Some(Documentation::String(format!(
+                                    "Environment Variable: {}\nValue: {}\nScope: {}",
+                                    c.name, c.value, c.scope
+                                ))),
+                                text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                                    range: LspRange {
+                                        start: start_lsp,
+                                        end: end_lsp,
+                                    },
+                                    new_text: c.name,
+                                })),
+                                ..Default::default()
+                            })
+                            .collect();
+                        return Task::ready(Ok(CompletionResponse::Array(items)));
+                    }
+                }
+            }
+        }
 
         let query_start = slice
             .rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != '$' && c != '.')

@@ -15,6 +15,7 @@ use gpui_component::input::{
     EditorState as CodeEditorState, Input, InputEvent, InputState, TextareaState,
 };
 use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
+use gpui_component::scroll::ScrollableElement;
 use gpui_kit::assets::Assets;
 use platform::default_window_options;
 use restclient_core::http::{HttpError, HttpExecutor, HttpProgress, ReqwestExecutor, ResolvedRequest};
@@ -127,7 +128,7 @@ impl AppView {
             let mut state = CodeEditorState::new(window, cx);
             state.set_highlighter_factory(highlighter_factory.clone(), cx);
             state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
-                ScriptCompletionProvider::new(ScriptEditorKind::PreRequest),
+                ScriptCompletionProvider::with_workspace(ScriptEditorKind::PreRequest, workspace_state.clone()),
             ));
             state.language("javascript").line_number(true).folding(true)
         });
@@ -135,7 +136,7 @@ impl AppView {
             let mut state = CodeEditorState::new(window, cx);
             state.set_highlighter_factory(highlighter_factory.clone(), cx);
             state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
-                ScriptCompletionProvider::new(ScriptEditorKind::Tests),
+                ScriptCompletionProvider::with_workspace(ScriptEditorKind::Tests, workspace_state.clone()),
             ));
             state.language("javascript").line_number(true).folding(true)
         });
@@ -205,6 +206,42 @@ impl AppView {
                         txt.set_value(post.clone(), window, cx);
                     });
                 }
+            }
+
+            let ws_for_auth = workspace_state.clone();
+            match &req.auth {
+                Auth::Bearer { token } => {
+                    let ws_m = ws_for_auth.clone();
+                    bearer_token_input.update(cx, |inp, cx| {
+                        let ws = ws_m.read(cx);
+                        inp.set_value(crate::components::env_autocomplete::build_tokenized_content(token, ws), window, cx);
+                    });
+                }
+                Auth::Basic { username, password } => {
+                    let ws_u = ws_for_auth.clone();
+                    let ws_p = ws_for_auth.clone();
+                    basic_user_input.update(cx, |inp, cx| {
+                        let ws = ws_u.read(cx);
+                        inp.set_value(crate::components::env_autocomplete::build_tokenized_content(username, ws), window, cx);
+                    });
+                    basic_pass_input.update(cx, |inp, cx| {
+                        let ws = ws_p.read(cx);
+                        inp.set_value(crate::components::env_autocomplete::build_tokenized_content(password, ws), window, cx);
+                    });
+                }
+                Auth::ApiKey { key, value, .. } => {
+                    let ws_k = ws_for_auth.clone();
+                    let ws_v = ws_for_auth.clone();
+                    apikey_key_input.update(cx, |inp, cx| {
+                        let ws = ws_k.read(cx);
+                        inp.set_value(crate::components::env_autocomplete::build_tokenized_content(key, ws), window, cx);
+                    });
+                    apikey_val_input.update(cx, |inp, cx| {
+                        let ws = ws_v.read(cx);
+                        inp.set_value(crate::components::env_autocomplete::build_tokenized_content(value, ws), window, cx);
+                    });
+                }
+                Auth::None => {}
             }
 
             let req_id = req.id.clone();
@@ -321,8 +358,8 @@ impl AppView {
         _subscriptions.push(cx.subscribe(&bearer_token_input, move |_, inp, event, cx| {
             if let InputEvent::Change = event {
                 let val = inp.read(cx).value().to_string();
-                ed_bearer.update(cx, |ed, _cx| {
-                    ed.apply_set_bearer_token(val);
+                ed_bearer.update(cx, |ed, cx| {
+                    ed.update_bearer_token_from_input(val, cx);
                 });
                 save_active_request_without_redraw(&ed_bearer, &ws_bearer, cx);
             }
@@ -335,8 +372,8 @@ impl AppView {
             if let InputEvent::Change = event {
                 let u = inp.read(cx).value().to_string();
                 let p = pass_ref.read(cx).value().to_string();
-                ed_basic_u.update(cx, |ed, _cx| {
-                    ed.apply_set_basic_auth(u, p);
+                ed_basic_u.update(cx, |ed, cx| {
+                    ed.update_basic_auth_from_input(u, p, cx);
                 });
                 save_active_request_without_redraw(&ed_basic_u, &ws_basic_u, cx);
             }
@@ -349,8 +386,8 @@ impl AppView {
             if let InputEvent::Change = event {
                 let u = user_ref.read(cx).value().to_string();
                 let p = inp.read(cx).value().to_string();
-                ed_basic_p.update(cx, |ed, _cx| {
-                    ed.apply_set_basic_auth(u, p);
+                ed_basic_p.update(cx, |ed, cx| {
+                    ed.update_basic_auth_from_input(u, p, cx);
                 });
                 save_active_request_without_redraw(&ed_basic_p, &ws_basic_p, cx);
             }
@@ -363,12 +400,12 @@ impl AppView {
             if let InputEvent::Change = event {
                 let k = inp.read(cx).value().to_string();
                 let v = ak_val_ref.read(cx).value().to_string();
-                ed_ak_k.update(cx, |ed, _cx| {
+                ed_ak_k.update(cx, |ed, cx| {
                     let in_header = match ed.active_request.as_ref().map(|r| &r.auth) {
                         Some(Auth::ApiKey { in_header, .. }) => *in_header,
                         _ => true,
                     };
-                    ed.apply_set_api_key(k, v, in_header);
+                    ed.update_api_key_from_input(k, v, in_header, cx);
                 });
                 save_active_request_without_redraw(&ed_ak_k, &ws_ak_k, cx);
             }
@@ -381,12 +418,12 @@ impl AppView {
             if let InputEvent::Change = event {
                 let k = ak_key_ref.read(cx).value().to_string();
                 let v = inp.read(cx).value().to_string();
-                ed_ak_v.update(cx, |ed, _cx| {
+                ed_ak_v.update(cx, |ed, cx| {
                     let in_header = match ed.active_request.as_ref().map(|r| &r.auth) {
                         Some(Auth::ApiKey { in_header, .. }) => *in_header,
                         _ => true,
                     };
-                    ed.apply_set_api_key(k, v, in_header);
+                    ed.update_api_key_from_input(k, v, in_header, cx);
                 });
                 save_active_request_without_redraw(&ed_ak_v, &ws_ak_v, cx);
             }
@@ -658,6 +695,19 @@ impl AppView {
             _ => {}
         }
 
+        match &mut req_item.auth {
+            Auth::Bearer { token } => *token = resolve_fake_vars(token),
+            Auth::Basic { username, password } => {
+                *username = resolve_fake_vars(username);
+                *password = resolve_fake_vars(password);
+            }
+            Auth::ApiKey { key, value, .. } => {
+                *key = resolve_fake_vars(key);
+                *value = resolve_fake_vars(value);
+            }
+            _ => {}
+        }
+
         let ws = ws_entity.read(cx);
         let env = Some(ws.effective_environment());
 
@@ -921,6 +971,306 @@ impl AppView {
             }
         }).detach();
     }
+
+    fn render_auth_input<F>(
+        &self,
+        input_id: &'static str,
+        input_state: &Entity<InputState>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        on_update: F,
+    ) -> impl IntoElement
+    where
+        F: 'static + Clone + Fn(String, &mut Window, &mut App),
+    {
+        let t = theme();
+        let current_val = input_state.read(cx).value().to_string();
+
+        let (completion_candidates, unclosed) = if current_val.contains("{{") {
+            let ws = self.workspace_state.read(cx);
+            let unclosed = detect_unclosed_env_var(&current_val);
+            let candidates = unclosed
+                .as_ref()
+                .map(|(_, _, q)| get_env_completions(ws, q))
+                .unwrap_or_default();
+            (candidates, unclosed)
+        } else {
+            (Vec::new(), None)
+        };
+        let show_autocomplete = !completion_candidates.is_empty();
+
+        let hover_token_state = window.use_keyed_state(
+            gpui::SharedString::from(format!("hover-auth-{}", input_id)),
+            cx,
+            |_window, _cx| None::<(String, gpui::Bounds<gpui::Pixels>)>,
+        );
+        let hovered_token = hover_token_state.read(cx).clone();
+
+        let ws_for_token = self.workspace_state.clone();
+        let ws_for_click = self.workspace_state.clone();
+        let ws_for_hover = self.workspace_state.clone();
+        let h_token = hover_token_state.clone();
+
+        div()
+            .relative()
+            .w_full()
+            .child(
+                div()
+                    .h(px(32.))
+                    .px(px(6.))
+                    .rounded(px(4.))
+                    .bg(t.bg_input)
+                    .border_1()
+                    .border_color(t.border)
+                    .hover(|s| s.border_color(t.border_focus))
+                    .flex()
+                    .items_center()
+                    .child(
+                        Input::new(input_state)
+                            .id(input_id)
+                            .appearance(false)
+                            .bordered(false)
+                            .focus_bordered(false)
+                            .cleanable(true)
+                            .text_xs()
+                            .font_family(".SystemMonoFont")
+                            .token(move |token_ctx, _window, cx| {
+                                let var_name = token_ctx.token().id().to_string();
+                                let ws = ws_for_token.read(cx);
+                                let (_val, scope, is_res) = get_variable_details(ws, &var_name);
+                                let (_kind, color, bg_tint) = get_variable_kind_and_color(&scope, is_res);
+
+                                div()
+                                    .id(gpui::SharedString::from(format!("{}-tok-{}", input_id, var_name)))
+                                    .flex()
+                                    .items_center()
+                                    .px(px(5.))
+                                    .py(px(1.))
+                                    .rounded(px(3.))
+                                    .bg(bg_tint)
+                                    .text_xs()
+                                    .font_family(".SystemMonoFont")
+                                    .text_color(color)
+                                    .cursor_pointer()
+                                    .child(var_name)
+                            })
+                            .on_token_hover(move |event, _window, cx| {
+                                let is_h = event.is_hovered();
+                                let name = event.token().id().to_string();
+                                let bounds = event.bounds();
+                                h_token.update(cx, |h, cx| {
+                                    if is_h { *h = Some((name, bounds)); } else { *h = None; }
+                                    cx.notify();
+                                });
+                            })
+                            .on_token_click(move |_, _window, cx| {
+                                ws_for_click.update(cx, |st, cx| {
+                                    st.toggle_env_modal(cx);
+                                });
+                            }),
+                    ),
+            )
+            .when_some(hovered_token, |this, (var_name, _bounds)| {
+                let ws = ws_for_hover.read(cx);
+                let (val, scope, is_res) = get_variable_details(ws, &var_name);
+                let (_kind, color, bg_tint) = get_variable_kind_and_color(&scope, is_res);
+
+                this.child(
+                    deferred(
+                        div()
+                            .absolute()
+                            .top(px(34.))
+                            .left(px(0.))
+                            .w(px(320.))
+                            .p(px(8.))
+                            .rounded(px(6.))
+                            .bg(t.bg_card)
+                            .border_1()
+                            .border_color(color)
+                            .shadow_2xl()
+                            .occlude()
+                            .flex()
+                            .flex_col()
+                            .gap(px(4.))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .text_color(color)
+                                            .child(format!("{{{{{}}}}}", var_name)),
+                                    )
+                                    .child(
+                                        div()
+                                            .px(px(5.))
+                                            .py(px(1.))
+                                            .rounded(px(3.))
+                                            .bg(bg_tint)
+                                            .border_1()
+                                            .border_color(color)
+                                            .text_xs()
+                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                            .text_color(color)
+                                            .child(scope),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .font_family(".SystemMonoFont")
+                                    .text_color(if is_res { t.text_primary } else { color })
+                                    .child(if is_res {
+                                        format!("= \"{}\"", val)
+                                    } else {
+                                        "Variable not found in active or global environments".to_string()
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(t.text_muted)
+                                    .child("Click variable to manage environments"),
+                            ),
+                    )
+                    .with_priority(90),
+                )
+            })
+            .when(show_autocomplete, |this| {
+                let (start_idx, end_idx) = unclosed.as_ref().map(|(pos, end, _)| (*pos, *end)).unwrap_or((0, 0));
+                let current_text = current_val.clone();
+                let inp_target = input_state.clone();
+                let ws_target = self.workspace_state.clone();
+                let on_up = on_update.clone();
+
+                this.child(
+                    deferred(
+                        div()
+                            .absolute()
+                            .top(px(34.))
+                            .left(px(0.))
+                            .w(px(340.))
+                            .max_h(px(200.))
+                            .rounded(px(6.))
+                            .bg(t.bg_card)
+                            .border_1()
+                            .border_color(t.primary)
+                            .shadow_2xl()
+                            .occlude()
+                            .flex()
+                            .flex_col()
+                            .overflow_hidden()
+                            .child(
+                                div()
+                                    .px(px(10.))
+                                    .py(px(5.))
+                                    .border_b_1()
+                                    .border_color(t.border)
+                                    .bg(t.bg_panel)
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .text_color(t.text_secondary)
+                                            .child("ENVIRONMENT VARIABLES"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(t.text_muted)
+                                            .child("Click to insert"),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .p(px(4.))
+                                    .overflow_y_scrollbar()
+                                    .bg(t.bg_card)
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(2.))
+                                    .children(completion_candidates.into_iter().map(|cand| {
+                                        let cand_name = cand.name.clone();
+                                        let cand_val = cand.value.clone();
+                                        let cand_scope = cand.scope.clone();
+                                        let cur_text = current_text.clone();
+                                        let inp_c = inp_target.clone();
+                                        let ws_c = ws_target.clone();
+                                        let on_up_c = on_up.clone();
+                                        let (_kind, cand_color, cand_bg_tint) = get_variable_kind_and_color(&cand_scope, true);
+
+                                        div()
+                                            .id(gpui::SharedString::from(format!("{}-cand-{}", input_id, cand.name)))
+                                            .cursor_pointer()
+                                            .px(px(8.))
+                                            .py(px(5.))
+                                            .rounded(px(4.))
+                                            .hover(|s| s.bg(t.bg_hover))
+                                            .flex()
+                                            .items_center()
+                                            .justify_between()
+                                            .on_click(move |_, window, cx| {
+                                                let mut new_text = cur_text.clone();
+                                                if start_idx <= new_text.len() && end_idx <= new_text.len() && start_idx <= end_idx {
+                                                    new_text.replace_range(start_idx..end_idx, &format!("{{{{{}}}}}", cand_name));
+                                                    let content = {
+                                                        let ws = ws_c.read(cx);
+                                                        build_tokenized_content(&new_text, ws)
+                                                    };
+                                                    inp_c.update(cx, |inp, cx| {
+                                                        inp.set_value(content, window, cx);
+                                                    });
+                                                    on_up_c(new_text, window, cx);
+                                                }
+                                            })
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap(px(8.))
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .font_weight(gpui::FontWeight::BOLD)
+                                                            .font_family(".SystemMonoFont")
+                                                            .text_color(cand_color)
+                                                            .child(format!("{{{{{}}}}}", cand.name)),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .font_family(".SystemMonoFont")
+                                                            .text_color(t.text_muted)
+                                                            .child(format!("= \"{}\"", cand_val)),
+                                                    ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .px(px(6.))
+                                                    .py(px(1.))
+                                                    .rounded(px(3.))
+                                                    .bg(cand_bg_tint)
+                                                    .border_1()
+                                                    .border_color(cand_color)
+                                                    .text_xs()
+                                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                                    .text_color(cand_color)
+                                                    .child(cand_scope),
+                                            )
+                                    })),
+                            ),
+                    )
+                    .with_priority(100),
+                )
+            })
+    }
 }
 
 impl Render for AppView {
@@ -989,26 +1339,37 @@ impl Render for AppView {
                             inp.set_value(tokenized_url, window, cx);
                         });
 
+                        let ws_holder = self.workspace_state.clone();
                         match &req.auth {
                             Auth::Bearer { token } => {
+                                let ws_m = ws_holder.clone();
                                 self.bearer_token_input.update(cx, |inp, cx| {
-                                    inp.set_value(token.clone(), window, cx);
+                                    let ws = ws_m.read(cx);
+                                    inp.set_value(crate::components::env_autocomplete::build_tokenized_content(token, ws), window, cx);
                                 });
                             }
                             Auth::Basic { username, password } => {
+                                let ws_u = ws_holder.clone();
+                                let ws_p = ws_holder.clone();
                                 self.basic_user_input.update(cx, |inp, cx| {
-                                    inp.set_value(username.clone(), window, cx);
+                                    let ws = ws_u.read(cx);
+                                    inp.set_value(crate::components::env_autocomplete::build_tokenized_content(username, ws), window, cx);
                                 });
                                 self.basic_pass_input.update(cx, |inp, cx| {
-                                    inp.set_value(password.clone(), window, cx);
+                                    let ws = ws_p.read(cx);
+                                    inp.set_value(crate::components::env_autocomplete::build_tokenized_content(password, ws), window, cx);
                                 });
                             }
                             Auth::ApiKey { key, value, .. } => {
+                                let ws_k = ws_holder.clone();
+                                let ws_v = ws_holder.clone();
                                 self.apikey_key_input.update(cx, |inp, cx| {
-                                    inp.set_value(key.clone(), window, cx);
+                                    let ws = ws_k.read(cx);
+                                    inp.set_value(crate::components::env_autocomplete::build_tokenized_content(key, ws), window, cx);
                                 });
                                 self.apikey_val_input.update(cx, |inp, cx| {
-                                    inp.set_value(value.clone(), window, cx);
+                                    let ws = ws_v.read(cx);
+                                    inp.set_value(crate::components::env_autocomplete::build_tokenized_content(value, ws), window, cx);
                                 });
                             }
                             Auth::None => {
@@ -1627,6 +1988,7 @@ impl Render for AppView {
                                                                                     .child("No authentication will be added to this request.")
                                                                             }
                                                                             Auth::Bearer { .. } => {
+                                                                                let ed_b = ed_c.clone();
                                                                                 div()
                                                                                     .pt(px(12.))
                                                                                     .flex()
@@ -1634,26 +1996,24 @@ impl Render for AppView {
                                                                                     .gap(px(8.))
                                                                                     .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.text_muted).child("Token:"))
                                                                                     .child(
-                                                                                        div()
-                                                                                            .h(px(32.))
-                                                                                            .px(px(6.))
-                                                                                            .rounded(px(4.))
-                                                                                            .bg(t.bg_input)
-                                                                                            .border_1()
-                                                                                            .border_color(t.border)
-                                                                                            .flex()
-                                                                                            .items_center()
-                                                                                            .child(
-                                                                                                Input::new(&self.bearer_token_input)
-                                                                                                    .id("auth-bearer-token-input")
-                                                                                                    .appearance(false)
-                                                                                                    .bordered(false)
-                                                                                                    .focus_bordered(false)
-                                                                                                    .cleanable(true),
-                                                                                            ),
+                                                                                        self.render_auth_input(
+                                                                                            "auth-bearer-token-input",
+                                                                                            &self.bearer_token_input,
+                                                                                            window,
+                                                                                            cx,
+                                                                                            move |new_token, _window, cx| {
+                                                                                                ed_b.update(cx, |ed, cx| {
+                                                                                                    ed.set_bearer_token(new_token, cx);
+                                                                                                });
+                                                                                            },
+                                                                                        ),
                                                                                     )
                                                                             }
                                                                             Auth::Basic { .. } => {
+                                                                                let ed_u = ed_c.clone();
+                                                                                let ed_p = ed_c.clone();
+                                                                                let p_in = self.basic_pass_input.clone();
+                                                                                let u_in = self.basic_user_input.clone();
                                                                                 div()
                                                                                     .pt(px(12.))
                                                                                     .flex()
@@ -1661,52 +2021,46 @@ impl Render for AppView {
                                                                                     .gap(px(8.))
                                                                                     .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.text_muted).child("Username:"))
                                                                                     .child(
-                                                                                        div()
-                                                                                            .h(px(32.))
-                                                                                            .px(px(6.))
-                                                                                            .rounded(px(4.))
-                                                                                            .bg(t.bg_input)
-                                                                                            .border_1()
-                                                                                            .border_color(t.border)
-                                                                                            .flex()
-                                                                                            .items_center()
-                                                                                            .child(
-                                                                                                Input::new(&self.basic_user_input)
-                                                                                                    .id("auth-basic-user-input")
-                                                                                                    .appearance(false)
-                                                                                                    .bordered(false)
-                                                                                                    .focus_bordered(false)
-                                                                                                    .cleanable(true),
-                                                                                            ),
+                                                                                        self.render_auth_input(
+                                                                                            "auth-basic-user-input",
+                                                                                            &self.basic_user_input,
+                                                                                            window,
+                                                                                            cx,
+                                                                                            move |new_user, _window, cx| {
+                                                                                                let pass = p_in.read(cx).value().to_string();
+                                                                                                ed_u.update(cx, |ed, cx| {
+                                                                                                    ed.set_basic_auth(new_user, pass, cx);
+                                                                                                });
+                                                                                            },
+                                                                                        ),
                                                                                     )
                                                                                     .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.text_muted).child("Password:"))
                                                                                     .child(
-                                                                                        div()
-                                                                                            .h(px(32.))
-                                                                                            .px(px(6.))
-                                                                                            .rounded(px(4.))
-                                                                                            .bg(t.bg_input)
-                                                                                            .border_1()
-                                                                                            .border_color(t.border)
-                                                                                            .flex()
-                                                                                            .items_center()
-                                                                                            .child(
-                                                                                                Input::new(&self.basic_pass_input)
-                                                                                                    .id("auth-basic-pass-input")
-                                                                                                    .appearance(false)
-                                                                                                    .bordered(false)
-                                                                                                    .focus_bordered(false)
-                                                                                                    .cleanable(true),
-                                                                                            ),
+                                                                                        self.render_auth_input(
+                                                                                            "auth-basic-pass-input",
+                                                                                            &self.basic_pass_input,
+                                                                                            window,
+                                                                                            cx,
+                                                                                            move |new_pass, _window, cx| {
+                                                                                                let user = u_in.read(cx).value().to_string();
+                                                                                                ed_p.update(cx, |ed, cx| {
+                                                                                                    ed.set_basic_auth(user, new_pass, cx);
+                                                                                                });
+                                                                                            },
+                                                                                        ),
                                                                                     )
                                                                             }
                                                                             Auth::ApiKey { key, value, in_header } => {
                                                                                 let ed_loc_h = ed_c.clone();
                                                                                 let ed_loc_q = ed_c.clone();
+                                                                                let ed_k = ed_c.clone();
+                                                                                let ed_v = ed_c.clone();
                                                                                 let k_h = key.clone();
                                                                                 let v_h = value.clone();
                                                                                 let k_q = key.clone();
                                                                                 let v_q = value.clone();
+                                                                                let v_in = self.apikey_val_input.clone();
+                                                                                let k_in = self.apikey_key_input.clone();
                                                                                 div()
                                                                                     .pt(px(12.))
                                                                                     .flex()
@@ -1714,43 +2068,33 @@ impl Render for AppView {
                                                                                     .gap(px(8.))
                                                                                     .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.text_muted).child("Header / Param Key:"))
                                                                                     .child(
-                                                                                        div()
-                                                                                            .h(px(32.))
-                                                                                            .px(px(6.))
-                                                                                            .rounded(px(4.))
-                                                                                            .bg(t.bg_input)
-                                                                                            .border_1()
-                                                                                            .border_color(t.border)
-                                                                                            .flex()
-                                                                                            .items_center()
-                                                                                            .child(
-                                                                                                Input::new(&self.apikey_key_input)
-                                                                                                    .id("auth-apikey-key-input")
-                                                                                                    .appearance(false)
-                                                                                                    .bordered(false)
-                                                                                                    .focus_bordered(false)
-                                                                                                    .cleanable(true),
-                                                                                            ),
+                                                                                        self.render_auth_input(
+                                                                                            "auth-apikey-key-input",
+                                                                                            &self.apikey_key_input,
+                                                                                            window,
+                                                                                            cx,
+                                                                                            move |new_key, _window, cx| {
+                                                                                                let val = v_in.read(cx).value().to_string();
+                                                                                                ed_k.update(cx, |ed, cx| {
+                                                                                                    ed.set_api_key(new_key, val, in_header, cx);
+                                                                                                });
+                                                                                            },
+                                                                                        ),
                                                                                     )
                                                                                     .child(div().text_xs().font_weight(gpui::FontWeight::SEMIBOLD).text_color(t.text_muted).child("Value:"))
                                                                                     .child(
-                                                                                        div()
-                                                                                            .h(px(32.))
-                                                                                            .px(px(6.))
-                                                                                            .rounded(px(4.))
-                                                                                            .bg(t.bg_input)
-                                                                                            .border_1()
-                                                                                            .border_color(t.border)
-                                                                                            .flex()
-                                                                                            .items_center()
-                                                                                            .child(
-                                                                                                Input::new(&self.apikey_val_input)
-                                                                                                    .id("auth-apikey-val-input")
-                                                                                                    .appearance(false)
-                                                                                                    .bordered(false)
-                                                                                                    .focus_bordered(false)
-                                                                                                    .cleanable(true),
-                                                                                            ),
+                                                                                        self.render_auth_input(
+                                                                                            "auth-apikey-val-input",
+                                                                                            &self.apikey_val_input,
+                                                                                            window,
+                                                                                            cx,
+                                                                                            move |new_val, _window, cx| {
+                                                                                                let key = k_in.read(cx).value().to_string();
+                                                                                                ed_v.update(cx, |ed, cx| {
+                                                                                                    ed.set_api_key(key, new_val, in_header, cx);
+                                                                                                });
+                                                                                            },
+                                                                                        ),
                                                                                     )
                                                                                     .child(
                                                                                         div()

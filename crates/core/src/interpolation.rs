@@ -3,7 +3,7 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-static VAR_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\{([a-zA-Z0-9_.-]+)\}\}").unwrap());
+static VAR_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\{\s*([$a-zA-Z0-9_.-]+)\s*\}\}").unwrap());
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariableSpan {
@@ -71,7 +71,7 @@ pub fn interpolate_with_map(text: &str, var_map: &HashMap<&str, &str>) -> Interp
 
     for caps in VAR_REGEX.captures_iter(text) {
         let whole_match = caps.get(0).unwrap();
-        let var_name = caps.get(1).unwrap().as_str();
+        let var_name = caps.get(1).unwrap().as_str().trim();
 
         // Push text preceding the match
         result.push_str(&text[last_match_end..whole_match.start()]);
@@ -87,6 +87,31 @@ pub fn interpolate_with_map(text: &str, var_map: &HashMap<&str, &str>) -> Interp
                 is_resolved: true,
                 value: Some(val.to_string()),
             });
+        } else if var_name.starts_with('$') {
+            let fake_template = format!("{{{{{}}}}}", var_name);
+            let resolved_fake = crate::scripting::fake_vars::resolve_fake_vars(&fake_template);
+            if resolved_fake != fake_template {
+                result.push_str(&resolved_fake);
+                let end_pos = result.len();
+                spans.push(VariableSpan {
+                    start: start_pos,
+                    end: end_pos,
+                    name: var_name.to_string(),
+                    is_resolved: true,
+                    value: Some(resolved_fake),
+                });
+            } else {
+                result.push_str(whole_match.as_str());
+                let end_pos = result.len();
+                unresolved_variables.push(var_name.to_string());
+                spans.push(VariableSpan {
+                    start: start_pos,
+                    end: end_pos,
+                    name: var_name.to_string(),
+                    is_resolved: false,
+                    value: None,
+                });
+            }
         } else {
             result.push_str(whole_match.as_str());
             let end_pos = result.len();
@@ -127,9 +152,21 @@ pub fn scan_variables(raw_text: &str, env: Option<&Environment>) -> Vec<Variable
     let mut spans = Vec::new();
     for caps in VAR_REGEX.captures_iter(raw_text) {
         let whole_match = caps.get(0).unwrap();
-        let var_name = caps.get(1).unwrap().as_str();
-        let is_resolved = var_map.contains_key(var_name);
-        let value = var_map.get(var_name).map(|v| v.to_string());
+        let var_name = caps.get(1).unwrap().as_str().trim();
+        let is_in_env = var_map.contains_key(var_name);
+        let (is_resolved, value) = if is_in_env {
+            (true, var_map.get(var_name).map(|v| v.to_string()))
+        } else if var_name.starts_with('$') {
+            let fake_template = format!("{{{{{}}}}}", var_name);
+            let resolved_fake = crate::scripting::fake_vars::resolve_fake_vars(&fake_template);
+            if resolved_fake != fake_template {
+                (true, Some(resolved_fake))
+            } else {
+                (false, None)
+            }
+        } else {
+            (false, None)
+        };
 
         spans.push(VariableSpan {
             start: whole_match.start(),
@@ -213,5 +250,25 @@ mod tests {
         assert!(spans[0].is_resolved);
         assert_eq!(spans[1].name, "item_id");
         assert!(!spans[1].is_resolved);
+    }
+
+    #[test]
+    fn test_interpolation_dynamic_fake_vars_and_trim() {
+        let env = Environment::new("ws1", "local");
+        let raw = "https://api.com/{{ $guid }}/users/{{ $randomInt }}";
+        let res = interpolate(raw, Some(&env));
+        assert!(!res.text.contains("{{"));
+        assert!(res.text.starts_with("https://api.com/"));
+        assert_eq!(res.spans.len(), 2);
+        assert!(res.spans[0].is_resolved);
+        assert!(res.spans[1].is_resolved);
+
+        let spans = scan_variables(raw, Some(&env));
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].name, "$guid");
+        assert!(spans[0].is_resolved);
+        assert!(spans[0].value.is_some());
+        assert_eq!(spans[1].name, "$randomInt");
+        assert!(spans[1].is_resolved);
     }
 }

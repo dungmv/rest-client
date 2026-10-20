@@ -25,8 +25,8 @@ struct KvRowInputHolder {
 struct RowEnvData {
     key_vars: Vec<(String, String, String, bool)>,
     val_vars: Vec<(String, String, String, bool)>,
-    key_completions: Option<(usize, Vec<EnvVarCandidate>)>,
-    val_completions: Option<(usize, Vec<EnvVarCandidate>)>,
+    key_completions: Option<(usize, usize, Vec<EnvVarCandidate>)>,
+    val_completions: Option<(usize, usize, Vec<EnvVarCandidate>)>,
 }
 
 #[derive(IntoElement)]
@@ -108,14 +108,14 @@ impl RenderOnce for KvTable {
 
                     let key_completions = if pair.key.contains("{{") {
                         detect_unclosed_env_var(&pair.key)
-                            .map(|(pos, q)| (pos, get_env_completions(ws, &q)))
+                            .map(|(pos, end, q)| (pos, end, get_env_completions(ws, &q)))
                     } else {
                         None
                     };
 
                     let val_completions = if pair.value.contains("{{") {
                         detect_unclosed_env_var(&pair.value)
-                            .map(|(pos, q)| (pos, get_env_completions(ws, &q)))
+                            .map(|(pos, end, q)| (pos, end, get_env_completions(ws, &q)))
                     } else {
                         None
                     };
@@ -424,7 +424,7 @@ impl RenderOnce for KvTable {
                                 )
                             })
                             // Floating Autocomplete Menu for Key
-                            .when_some(row_env.key_completions.clone(), |this, (start_pos, completions)| {
+                            .when_some(row_env.key_completions.clone(), |this, (start_pos, end_pos, completions)| {
                                 if completions.is_empty() {
                                     return this;
                                 }
@@ -432,6 +432,7 @@ impl RenderOnce for KvTable {
                                 let cur_k = key_val.clone();
                                 let cur_v = val_val.clone();
                                 let on_up_c = on_update.clone();
+                                let ws_k_c = ws_clone.clone();
 
                                 this.child(
                                     deferred(
@@ -460,6 +461,7 @@ impl RenderOnce for KvTable {
                                                 let cur_k_item = cur_k.clone();
                                                 let cur_v_item = cur_v.clone();
                                                 let on_up = on_up_c.clone();
+                                                let ws_k_inner = ws_k_c.clone();
                                                 let (_kind, item_color, item_bg_tint) = get_variable_kind_and_color(&item_scope, true);
 
                                                 div()
@@ -473,12 +475,19 @@ impl RenderOnce for KvTable {
                                                     .items_center()
                                                     .justify_between()
                                                     .on_click(move |_, window, cx| {
-                                                        let before_brace = &cur_k_item[..start_pos];
-                                                        let new_key = format!("{before_brace}{{{{{}}}}}", item_name);
-                                                        k_in.update(cx, |inp, cx| {
-                                                            inp.set_value(new_key.clone(), window, cx);
-                                                        });
-                                                        on_up(idx, new_key, cur_v_item.clone(), enabled, window, cx);
+                                                        let mut new_key = cur_k_item.clone();
+                                                        if start_pos <= new_key.len() && end_pos <= new_key.len() && start_pos <= end_pos {
+                                                            new_key.replace_range(start_pos..end_pos, &format!("{{{{{}}}}}", item_name));
+                                                            let content = if let Some(ws_m) = &ws_k_inner {
+                                                                build_tokenized_content(&new_key, ws_m.read(cx))
+                                                            } else {
+                                                                new_key.clone().into()
+                                                            };
+                                                            k_in.update(cx, |inp, cx| {
+                                                                inp.set_value(content, window, cx);
+                                                            });
+                                                            on_up(idx, new_key, cur_v_item.clone(), enabled, window, cx);
+                                                        }
                                                     })
                                                     .child(
                                                         div()
@@ -660,7 +669,7 @@ impl RenderOnce for KvTable {
                                 )
                             })
                             // Floating Autocomplete Menu for Value
-                            .when_some(row_env.val_completions.clone(), |this, (start_pos, completions)| {
+                            .when_some(row_env.val_completions.clone(), |this, (start_pos, end_pos, completions)| {
                                 if completions.is_empty() {
                                     return this;
                                 }
@@ -668,6 +677,7 @@ impl RenderOnce for KvTable {
                                 let cur_k = key_val.clone();
                                 let cur_v = val_val.clone();
                                 let on_up_c = on_update.clone();
+                                let ws_v_c = ws_clone.clone();
 
                                 this.child(
                                     deferred(
@@ -696,6 +706,7 @@ impl RenderOnce for KvTable {
                                                 let cur_val = cur_v.clone();
                                                 let cur_k = cur_k.clone();
                                                 let on_up = on_up_c.clone();
+                                                let ws_v_inner = ws_v_c.clone();
                                                 let (_kind, item_color, item_bg_tint) = get_variable_kind_and_color(&item_scope, true);
 
                                                 div()
@@ -709,12 +720,19 @@ impl RenderOnce for KvTable {
                                                     .items_center()
                                                     .justify_between()
                                                     .on_click(move |_, window, cx| {
-                                                        let before_brace = &cur_val[..start_pos];
-                                                        let new_val = format!("{before_brace}{{{{{}}}}}", item_name);
-                                                        v_in.update(cx, |inp, cx| {
-                                                            inp.set_value(new_val.clone(), window, cx);
-                                                        });
-                                                        on_up(idx, cur_k.clone(), new_val, enabled, window, cx);
+                                                        let mut new_val = cur_val.clone();
+                                                        if start_pos <= new_val.len() && end_pos <= new_val.len() && start_pos <= end_pos {
+                                                            new_val.replace_range(start_pos..end_pos, &format!("{{{{{}}}}}", item_name));
+                                                            let content = if let Some(ws_m) = &ws_v_inner {
+                                                                build_tokenized_content(&new_val, ws_m.read(cx))
+                                                            } else {
+                                                                new_val.clone().into()
+                                                            };
+                                                            v_in.update(cx, |inp, cx| {
+                                                                inp.set_value(content, window, cx);
+                                                            });
+                                                            on_up(idx, cur_k.clone(), new_val, enabled, window, cx);
+                                                        }
                                                     })
                                                     .child(
                                                         div()

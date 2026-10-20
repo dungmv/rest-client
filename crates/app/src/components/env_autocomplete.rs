@@ -16,17 +16,61 @@ pub struct EnvVarCandidate {
     pub is_secret: bool,
 }
 
-/// Detects if `text` ends with an unclosed `{{` or `{{prefix`
-/// Returns `Some((start_pos, query_after_braces))`
-pub fn detect_unclosed_env_var(text: &str) -> Option<(usize, String)> {
-    if let Some(pos) = text.rfind("{{") {
-        let after = &text[pos + 2..];
-        // Must not be closed with }} and should not have spaces, newlines, or quotes
-        if !after.contains("}}") && !after.contains(' ') && !after.contains('\n') && !after.contains('"') {
-            return Some((pos, after.to_string()));
+/// Detects if `text` contains an unclosed `{{` or `{{prefix` (at the end, middle, or cursor).
+/// Returns `Some((start_pos, end_pos_to_replace, query_after_braces))`
+pub fn detect_unclosed_env_var(text: &str) -> Option<(usize, usize, String)> {
+    detect_unclosed_env_var_at(text, None)
+}
+
+/// Detects an unclosed `{{` in `text`, optionally taking `cursor_pos` into account.
+pub fn detect_unclosed_env_var_at(text: &str, cursor_pos: Option<usize>) -> Option<(usize, usize, String)> {
+    let mut matches = Vec::new();
+    let bytes = text.as_bytes();
+    let mut i = 0;
+
+    while i + 1 < text.len() {
+        if bytes[i] == b'{' && bytes[i + 1] == b'{' {
+            let start = i;
+            let after_start = i + 2;
+            let mut query_end = after_start;
+            let mut is_closed = false;
+
+            while query_end < text.len() {
+                if query_end + 1 < text.len() && bytes[query_end] == b'}' && bytes[query_end + 1] == b'}' {
+                    is_closed = true;
+                    break;
+                }
+                let c = text[query_end..].chars().next().unwrap();
+                if c == '/' || c == '?' || c == '&' || c == '=' || c == ' ' || c == '\n' || c == '\t' || c == '"' || c == '\'' || c == '{' {
+                    break;
+                }
+                query_end += c.len_utf8();
+            }
+
+            if !is_closed {
+                let query = text[after_start..query_end].to_string();
+                matches.push((start, query_end, query));
+            }
+
+            i = query_end;
+        } else {
+            i += 1;
         }
     }
-    None
+
+    if matches.is_empty() {
+        return None;
+    }
+
+    if let Some(cursor) = cursor_pos {
+        for (start, end, query) in matches.iter().rev() {
+            if cursor >= *start && cursor <= *end + 1 {
+                return Some((*start, *end, query.clone()));
+            }
+        }
+    }
+
+    matches.pop()
 }
 
 /// Returns all available environment variables matching `query` (case-insensitive)
@@ -173,11 +217,13 @@ pub fn build_tokenized_content(text: &str, ws: &WorkspaceState) -> InputContent 
     let effective_env = ws.effective_environment();
     let spans = restclient_core::interpolation::scan_variables(text, Some(&effective_env));
     for span in spans {
-        // Plain label with NO icons
-        let token = InlineToken::new(span.name.clone(), format!("{{{{{}}}}}", span.name))
-            .with_label(span.name.clone());
-        if let Ok(new_content) = content.clone().with_token(span.start..span.end, token) {
-            content = new_content;
+        if span.start < text.len() && span.end <= text.len() {
+            let matched_text = &text[span.start..span.end];
+            let token = InlineToken::new(span.name.clone(), matched_text)
+                .with_label(span.name.clone());
+            if let Ok(new_content) = content.clone().with_token(span.start..span.end, token) {
+                content = new_content;
+            }
         }
     }
     content
@@ -259,12 +305,30 @@ mod tests {
 
     #[test]
     fn test_detect_unclosed_env_var() {
-        assert_eq!(detect_unclosed_env_var("https://api.com/{{"), Some((16, "".to_string())));
-        assert_eq!(detect_unclosed_env_var("https://api.com/{{host"), Some((16, "host".to_string())));
+        assert_eq!(detect_unclosed_env_var("https://api.com/{{"), Some((16, 18, "".to_string())));
+        assert_eq!(detect_unclosed_env_var("https://api.com/{{host"), Some((16, 22, "host".to_string())));
         assert_eq!(detect_unclosed_env_var("https://api.com/{{host}}"), None);
-        assert_eq!(detect_unclosed_env_var("https://api.com/{{host}}/{{user"), Some((25, "user".to_string())));
+        assert_eq!(detect_unclosed_env_var("https://api.com/{{host}}/{{user"), Some((25, 31, "user".to_string())));
         assert_eq!(detect_unclosed_env_var("no braces"), None);
-        assert_eq!(detect_unclosed_env_var("https://api.com/{{invalid with spaces"), None);
+        // Middle variable with path after it
+        assert_eq!(detect_unclosed_env_var("https://api.com/{{host/users"), Some((16, 22, "host".to_string())));
+        // Middle variable while second variable is already closed
+        assert_eq!(detect_unclosed_env_var("https://api.com/{{host/users/{{id}}"), Some((16, 22, "host".to_string())));
+        // Variable at start unclosed
+        assert_eq!(detect_unclosed_env_var("{{base/api"), Some((0, 6, "base".to_string())));
+        // Variable at start closed
+        assert_eq!(detect_unclosed_env_var("{{base_url}}/api"), None);
+        // Variable at end
+        assert_eq!(detect_unclosed_env_var("{{base_url"), Some((0, 10, "base_url".to_string())));
+        // Dynamic variable unclosed
+        assert_eq!(detect_unclosed_env_var("https://api.com/{{$guid"), Some((16, 23, "$guid".to_string())));
+
+        // Test replacement in middle preserves prefix and suffix
+        let text = "https://api.com/{{host/users";
+        let (start, end, _) = detect_unclosed_env_var(text).unwrap();
+        let mut replaced = text.to_string();
+        replaced.replace_range(start..end, "{{base_url}}");
+        assert_eq!(replaced, "https://api.com/{{base_url}}/users");
     }
 
     #[test]

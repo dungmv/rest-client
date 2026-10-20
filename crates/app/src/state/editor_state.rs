@@ -213,10 +213,10 @@ impl EditorState {
         }
     }
 
-    fn schedule_input_refresh(&mut self, cx: &mut Context<Self>) {
+    pub fn schedule_input_refresh(&mut self, cx: &mut Context<Self>) {
         let task = cx.spawn(async move |this, cx| {
             cx.background_executor()
-                .timer(std::time::Duration::from_millis(250))
+                .timer(std::time::Duration::from_millis(150))
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |_, cx| cx.notify());
@@ -234,8 +234,9 @@ impl EditorState {
     /// Updates URL from user typing.
     /// Only calls cx.notify() if structural changes occur (e.g. '?' parses query params, or '{{' needs autocomplete popup).
     pub fn update_url_from_input(&mut self, url: String, cx: &mut Context<Self>) {
-        let needs_notify = (url.contains('?') && !self.url_input_has_query)
-            || (url.contains("{{") && !self.url_input_has_template);
+        let had_template = self.active_request.as_ref().map(|r| r.url.contains("{{")).unwrap_or(false);
+        let has_template = url.contains("{{");
+        let needs_notify = url.contains('?') || had_template || has_template;
         self.apply_url(url);
         if needs_notify {
             self.schedule_input_refresh(cx);
@@ -277,13 +278,12 @@ impl EditorState {
     pub fn update_param(&mut self, index: usize, key: String, val: String, enabled: bool, cx: &mut Context<Self>) {
         let previous = self.active_request.as_ref().and_then(|r| r.params.get(index));
         let prev_enabled = previous.map(|p| p.enabled);
-        let had_template = previous.map(|p| p.key.contains("{{") || p.value.contains("{{")).unwrap_or(false);
         let enabled_changed = prev_enabled != Some(enabled);
-        let starts_template = !had_template && (key.contains("{{") || val.contains("{{"));
+        let has_template = key.contains("{{") || val.contains("{{");
         self.apply_update_param(index, key, val, enabled);
         if enabled_changed {
             cx.notify();
-        } else if starts_template {
+        } else if has_template {
             self.schedule_input_refresh(cx);
         }
     }
@@ -325,13 +325,12 @@ impl EditorState {
     pub fn update_header(&mut self, index: usize, key: String, val: String, enabled: bool, cx: &mut Context<Self>) {
         let previous = self.active_request.as_ref().and_then(|r| r.headers.get(index));
         let prev_enabled = previous.map(|h| h.enabled);
-        let had_template = previous.map(|h| h.key.contains("{{") || h.value.contains("{{")).unwrap_or(false);
         let enabled_changed = prev_enabled != Some(enabled);
-        let starts_template = !had_template && (key.contains("{{") || val.contains("{{"));
+        let has_template = key.contains("{{") || val.contains("{{");
         self.apply_update_header(index, key, val, enabled);
         if enabled_changed {
             cx.notify();
-        } else if starts_template {
+        } else if has_template {
             self.schedule_input_refresh(cx);
         }
     }
@@ -520,6 +519,18 @@ impl EditorState {
         }
     }
 
+    pub fn update_bearer_token_from_input(&mut self, token: String, cx: &mut Context<Self>) {
+        let had_template = match self.active_request.as_ref().map(|r| &r.auth) {
+            Some(Auth::Bearer { token: t }) => t.contains("{{"),
+            _ => false,
+        };
+        let has_template = token.contains("{{");
+        self.apply_set_bearer_token(token);
+        if had_template || has_template {
+            self.schedule_input_refresh(cx);
+        }
+    }
+
     pub fn set_bearer_token(&mut self, token: String, cx: &mut Context<Self>) {
         self.apply_set_bearer_token(token);
         cx.notify();
@@ -532,6 +543,18 @@ impl EditorState {
         }
     }
 
+    pub fn update_basic_auth_from_input(&mut self, username: String, password: String, cx: &mut Context<Self>) {
+        let had_template = match self.active_request.as_ref().map(|r| &r.auth) {
+            Some(Auth::Basic { username: u, password: p }) => u.contains("{{") || p.contains("{{"),
+            _ => false,
+        };
+        let has_template = username.contains("{{") || password.contains("{{");
+        self.apply_set_basic_auth(username, password);
+        if had_template || has_template {
+            self.schedule_input_refresh(cx);
+        }
+    }
+
     pub fn set_basic_auth(&mut self, username: String, password: String, cx: &mut Context<Self>) {
         self.apply_set_basic_auth(username, password);
         cx.notify();
@@ -541,6 +564,18 @@ impl EditorState {
         if let Some(req) = &mut self.active_request {
             req.auth = Auth::ApiKey { key, value, in_header };
             self.is_dirty = true;
+        }
+    }
+
+    pub fn update_api_key_from_input(&mut self, key: String, value: String, in_header: bool, cx: &mut Context<Self>) {
+        let had_template = match self.active_request.as_ref().map(|r| &r.auth) {
+            Some(Auth::ApiKey { key: k, value: v, .. }) => k.contains("{{") || v.contains("{{"),
+            _ => false,
+        };
+        let has_template = key.contains("{{") || value.contains("{{");
+        self.apply_set_api_key(key, value, in_header);
+        if had_template || has_template {
+            self.schedule_input_refresh(cx);
         }
     }
 

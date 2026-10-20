@@ -74,7 +74,7 @@ impl RenderOnce for RequestBar {
             let unclosed = detect_unclosed_env_var(&url);
             let candidates = unclosed
                 .as_ref()
-                .map(|(_, q)| get_env_completions(ws, q))
+                .map(|(_, _, q)| get_env_completions(ws, q))
                 .unwrap_or_default();
 
             (map, candidates, unclosed)
@@ -292,7 +292,7 @@ impl RenderOnce for RequestBar {
             })
             // Autocomplete Dropdown popup when user types {{
             .when(show_autocomplete, |this| {
-                let start_idx = unclosed.as_ref().map(|(pos, _)| *pos).unwrap_or(0);
+                let (start_idx, end_idx) = unclosed.as_ref().map(|(pos, end, _)| (*pos, *end)).unwrap_or((0, 0));
                 let current_url = url.clone();
                 let inp_target = url_input_clone.clone();
                 let ed_target = ed_clone.clone();
@@ -369,8 +369,8 @@ impl RenderOnce for RequestBar {
                                             .justify_between()
                                             .on_click(move |_, window, cx| {
                                                 let mut new_u = url_c.clone();
-                                                if start_idx <= new_u.len() {
-                                                    new_u.replace_range(start_idx.., &format!("{{{{{}}}}}", cand_name));
+                                                if start_idx <= new_u.len() && end_idx <= new_u.len() && start_idx <= end_idx {
+                                                    new_u.replace_range(start_idx..end_idx, &format!("{{{{{}}}}}", cand_name));
                                                     let content = {
                                                         let ws = ws_c.read(cx);
                                                         build_tokenized_content(&new_u, ws)
