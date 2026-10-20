@@ -1,13 +1,25 @@
 use crate::state::{EditorState, WorkspaceState};
 use crate::theme::theme;
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, img, px, App, Entity, Image, ImageFormat, InteractiveElement as _, IntoElement,
-    ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Window, WindowControlArea,
+    div, img, px, App, Context, Entity, Image, ImageFormat, InteractiveElement as _, IntoElement,
+    MouseButton, ParentElement, Render, RenderOnce, StatefulInteractiveElement as _, Styled,
+    Window, WindowControlArea,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_component::{Icon, IconName};
+use gpui_component::{Icon, IconName, InteractiveElementExt as _};
 use std::sync::{Arc, OnceLock};
+
+struct TitleBarState {
+    should_move: bool,
+}
+
+impl Render for TitleBarState {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+    }
+}
 
 fn app_icon_image() -> Arc<Image> {
     static ICON: OnceLock<Arc<Image>> = OnceLock::new();
@@ -40,7 +52,10 @@ impl AppTitleBar {
 }
 
 impl RenderOnce for AppTitleBar {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let state = window.use_state(cx, |_, _| TitleBarState { should_move: false });
+        let is_macos = cfg!(target_os = "macos");
+        let is_linux = cfg!(target_os = "linux");
         let t = theme();
         let ws = self.workspace_state.read(cx);
         let ed = self.editor_state.read(cx);
@@ -83,7 +98,8 @@ impl RenderOnce for AppTitleBar {
         let left_padding = px(8.);
 
         let bar = div()
-            .h(px(36.))
+            .id("app-title-bar")
+            .h(px(38.))
             .w_full()
             .bg(t.bg_titlebar)
             .border_b_1()
@@ -92,7 +108,34 @@ impl RenderOnce for AppTitleBar {
             .items_center()
             .justify_between()
             .overflow_hidden()
-            .pl(left_padding);
+            .pl(left_padding)
+            .when(is_linux, |this| {
+                this.on_double_click(|_, window, _| window.zoom_window())
+            })
+            .when(is_macos, |this| {
+                this.on_double_click(|_, window, _| window.titlebar_double_click())
+            })
+            .on_mouse_down_out(window.listener_for(&state, |state, _, _, _| {
+                state.should_move = false;
+            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                window.listener_for(&state, |state, _, _, _| {
+                    state.should_move = true;
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                window.listener_for(&state, |state, _, _, _| {
+                    state.should_move = false;
+                }),
+            )
+            .on_mouse_move(window.listener_for(&state, |state, _, window, _| {
+                if state.should_move {
+                    state.should_move = false;
+                    window.start_window_move();
+                }
+            }));
 
         // Left section
         let left_section = div()
@@ -107,19 +150,23 @@ impl RenderOnce for AppTitleBar {
                 div()
                     .id("btn-toggle-sidebar")
                     .occlude()
-                    .px(px(6.))
-                    .py(px(3.))
+                    .w(px(28.))
+                    .h(px(26.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
                     .rounded(px(4.))
                     .cursor_pointer()
                     .bg(if !sidebar_collapsed { t.bg_hover } else { gpui::transparent_black() })
                     .hover(|s| s.bg(t.bg_hover))
                     .text_color(if !sidebar_collapsed { t.text_primary } else { t.text_secondary })
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(move |_, _, cx| {
                         ws_s.update(cx, |state, cx| {
                             state.toggle_sidebar(cx);
                         });
                     })
-                    .child("◫")
+                    .child(Icon::new(IconName::PanelLeft).size(px(16.)))
             })
             // Workspace switcher pill dropdown: [icon + ws_name ▾]
             .child({
@@ -130,9 +177,9 @@ impl RenderOnce for AppTitleBar {
                 Button::new("btn-workspace-switcher")
                     .ghost()
                     .compact()
-                    .px(px(6.))
+                    .px(px(8.))
                     .py(px(2.))
-                    .h(px(24.))
+                    .h(px(26.))
                     .rounded(px(5.))
                     .bg(t.bg_card)
                     .border_1()
@@ -151,10 +198,9 @@ impl RenderOnce for AppTitleBar {
                             .child(ws_name)
                     )
                     .child(
-                        div()
-                            .text_xs()
+                        Icon::new(IconName::ChevronDown)
+                            .size(px(12.))
                             .text_color(t.text_muted)
-                            .child("▾")
                     )
                     .dropdown_menu(move |menu, _window, _cx| {
                         let ws_new = ws_s.clone();
@@ -264,16 +310,17 @@ impl RenderOnce for AppTitleBar {
                     .compact()
                     .px(px(8.))
                     .py(px(2.))
-                    .h(px(24.))
+                    .h(px(26.))
                     .rounded(px(5.))
                     .bg(t.bg_card)
                     .border_1()
                     .border_color(t.border)
                     .child(
                         div()
-                            .text_xs()
-                            .text_color(if has_active { t.status_2xx } else { t.text_muted })
-                            .child("●"),
+                            .w(px(7.))
+                            .h(px(7.))
+                            .rounded_full()
+                            .bg(if has_active { t.status_2xx } else { t.text_muted }),
                     )
                     .child(
                         div()
@@ -283,10 +330,9 @@ impl RenderOnce for AppTitleBar {
                             .child(env_name),
                     )
                     .child(
-                        div()
-                            .text_xs()
+                        Icon::new(IconName::ChevronDown)
+                            .size(px(12.))
                             .text_color(t.text_muted)
-                            .child("▾"),
                     )
                     .dropdown_menu(move |menu, _window, _cx| {
                         let mut m = menu;
@@ -358,9 +404,9 @@ impl RenderOnce for AppTitleBar {
                 div()
                     .id("btn-titlebar-search")
                     .occlude()
-                    .h(px(24.))
+                    .h(px(26.))
                     .w(px(320.))
-                    .max_w(px(400.))
+                    .max_w(px(420.))
                     .px(px(8.))
                     .rounded(px(5.))
                     .bg(t.bg_card)
@@ -372,6 +418,7 @@ impl RenderOnce for AppTitleBar {
                     .gap(px(6.))
                     .cursor_pointer()
                     .hover(|s| s.bg(t.bg_hover).border_color(t.border_focus))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(move |_, _, cx| {
                         ws_s.update(cx, |state, cx| {
                             state.toggle_command_palette(cx);
@@ -405,7 +452,7 @@ impl RenderOnce for AppTitleBar {
                             .text_color(t.text_muted)
                             .font_family(".SystemMonoFont")
                             .text_size(px(10.))
-                            .child("Ctrl+K"),
+                            .child(if is_macos { "⌘K" } else { "Ctrl+K" }),
                     )
             });
 
@@ -423,18 +470,26 @@ impl RenderOnce for AppTitleBar {
                 div()
                     .id("btn-split-toggle")
                     .occlude()
-                    .px(px(6.))
-                    .py(px(3.))
+                    .w(px(28.))
+                    .h(px(26.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
                     .rounded(px(4.))
                     .cursor_pointer()
                     .hover(|s| s.bg(t.bg_hover))
                     .text_color(t.text_secondary)
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(move |_, _, cx| {
                         ws_s.update(cx, |state, cx| {
                             state.toggle_split_layout(cx);
                         });
                     })
-                    .child(if is_vert { "⬒" } else { "◫" })
+                    .child(if is_vert {
+                        Icon::new(IconName::PanelBottom).size(px(16.))
+                    } else {
+                        Icon::new(IconName::PanelRight).size(px(16.))
+                    })
             })
             // Settings button
             .child({
@@ -442,18 +497,22 @@ impl RenderOnce for AppTitleBar {
                 div()
                     .id("btn-settings")
                     .occlude()
-                    .px(px(6.))
-                    .py(px(3.))
+                    .w(px(28.))
+                    .h(px(26.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
                     .rounded(px(4.))
                     .cursor_pointer()
                     .hover(|s| s.bg(t.bg_hover))
                     .text_color(t.text_secondary)
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(move |_, _, cx| {
                         ws_s.update(cx, |state, cx| {
                             state.toggle_settings_modal(cx);
                         });
                     })
-                    .child("⚙")
+                    .child(Icon::new(IconName::Settings).size(px(16.)))
             });
 
         let drag_region = div()
@@ -474,7 +533,7 @@ impl RenderOnce for AppTitleBar {
 
         #[cfg(not(target_os = "macos"))]
         {
-            let is_max = _window.is_maximized();
+            let is_max = window.is_maximized();
             let icon_color = t.text_primary;
 
             bar = bar.child(

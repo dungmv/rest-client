@@ -16,7 +16,7 @@ pub fn default_window_options(cx: &mut App) -> WindowOptions {
             appears_transparent: true,
             traffic_light_position: Some(Point {
                 x: px(12.0),
-                y: px(12.0),
+                y: px(13.0),
             }),
         });
     }

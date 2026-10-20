@@ -1957,6 +1957,7 @@ fn main() {
     let app = gpui_kit::application().with_assets(Assets);
 
     app.run(move |cx| {
+        platform::set_dock_icon();
         gpui_kit::init(cx);
         gpui_component::Theme::change(gpui_component::ThemeMode::Dark, None, cx);
 

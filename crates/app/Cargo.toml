@@ -20,6 +20,10 @@ lsp-types = { version = "0.97.0", features = ["proposed"] }
 quick-xml = "0.41"
 dirs = "6.0"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"
+objc = "0.2.7"
+
 [build-dependencies]
 embed-resource = "3.0"
 
