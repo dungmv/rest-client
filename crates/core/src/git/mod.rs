@@ -106,6 +106,7 @@ pub fn run_git_cmd(repo_dir: &Path, args: &[&str]) -> Result<String> {
     let mut cmd = Command::new("git");
     cmd.args(args);
     cmd.current_dir(repo_dir);
+    cmd.env("GIT_TERMINAL_PROMPT", "0");
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);

@@ -129,12 +129,7 @@ impl WorkspaceState {
         }
 
         settings.add_recent_workspace(&ws_dir.to_string_lossy());
-        let git_status = restclient_core::git::git_status(&ws_dir).ok();
-        let git_branches = restclient_core::git::git_branches(&ws_dir).unwrap_or_default();
-        let git_branch = git_status
-            .as_ref()
-            .and_then(|s| if !s.branch.is_empty() { Some(s.branch.clone()) } else { None })
-            .or_else(|| detect_git_branch(Some(&ws_dir)));
+        let git_branch = detect_git_branch(Some(&ws_dir));
         let git_tracked_warning = store.ensure_gitignore().unwrap_or(false);
 
         let mut state = Self {
@@ -167,9 +162,9 @@ impl WorkspaceState {
             show_rename_workspace_modal: false,
             active_git_modal: None,
             git_tab: GitTab::Changes,
-            git_status,
+            git_status: None,
             git_history: Vec::new(),
-            git_branches,
+            git_branches: Vec::new(),
             git_remotes: Vec::new(),
             git_selected_staged_files: HashSet::new(),
             git_selected_unstaged_files: HashSet::new(),
@@ -236,8 +231,6 @@ impl WorkspaceState {
         self.recent_workspaces = settings.recent_workspaces;
 
         self.reload_all();
-        self.refresh_git_status(cx);
-        self.refresh_git_branches(cx);
         self.start_watcher(cx);
         cx.notify();
     }
@@ -924,7 +917,8 @@ impl WorkspaceState {
             });
             self.watcher_task = Some(task);
         }
-        self.fetch_in_background(cx);
+        self.refresh_git_status(cx);
+        self.refresh_git_branches(cx);
     }
 
     pub fn handle_fs_event(&mut self, event: restclient_core::storage::FsEvent, cx: &mut Context<Self>) {
@@ -1640,10 +1634,20 @@ impl WorkspaceState {
     }
 
     pub fn refresh_git_remotes(&mut self, cx: &mut Context<Self>) {
-        if let Ok(remotes) = restclient_core::git::git_get_remotes(&self.workspace_path) {
-            self.git_remotes = remotes;
-        }
-        cx.notify();
+        let ws_path = self.workspace_path.clone();
+        cx.spawn(async move |this, cx| {
+            let remotes = cx.background_executor().spawn(async move {
+                restclient_core::git::git_get_remotes(&ws_path).ok()
+            }).await;
+            if let Some(remotes) = remotes {
+                if let Some(this) = this.upgrade() {
+                    this.update(cx, |ws, cx| {
+                        ws.git_remotes = remotes;
+                        cx.notify();
+                    });
+                }
+            }
+        }).detach();
     }
 
     pub fn git_add_remote(&mut self, name: &str, url: &str, cx: &mut Context<Self>) -> Result<(), String> {
@@ -1755,74 +1759,167 @@ impl WorkspaceState {
     }
 
     pub fn refresh_git_status(&mut self, cx: &mut Context<Self>) {
-        if let Ok(st) = restclient_core::git::git_status(&self.workspace_path) {
-            if st.is_repo && !st.branch.is_empty() {
-                self.git_branch = Some(st.branch.clone());
-            }
-            let valid_unstaged: HashSet<String> = st.unstaged_files.iter().chain(&st.untracked_files).map(|f| f.path.clone()).collect();
-            self.git_selected_unstaged_files.retain(|p| valid_unstaged.contains(p));
+        let ws_path = self.workspace_path.clone();
+        let show_modal = self.show_git_modal;
+        let selected_file = self.git_selected_file.clone();
 
-            let valid_staged: HashSet<String> = st.staged_files.iter().map(|f| f.path.clone()).collect();
-            self.git_selected_staged_files.retain(|p| valid_staged.contains(p));
+        cx.spawn(async move |this, cx| {
+            let ws_status = ws_path.clone();
+            let status_res = cx.background_executor().spawn(async move {
+                restclient_core::git::git_status(&ws_status)
+            }).await;
 
-            if let Some((path, mut staged)) = self.git_selected_file.clone() {
-                if valid_staged.contains(&path) {
-                    staged = true;
-                } else if valid_unstaged.contains(&path) {
-                    staged = false;
+            let Ok(st) = status_res else { return; };
+
+            let diff_result = if show_modal {
+                let valid_staged: HashSet<String> = st.staged_files.iter().map(|f| f.path.clone()).collect();
+                let valid_unstaged: HashSet<String> = st.unstaged_files.iter().chain(&st.untracked_files).map(|f| f.path.clone()).collect();
+
+                let file_and_staged = if let Some((path, staged)) = selected_file {
+                    if valid_staged.contains(&path) {
+                        Some((path, true))
+                    } else if valid_unstaged.contains(&path) {
+                        Some((path, false))
+                    } else {
+                        Some((path, staged))
+                    }
+                } else if let Some(first) = st.staged_files.first() {
+                    Some((first.path.clone(), true))
+                } else if let Some(first) = st.unstaged_files.first() {
+                    Some((first.path.clone(), false))
+                } else if let Some(first) = st.untracked_files.first() {
+                    Some((first.path.clone(), false))
+                } else {
+                    None
+                };
+
+                if let Some((path, staged)) = file_and_staged {
+                    let ws_diff = ws_path.clone();
+                    let p = path.clone();
+                    let diff_content = cx.background_executor().spawn(async move {
+                        match restclient_core::git::git_diff(&ws_diff, Some(&p), staged) {
+                            Ok(d) => Some(d),
+                            Err(e) => Some(format!("Error loading diff: {}", e)),
+                        }
+                    }).await;
+                    Some((Some((path, staged)), diff_content))
+                } else {
+                    Some((None, None))
                 }
-                self.git_selected_file = Some((path.clone(), staged));
-                self.load_git_diff(&path, staged, cx);
-            } else if let Some(first) = st.staged_files.first() {
-                let p = first.path.clone();
-                self.git_selected_file = Some((p.clone(), true));
-                self.load_git_diff(&p, true, cx);
-            } else if let Some(first) = st.unstaged_files.first() {
-                let p = first.path.clone();
-                self.git_selected_file = Some((p.clone(), false));
-                self.load_git_diff(&p, false, cx);
-            } else if let Some(first) = st.untracked_files.first() {
-                let p = first.path.clone();
-                self.git_selected_file = Some((p.clone(), false));
-                self.load_git_diff(&p, false, cx);
             } else {
-                self.git_diff_content = None;
+                None
+            };
+
+            let branches_res = if let Some(this_ent) = this.upgrade() {
+                let need_branches = this_ent.read_with(cx, |this, _| this.git_branches.is_empty());
+                if need_branches {
+                    let ws_b = ws_path.clone();
+                    cx.background_executor().spawn(async move {
+                        restclient_core::git::git_branches(&ws_b).ok()
+                    }).await
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            if let Some(this_ent) = this.upgrade() {
+                this_ent.update(cx, |ws, cx| {
+                    if st.is_repo && !st.branch.is_empty() {
+                        ws.git_branch = Some(st.branch.clone());
+                    }
+                    let valid_unstaged: HashSet<String> = st.unstaged_files.iter().chain(&st.untracked_files).map(|f| f.path.clone()).collect();
+                    ws.git_selected_unstaged_files.retain(|p| valid_unstaged.contains(p));
+
+                    let valid_staged: HashSet<String> = st.staged_files.iter().map(|f| f.path.clone()).collect();
+                    ws.git_selected_staged_files.retain(|p| valid_staged.contains(p));
+
+                    if let Some((file_sel, diff_content)) = diff_result {
+                        ws.git_selected_file = file_sel;
+                        ws.git_diff_content = diff_content;
+                    }
+
+                    if let Some(branches) = branches_res {
+                        ws.git_branches = branches;
+                    }
+                    ws.git_status = Some(st);
+                    cx.notify();
+                });
             }
-            self.git_status = Some(st);
-        }
-        if self.git_branches.is_empty() {
-            if let Ok(branches) = restclient_core::git::git_branches(&self.workspace_path) {
-                self.git_branches = branches;
-            }
-        }
-        cx.notify();
+        }).detach();
     }
 
     pub fn load_git_diff(&mut self, file_path: &str, staged: bool, cx: &mut Context<Self>) {
-        match restclient_core::git::git_diff(&self.workspace_path, Some(file_path), staged) {
-            Ok(d) => self.git_diff_content = Some(d),
-            Err(e) => self.git_diff_content = Some(format!("Error loading diff: {}", e)),
-        }
-        cx.notify();
+        let ws_path = self.workspace_path.clone();
+        let path = file_path.to_string();
+        cx.spawn(async move |this, cx| {
+            let res = cx.background_executor().spawn(async move {
+                restclient_core::git::git_diff(&ws_path, Some(&path), staged)
+            }).await;
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |ws, cx| {
+                    match res {
+                        Ok(d) => ws.git_diff_content = Some(d),
+                        Err(e) => ws.git_diff_content = Some(format!("Error loading diff: {}", e)),
+                    }
+                    cx.notify();
+                });
+            }
+        }).detach();
     }
 
     pub fn refresh_git_history(&mut self, cx: &mut Context<Self>) {
-        if let Ok(commits) = restclient_core::git::git_history(&self.workspace_path, 50) {
-            if self.git_selected_commit.is_none() && !commits.is_empty() {
-                if let Some(first) = commits.first() {
-                    self.select_git_commit(&first.hash, cx);
+        let ws_path = self.workspace_path.clone();
+        let needs_first = self.git_selected_commit.is_none();
+        cx.spawn(async move |this, cx| {
+            let ws_hist = ws_path.clone();
+            let commits = cx.background_executor().spawn(async move {
+                restclient_core::git::git_history(&ws_hist, 50).ok()
+            }).await;
+            if let Some(commits) = commits {
+                let first_detail = if needs_first {
+                    if let Some(first) = commits.first() {
+                        let ws_p = ws_path.clone();
+                        let h = first.hash.clone();
+                        cx.background_executor().spawn(async move {
+                            restclient_core::git::git_commit_detail(&ws_p, &h).ok()
+                        }).await
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                if let Some(this) = this.upgrade() {
+                    this.update(cx, |ws, cx| {
+                        if let Some(detail) = first_detail {
+                            ws.git_selected_commit = Some(detail);
+                        }
+                        ws.git_history = commits;
+                        cx.notify();
+                    });
                 }
             }
-            self.git_history = commits;
-        }
-        cx.notify();
+        }).detach();
     }
 
     pub fn refresh_git_branches(&mut self, cx: &mut Context<Self>) {
-        if let Ok(branches) = restclient_core::git::git_branches(&self.workspace_path) {
-            self.git_branches = branches;
-        }
-        cx.notify();
+        let ws_path = self.workspace_path.clone();
+        cx.spawn(async move |this, cx| {
+            let branches = cx.background_executor().spawn(async move {
+                restclient_core::git::git_branches(&ws_path).ok()
+            }).await;
+            if let Some(branches) = branches {
+                if let Some(this) = this.upgrade() {
+                    this.update(cx, |ws, cx| {
+                        ws.git_branches = branches;
+                        cx.notify();
+                    });
+                }
+            }
+        }).detach();
     }
 
     pub fn select_git_file(&mut self, path: String, staged: bool, cx: &mut Context<Self>) {
@@ -1832,10 +1929,21 @@ impl WorkspaceState {
 
     pub fn select_git_commit(&mut self, hash: &str, cx: &mut Context<Self>) {
         self.git_expanded_history_files.clear();
-        if let Ok(detail) = restclient_core::git::git_commit_detail(&self.workspace_path, hash) {
-            self.git_selected_commit = Some(detail);
-        }
-        cx.notify();
+        let ws_path = self.workspace_path.clone();
+        let h = hash.to_string();
+        cx.spawn(async move |this, cx| {
+            let detail = cx.background_executor().spawn(async move {
+                restclient_core::git::git_commit_detail(&ws_path, &h).ok()
+            }).await;
+            if let Some(detail) = detail {
+                if let Some(this) = this.upgrade() {
+                    this.update(cx, |ws, cx| {
+                        ws.git_selected_commit = Some(detail);
+                        cx.notify();
+                    });
+                }
+            }
+        }).detach();
     }
 
     pub fn toggle_git_history_file_expansion(&mut self, file_path: &str, cx: &mut Context<Self>) {
@@ -1848,23 +1956,61 @@ impl WorkspaceState {
     }
 
     pub fn git_stage_file(&mut self, path: &str, cx: &mut Context<Self>) {
-        let _ = restclient_core::git::git_stage_file(&self.workspace_path, path);
-        self.refresh_git_status(cx);
+        let ws_path = self.workspace_path.clone();
+        let p = path.to_string();
+        cx.spawn(async move |this, cx| {
+            let _ = cx.background_executor().spawn(async move {
+                restclient_core::git::git_stage_file(&ws_path, &p)
+            }).await;
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |ws, cx| {
+                    ws.refresh_git_status(cx);
+                });
+            }
+        }).detach();
     }
 
     pub fn git_unstage_file(&mut self, path: &str, cx: &mut Context<Self>) {
-        let _ = restclient_core::git::git_unstage_file(&self.workspace_path, path);
-        self.refresh_git_status(cx);
+        let ws_path = self.workspace_path.clone();
+        let p = path.to_string();
+        cx.spawn(async move |this, cx| {
+            let _ = cx.background_executor().spawn(async move {
+                restclient_core::git::git_unstage_file(&ws_path, &p)
+            }).await;
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |ws, cx| {
+                    ws.refresh_git_status(cx);
+                });
+            }
+        }).detach();
     }
 
     pub fn git_stage_all(&mut self, cx: &mut Context<Self>) {
-        let _ = restclient_core::git::git_stage_all(&self.workspace_path);
-        self.refresh_git_status(cx);
+        let ws_path = self.workspace_path.clone();
+        cx.spawn(async move |this, cx| {
+            let _ = cx.background_executor().spawn(async move {
+                restclient_core::git::git_stage_all(&ws_path)
+            }).await;
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |ws, cx| {
+                    ws.refresh_git_status(cx);
+                });
+            }
+        }).detach();
     }
 
     pub fn git_unstage_all(&mut self, cx: &mut Context<Self>) {
-        let _ = restclient_core::git::git_unstage_all(&self.workspace_path);
-        self.refresh_git_status(cx);
+        let ws_path = self.workspace_path.clone();
+        cx.spawn(async move |this, cx| {
+            let _ = cx.background_executor().spawn(async move {
+                restclient_core::git::git_unstage_all(&ws_path)
+            }).await;
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |ws, cx| {
+                    ws.refresh_git_status(cx);
+                });
+            }
+        }).detach();
     }
 
     pub fn toggle_git_unstaged_selection(&mut self, path: &str, cx: &mut Context<Self>) {
@@ -1912,10 +2058,19 @@ impl WorkspaceState {
         if paths.is_empty() {
             return;
         }
-        let str_paths: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
-        let _ = restclient_core::git::git_stage_files(&self.workspace_path, &str_paths);
         self.git_selected_unstaged_files.clear();
-        self.refresh_git_status(cx);
+        let ws_path = self.workspace_path.clone();
+        cx.spawn(async move |this, cx| {
+            let _ = cx.background_executor().spawn(async move {
+                let str_paths: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+                restclient_core::git::git_stage_files(&ws_path, &str_paths)
+            }).await;
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |ws, cx| {
+                    ws.refresh_git_status(cx);
+                });
+            }
+        }).detach();
     }
 
     pub fn git_unstage_selected(&mut self, cx: &mut Context<Self>) {
@@ -1923,10 +2078,19 @@ impl WorkspaceState {
         if paths.is_empty() {
             return;
         }
-        let str_paths: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
-        let _ = restclient_core::git::git_unstage_files(&self.workspace_path, &str_paths);
         self.git_selected_staged_files.clear();
-        self.refresh_git_status(cx);
+        let ws_path = self.workspace_path.clone();
+        cx.spawn(async move |this, cx| {
+            let _ = cx.background_executor().spawn(async move {
+                let str_paths: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+                restclient_core::git::git_unstage_files(&ws_path, &str_paths)
+            }).await;
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |ws, cx| {
+                    ws.refresh_git_status(cx);
+                });
+            }
+        }).detach();
     }
 
     pub fn git_discard_file(&mut self, path: &str, cx: &mut Context<Self>) {
