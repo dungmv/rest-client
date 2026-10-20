@@ -1,5 +1,6 @@
 use crate::state::{GitActiveModal, WorkspaceState};
 use crate::theme::theme;
+use std::collections::HashSet;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     div, px, App, AppContext as _, Entity, InteractiveElement as _, IntoElement, ParentElement,
@@ -62,6 +63,9 @@ impl RenderOnce for GitCommitModal {
         let selected_file = ws.git_selected_file.clone();
         let diff_content = ws.git_diff_content.clone();
         let git_error = ws.git_error.clone();
+
+        let selected_unstaged = ws.git_selected_unstaged_files.clone();
+        let selected_staged = ws.git_selected_staged_files.clone();
 
         let staged_count = status_opt.as_ref().map(|s| s.staged_files.len()).unwrap_or(0);
         let unstaged_count = status_opt.as_ref().map(|s| s.unstaged_files.len()).unwrap_or(0);
@@ -197,26 +201,6 @@ impl RenderOnce for GitCommitModal {
                                     .flex()
                                     .items_center()
                                     .gap(px(8.))
-                                    .when(is_repo, |this| {
-                                        let ws_refresh = ws_clone.clone();
-                                        this.child(
-                                            div()
-                                                .id("btn-git-refresh-status")
-                                                .px(px(8.))
-                                                .py(px(4.))
-                                                .rounded(px(4.))
-                                                .cursor_pointer()
-                                                .text_xs()
-                                                .text_color(t.text_secondary)
-                                                .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
-                                                .on_click(move |_, _, cx| {
-                                                    ws_refresh.update(cx, |ws, cx| {
-                                                        ws.refresh_git_status(cx);
-                                                    });
-                                                })
-                                                .child("⟳ Refresh"),
-                                        )
-                                    })
                                     .child(
                                         div()
                                             .id("btn-git-commit-close")
@@ -259,6 +243,8 @@ impl RenderOnce for GitCommitModal {
                                     commit_input,
                                     view_mode,
                                     view_mode_entity,
+                                    selected_staged,
+                                    selected_unstaged,
                                 )
                             }),
                     ),
@@ -293,6 +279,7 @@ impl RenderOnce for GitHistoryModal {
         let history = ws.git_history.clone();
         let selected_commit = ws.git_selected_commit.clone();
         let git_error = ws.git_error.clone();
+        let expanded_files = ws.git_expanded_history_files.clone();
 
         let view_mode_holder = window.use_keyed_state(
             gpui::SharedString::from("git-diff-view-mode"),
@@ -445,7 +432,7 @@ impl RenderOnce for GitHistoryModal {
                             .child(if !is_repo {
                                 render_not_a_repo_view(ws_clone.clone())
                             } else {
-                                render_history_view(ws_clone.clone(), history, selected_commit, view_mode, view_mode_entity)
+                                render_history_view(ws_clone.clone(), history, selected_commit, view_mode, view_mode_entity, expanded_files)
                             }),
                     ),
             )
@@ -888,6 +875,8 @@ fn render_changes_view(
     commit_input: Entity<InputState>,
     view_mode: DiffViewMode,
     mode_entity: Entity<DiffViewMode>,
+    selected_staged: HashSet<String>,
+    selected_unstaged: HashSet<String>,
 ) -> gpui::AnyElement {
     let t = theme();
 
@@ -904,6 +893,9 @@ fn render_changes_view(
         .child(
             div()
                 .w(px(350.))
+                .min_w(px(350.))
+                .max_w(px(350.))
+                .flex_shrink_0()
                 .h_full()
                 .border_r_1()
                 .border_color(t.border)
@@ -920,7 +912,12 @@ fn render_changes_view(
                         .flex_col()
                         .gap(px(12.))
                         // Staged Changes Section
-                        .child(
+                        .child({
+                            let staged_selected_count = staged_files.iter().filter(|f| selected_staged.contains(&f.path)).count();
+                            let all_staged_selected = total_staged > 0 && staged_selected_count == total_staged;
+                            let partial_staged_selected = staged_selected_count > 0 && !all_staged_selected;
+                            let ws_toggle_all_staged = ws_clone.clone();
+
                             div()
                                 .flex()
                                 .flex_col()
@@ -933,34 +930,65 @@ fn render_changes_view(
                                         .px(px(4.))
                                         .child(
                                             div()
-                                                .text_xs()
-                                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                                .text_color(t.text_secondary)
-                                                .child(format!("Staged ({})", total_staged)),
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(6.))
+                                                .when(total_staged > 0, |this| {
+                                                    this.child(render_checkbox(
+                                                        "chk-select-all-staged",
+                                                        all_staged_selected,
+                                                        partial_staged_selected,
+                                                        move |_, _, cx| {
+                                                            let select = !all_staged_selected;
+                                                            ws_toggle_all_staged.update(cx, |ws, cx| {
+                                                                ws.toggle_all_staged_selection(select, cx);
+                                                            });
+                                                        },
+                                                    ))
+                                                })
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                        .text_color(t.text_secondary)
+                                                        .child(format!("Staged ({})", total_staged)),
+                                                ),
                                         )
                                         .when(total_staged > 0, |this| {
-                                            let ws_unstage_all = ws_clone.clone();
+                                            let ws_unstage = ws_clone.clone();
+                                            let has_sel = staged_selected_count > 0;
+                                            let btn_label = if has_sel {
+                                                format!("Unstage Selected ({})", staged_selected_count)
+                                            } else {
+                                                "Unstage Selected".to_string()
+                                            };
                                             this.child(
                                                 div()
-                                                    .id("btn-unstage-all")
-                                                    .cursor_pointer()
+                                                    .id("btn-unstage-selected")
                                                     .text_xs()
-                                                    .text_color(t.primary)
-                                                    .hover(|s| s.underline())
-                                                    .on_click(move |_, _, cx| {
-                                                        ws_unstage_all.update(cx, |ws, cx| {
-                                                            ws.git_unstage_all(cx);
-                                                        });
+                                                    .when(has_sel, |s| {
+                                                        s.cursor_pointer()
+                                                            .text_color(t.primary)
+                                                            .hover(|h| h.underline())
+                                                            .on_click(move |_, _, cx| {
+                                                                ws_unstage.update(cx, |ws, cx| {
+                                                                    ws.git_unstage_selected(cx);
+                                                                });
+                                                            })
                                                     })
-                                                    .child("Unstage All"),
+                                                    .when(!has_sel, |s| {
+                                                        s.text_color(t.text_muted)
+                                                    })
+                                                    .child(btn_label),
                                             )
                                         }),
                                 )
                                 .children(staged_files.into_iter().map(|item| {
                                     let ws_sel = ws_clone.clone();
-                                    let ws_act = ws_clone.clone();
-                                    let p = item.path.clone();
+                                    let ws_chk = ws_clone.clone();
+                                    let p_chk = item.path.clone();
                                     let p_sel = item.path.clone();
+                                    let is_checked = selected_staged.contains(&item.path);
                                     let is_selected = selected_file.as_ref().map(|(sel, st)| sel == &item.path && *st).unwrap_or(false);
 
                                     div()
@@ -985,6 +1013,16 @@ fn render_changes_view(
                                                 .items_center()
                                                 .gap(px(6.))
                                                 .overflow_hidden()
+                                                .child(render_checkbox(
+                                                    &format!("chk-staged-{}", item.path),
+                                                    is_checked,
+                                                    false,
+                                                    move |_, _, cx| {
+                                                        ws_chk.update(cx, |ws, cx| {
+                                                            ws.toggle_git_staged_selection(&p_chk, cx);
+                                                        });
+                                                    },
+                                                ))
                                                 .child(render_status_badge(item.status))
                                                 .child(
                                                     div()
@@ -995,28 +1033,17 @@ fn render_changes_view(
                                                         .child(item.path.clone()),
                                                 ),
                                         )
-                                        .child(
-                                            // Unstage button (-)
-                                            div()
-                                                .id(format!("btn-unstage-{}", item.path))
-                                                .cursor_pointer()
-                                                .p(px(2.))
-                                                .rounded(px(3.))
-                                                .text_xs()
-                                                .text_color(t.text_muted)
-                                                .hover(|s| s.bg(t.bg_card).text_color(t.text_primary))
-                                                .on_click(move |_, _, cx| {
-                                                    cx.stop_propagation();
-                                                    ws_act.update(cx, |ws, cx| {
-                                                        ws.git_unstage_file(&p, cx);
-                                                    });
-                                                })
-                                                .child("⊖"),
-                                        )
-                                })),
-                        )
+                                }))
+                        })
                         // Working Changes Section
-                        .child(
+                        .child({
+                            let all_changes: Vec<_> = unstaged_files.into_iter().chain(untracked_files).collect();
+                            let total_changes = all_changes.len();
+                            let changes_selected_count = all_changes.iter().filter(|f| selected_unstaged.contains(&f.path)).count();
+                            let all_changes_selected = total_changes > 0 && changes_selected_count == total_changes;
+                            let partial_changes_selected = changes_selected_count > 0 && !all_changes_selected;
+                            let ws_toggle_all_unstaged = ws_clone.clone();
+
                             div()
                                 .flex()
                                 .flex_col()
@@ -1029,36 +1056,67 @@ fn render_changes_view(
                                         .px(px(4.))
                                         .child(
                                             div()
-                                                .text_xs()
-                                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                                .text_color(t.text_secondary)
-                                                .child(format!("Changes ({})", unstaged_files.len() + untracked_files.len())),
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(6.))
+                                                .when(total_changes > 0, |this| {
+                                                    this.child(render_checkbox(
+                                                        "chk-select-all-changes",
+                                                        all_changes_selected,
+                                                        partial_changes_selected,
+                                                        move |_, _, cx| {
+                                                            let select = !all_changes_selected;
+                                                            ws_toggle_all_unstaged.update(cx, |ws, cx| {
+                                                                ws.toggle_all_unstaged_selection(select, cx);
+                                                            });
+                                                        },
+                                                    ))
+                                                })
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                        .text_color(t.text_secondary)
+                                                        .child(format!("Changes ({})", total_changes)),
+                                                ),
                                         )
-                                        .when(!unstaged_files.is_empty() || !untracked_files.is_empty(), |this| {
-                                            let ws_stage_all = ws_clone.clone();
+                                        .when(total_changes > 0, |this| {
+                                            let ws_stage = ws_clone.clone();
+                                            let has_sel = changes_selected_count > 0;
+                                            let btn_label = if has_sel {
+                                                format!("Stage Selected ({})", changes_selected_count)
+                                            } else {
+                                                "Stage Selected".to_string()
+                                            };
                                             this.child(
                                                 div()
-                                                    .id("btn-stage-all")
-                                                    .cursor_pointer()
+                                                    .id("btn-stage-selected")
                                                     .text_xs()
-                                                    .text_color(t.primary)
-                                                    .hover(|s| s.underline())
-                                                    .on_click(move |_, _, cx| {
-                                                        ws_stage_all.update(cx, |ws, cx| {
-                                                            ws.git_stage_all(cx);
-                                                        });
+                                                    .when(has_sel, |s| {
+                                                        s.cursor_pointer()
+                                                            .text_color(t.primary)
+                                                            .hover(|h| h.underline())
+                                                            .on_click(move |_, _, cx| {
+                                                                ws_stage.update(cx, |ws, cx| {
+                                                                    ws.git_stage_selected(cx);
+                                                                });
+                                                            })
                                                     })
-                                                    .child("Stage All"),
+                                                    .when(!has_sel, |s| {
+                                                        s.text_color(t.text_muted)
+                                                    })
+                                                    .child(btn_label),
                                             )
                                         }),
                                 )
-                                .children(unstaged_files.into_iter().chain(untracked_files).map(|item| {
+                                .children(all_changes.into_iter().map(|item| {
                                     let ws_sel = ws_clone.clone();
-                                    let ws_stage = ws_clone.clone();
+                                    let ws_chk = ws_clone.clone();
                                     let ws_disc = ws_clone.clone();
-                                    let p = item.path.clone();
+                                    let p_chk = item.path.clone();
                                     let p_disc = item.path.clone();
                                     let p_sel = item.path.clone();
+                                    let is_checked = selected_unstaged.contains(&item.path);
                                     let is_selected = selected_file.as_ref().map(|(sel, st)| sel == &item.path && !*st).unwrap_or(false);
 
                                     div()
@@ -1083,6 +1141,16 @@ fn render_changes_view(
                                                 .items_center()
                                                 .gap(px(6.))
                                                 .overflow_hidden()
+                                                .child(render_checkbox(
+                                                    &format!("chk-unstaged-{}", item.path),
+                                                    is_checked,
+                                                    false,
+                                                    move |_, _, cx| {
+                                                        ws_chk.update(cx, |ws, cx| {
+                                                            ws.toggle_git_unstaged_selection(&p_chk, cx);
+                                                        });
+                                                    },
+                                                ))
                                                 .child(render_status_badge(item.status))
                                                 .child(
                                                     div()
@@ -1094,49 +1162,25 @@ fn render_changes_view(
                                                 ),
                                         )
                                         .child(
+                                            // Discard button (↺)
                                             div()
-                                                .flex()
-                                                .items_center()
-                                                .gap(px(4.))
-                                                // Discard button (↺)
-                                                .child(
-                                                    div()
-                                                        .id(format!("btn-discard-{}", item.path))
-                                                        .cursor_pointer()
-                                                        .p(px(2.))
-                                                        .rounded(px(3.))
-                                                        .text_xs()
-                                                        .text_color(t.text_muted)
-                                                        .hover(|s| s.bg(t.bg_card).text_color(t.status_5xx))
-                                                        .on_click(move |_, _, cx| {
-                                                            cx.stop_propagation();
-                                                            ws_disc.update(cx, |ws, cx| {
-                                                                ws.git_discard_file(&p_disc, cx);
-                                                            });
-                                                        })
-                                                        .child("↺"),
-                                                )
-                                                // Stage button (+)
-                                                .child(
-                                                    div()
-                                                        .id(format!("btn-stage-{}", item.path))
-                                                        .cursor_pointer()
-                                                        .p(px(2.))
-                                                        .rounded(px(3.))
-                                                        .text_xs()
-                                                        .text_color(t.text_muted)
-                                                        .hover(|s| s.bg(t.bg_card).text_color(t.primary))
-                                                        .on_click(move |_, _, cx| {
-                                                            cx.stop_propagation();
-                                                            ws_stage.update(cx, |ws, cx| {
-                                                                ws.git_stage_file(&p, cx);
-                                                            });
-                                                        })
-                                                        .child("⊕"),
-                                                ),
+                                                .id(format!("btn-discard-{}", item.path))
+                                                .cursor_pointer()
+                                                .p(px(2.))
+                                                .rounded(px(3.))
+                                                .text_xs()
+                                                .text_color(t.text_muted)
+                                                .hover(|s| s.bg(t.bg_card).text_color(t.status_5xx))
+                                                .on_click(move |_, _, cx| {
+                                                    cx.stop_propagation();
+                                                    ws_disc.update(cx, |ws, cx| {
+                                                        ws.git_discard_file(&p_disc, cx);
+                                                    });
+                                                })
+                                                .child("↺"),
                                         )
-                                })),
-                        ),
+                                }))
+                        }),
                 )
                 // 2. Commit Section (Moved to bottom with taller input)
                 .child(
@@ -1215,7 +1259,9 @@ fn render_changes_view(
         .child(
             div()
                 .flex_1()
+                .min_w(px(0.))
                 .h_full()
+                .overflow_hidden()
                 .bg(t.bg_app)
                 .flex()
                 .flex_col()
@@ -1278,22 +1324,56 @@ fn render_changes_view(
         .into_any_element()
 }
 
+fn split_diff_into_files(diff: &str) -> Vec<(String, String)> {
+    let mut result = Vec::new();
+    let mut current_file: Option<String> = None;
+    let mut current_chunk: Vec<&str> = Vec::new();
+
+    for line in diff.lines() {
+        if line.starts_with("diff --git ") {
+            if let Some(file) = current_file.take() {
+                result.push((file, current_chunk.join("\n")));
+                current_chunk.clear();
+            }
+            let file_name = if let Some(b_idx) = line.rfind(" b/") {
+                line[b_idx + 3..].trim_matches('"').to_string()
+            } else {
+                line.trim_start_matches("diff --git ").to_string()
+            };
+            current_file = Some(file_name);
+            current_chunk.push(line);
+        } else if current_file.is_some() {
+            current_chunk.push(line);
+        }
+    }
+
+    if let Some(file) = current_file.take() {
+        result.push((file, current_chunk.join("\n")));
+    }
+
+    result
+}
+
 fn render_history_view(
     ws_clone: Entity<WorkspaceState>,
     history: Vec<restclient_core::git::GitCommitInfo>,
     selected_commit: Option<restclient_core::git::GitCommitDetail>,
     view_mode: DiffViewMode,
     mode_entity: Entity<DiffViewMode>,
+    expanded_files: HashSet<String>,
 ) -> gpui::AnyElement {
     let t = theme();
 
     div()
         .size_full()
         .flex()
-        // Left Column: Commit Log (width: 350px)
+        // Left Column: Commit Log (rigidly fixed width: 350px)
         .child(
             div()
                 .w(px(350.))
+                .min_w(px(350.))
+                .max_w(px(350.))
+                .flex_shrink_0()
                 .h_full()
                 .border_r_1()
                 .border_color(t.border)
@@ -1368,17 +1448,34 @@ fn render_history_view(
                         })),
                 ),
         )
-        // Right Column: Commit Details & Diff (Flex-1)
+        // Right Column: Commit Details & Collapsible File Diffs (Flex-1)
         .child({
             if let Some(commit_detail) = selected_commit {
+                let parsed_diffs = split_diff_into_files(&commit_detail.diff);
+                let mut diff_map: std::collections::HashMap<String, String> = parsed_diffs.into_iter().collect();
+
+                let mut file_entries: Vec<(String, String)> = Vec::new();
+                for f in &commit_detail.changed_files {
+                    let diff = diff_map.remove(f).unwrap_or_default();
+                    file_entries.push((f.clone(), diff));
+                }
+                for (f, diff) in diff_map {
+                    file_entries.push((f, diff));
+                }
+                if file_entries.is_empty() && !commit_detail.diff.trim().is_empty() {
+                    file_entries.push(("Changes".to_string(), commit_detail.diff.clone()));
+                }
+
                 div()
                     .flex_1()
+                    .min_w(px(0.))
                     .h_full()
+                    .overflow_hidden()
                     .bg(t.bg_app)
                     .flex()
                     .flex_col()
                     .child(
-                        // Header details
+                        // Header details (Without duplicate chip badges)
                         div()
                             .p(px(14.))
                             .border_b_1()
@@ -1392,11 +1489,15 @@ fn render_history_view(
                                     .flex()
                                     .items_center()
                                     .justify_between()
+                                    .gap(px(8.))
                                     .child(
                                         div()
+                                            .flex_1()
+                                            .min_w(px(0.))
                                             .text_sm()
                                             .font_weight(gpui::FontWeight::BOLD)
                                             .text_color(t.text_primary)
+                                            .truncate()
                                             .child(commit_detail.commit.message.clone()),
                                     )
                                     .child(render_diff_view_toggle(view_mode, mode_entity.clone())),
@@ -1404,47 +1505,112 @@ fn render_history_view(
                             .child(
                                 div()
                                     .flex()
+                                    .flex_wrap()
                                     .items_center()
                                     .gap(px(12.))
                                     .text_xs()
                                     .text_color(t.text_muted)
                                     .child(format!("Commit: {}", commit_detail.commit.hash))
                                     .child(format!("Author: {} <{}>", commit_detail.commit.author_name, commit_detail.commit.author_email))
-                                    .child(format!("Date: {}", commit_detail.commit.relative_date)),
-                            )
-                            .when(!commit_detail.changed_files.is_empty(), |this| {
-                                this.child(
-                                    div()
-                                        .mt(px(4.))
-                                        .flex()
-                                        .flex_wrap()
-                                        .gap(px(6.))
-                                        .children(commit_detail.changed_files.iter().map(|f| {
-                                            div()
-                                                .px(px(6.))
-                                                .py(px(2.))
-                                                .rounded(px(4.))
-                                                .bg(t.bg_hover)
-                                                .text_xs()
-                                                .font_family(".SystemMonoFont")
-                                                .text_color(t.text_secondary)
-                                                .child(f.clone())
-                                        })),
-                                )
-                            }),
+                                    .child(format!("Date: {}", commit_detail.commit.relative_date))
+                                    .child(format!("• {} file{}", file_entries.len(), if file_entries.len() == 1 { "" } else { "s" })),
+                            ),
                     )
                     .child(
-                        // Commit diff
+                        // Collapsible file changes (default closed)
                         div()
                             .flex_1()
+                            .min_h(px(0.))
                             .overflow_y_scrollbar()
-                            .p(px(8.))
-                            .child(render_diff_content(Some(commit_detail.diff), view_mode)),
+                            .p(px(12.))
+                            .flex()
+                            .flex_col()
+                            .gap(px(8.))
+                            .when(file_entries.is_empty(), |this| {
+                                this.child(
+                                    div()
+                                        .py(px(24.))
+                                        .text_center()
+                                        .text_xs()
+                                        .text_color(t.text_muted)
+                                        .child("No file changes in this commit."),
+                                )
+                            })
+                            .children(file_entries.into_iter().map(|(file_path, file_diff)| {
+                                let is_expanded = expanded_files.contains(&file_path);
+                                let ws_toggle = ws_clone.clone();
+                                let p = file_path.clone();
+
+                                div()
+                                    .id(format!("history-file-{}", file_path))
+                                    .rounded(px(6.))
+                                    .border_1()
+                                    .border_color(t.border)
+                                    .bg(t.bg_card)
+                                    .overflow_hidden()
+                                    .child(
+                                        div()
+                                            .id(format!("btn-toggle-file-{}", file_path))
+                                            .px(px(10.))
+                                            .py(px(7.))
+                                            .bg(if is_expanded { t.bg_hover } else { t.bg_sidebar })
+                                            .hover(|s| s.bg(t.bg_hover))
+                                            .cursor_pointer()
+                                            .flex()
+                                            .items_center()
+                                            .justify_between()
+                                            .on_click(move |_, _, cx| {
+                                                ws_toggle.update(cx, |ws, cx| {
+                                                    ws.toggle_git_history_file_expansion(&p, cx);
+                                                });
+                                            })
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap(px(8.))
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(t.text_muted)
+                                                            .child(if is_expanded { "▼" } else { "▶" }),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .font_family(".SystemMonoFont")
+                                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                                            .text_color(t.text_primary)
+                                                            .child(format!("📄 {}", file_path)),
+                                                    ),
+                                            ),
+                                    )
+                                    .when(is_expanded, |this| {
+                                        this.child(
+                                            div()
+                                                .border_t_1()
+                                                .border_color(t.border)
+                                                .bg(t.bg_app)
+                                                .p(px(6.))
+                                                .child(if file_diff.trim().is_empty() {
+                                                    div()
+                                                        .p(px(8.))
+                                                        .text_xs()
+                                                        .text_color(t.text_muted)
+                                                        .child("No text changes (binary file or empty change).")
+                                                        .into_any_element()
+                                                } else {
+                                                    render_diff_content(Some(file_diff), view_mode)
+                                                }),
+                                        )
+                                    })
+                            })),
                     )
                     .into_any_element()
             } else {
                 div()
                     .flex_1()
+                    .min_w(px(0.))
                     .h_full()
                     .bg(t.bg_app)
                     .flex()
@@ -1762,29 +1928,69 @@ fn render_status_badge(status: GitFileStatus) -> gpui::AnyElement {
         .into_any_element()
 }
 
+fn render_checkbox(
+    id: &str,
+    checked: bool,
+    partial: bool,
+    on_toggle: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> gpui::AnyElement {
+    let t = theme();
+    let symbol = if checked {
+        "✓"
+    } else if partial {
+        "−"
+    } else {
+        ""
+    };
+    let is_active = checked || partial;
+
+    div()
+        .id(gpui::SharedString::from(id.to_string()))
+        .w(px(16.))
+        .h(px(16.))
+        .flex_shrink_0()
+        .rounded(px(3.))
+        .border_1()
+        .border_color(if is_active { t.primary } else { t.border })
+        .bg(if is_active { t.primary } else { t.bg_input })
+        .flex()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .text_xs()
+        .font_weight(gpui::FontWeight::BOLD)
+        .text_color(if is_active { gpui::Hsla::from(gpui::rgb(0xffffff)) } else { t.text_muted })
+        .on_click(move |ev, window, cx| {
+            cx.stop_propagation();
+            on_toggle(ev, window, cx);
+        })
+        .child(symbol)
+        .into_any_element()
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DiffViewMode {
     Split,
     Unified,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiffLineKind {
     Normal,
     Added,
     Deleted,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct DiffSideLine {
     pub line_no: Option<usize>,
     pub content: String,
     pub kind: DiffLineKind,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum SideBySideRow {
-    HunkHeader(String),
+    FileHeader(String),
     Diff {
         left: Option<DiffSideLine>,
         right: Option<DiffSideLine>,
@@ -1797,6 +2003,8 @@ fn parse_side_by_side_diff(diff: &str) -> Vec<SideBySideRow> {
     let mut new_line = 1usize;
     let mut pending_deleted: Vec<String> = Vec::new();
     let mut pending_added: Vec<String> = Vec::new();
+
+    let multi_file = diff.matches("diff --git").count() > 1;
 
     let flush_pending = |deleted: &mut Vec<String>, added: &mut Vec<String>, old_cur: &mut usize, new_cur: &mut usize, rows: &mut Vec<SideBySideRow>| {
         let max_len = deleted.len().max(added.len());
@@ -1832,7 +2040,33 @@ fn parse_side_by_side_diff(diff: &str) -> Vec<SideBySideRow> {
     };
 
     for line in diff.lines() {
-        if line.starts_with("diff --git") || line.starts_with("index ") || line.starts_with("---") || line.starts_with("+++") {
+        if line.starts_with("diff --git") {
+            flush_pending(&mut pending_deleted, &mut pending_added, &mut old_line, &mut new_line, &mut rows);
+            old_line = 1;
+            new_line = 1;
+            if multi_file {
+                let file_name = line.split(" b/").nth(1).unwrap_or(line);
+                rows.push(SideBySideRow::FileHeader(file_name.to_string()));
+            }
+            continue;
+        }
+
+        if line.starts_with("index ")
+            || line.starts_with("---")
+            || line.starts_with("+++")
+            || line.starts_with("new file mode")
+            || line.starts_with("deleted file mode")
+            || line.starts_with("old mode")
+            || line.starts_with("new mode")
+            || line.starts_with("similarity index")
+            || line.starts_with("dissimilarity index")
+            || line.starts_with("copy from")
+            || line.starts_with("copy to")
+            || line.starts_with("rename from")
+            || line.starts_with("rename to")
+            || line.starts_with("Binary files")
+            || line.starts_with(r"\ No newline")
+        {
             continue;
         }
 
@@ -1850,7 +2084,6 @@ fn parse_side_by_side_diff(diff: &str) -> Vec<SideBySideRow> {
                     }
                 }
             }
-            rows.push(SideBySideRow::HunkHeader(line.to_string()));
         } else if line.starts_with('-') {
             pending_deleted.push(line[1..].to_string());
         } else if line.starts_with('+') {
@@ -1955,16 +2188,17 @@ fn render_diff_content(diff_content: Option<String>, view_mode: DiffViewMode) ->
                         .text_xs()
                         .children(rows.into_iter().map(|row| {
                             match row {
-                                SideBySideRow::HunkHeader(hunk) => {
+                                SideBySideRow::FileHeader(file) => {
                                     div()
                                         .w_full()
                                         .px(px(8.))
-                                        .py(px(2.))
+                                        .py(px(4.))
                                         .bg(t.bg_sidebar)
                                         .border_y_1()
                                         .border_color(t.border)
-                                        .text_color(t.primary)
-                                        .child(hunk)
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .text_color(t.text_primary)
+                                        .child(format!("📄 {}", file))
                                 }
                                 SideBySideRow::Diff { left, right } => {
                                     div()
@@ -2064,16 +2298,56 @@ fn render_diff_content(diff_content: Option<String>, view_mode: DiffViewMode) ->
                         .into_any_element()
                 }
                 DiffViewMode::Unified => {
+                    let multi_file = diff.matches("diff --git").count() > 1;
                     div()
                         .w_full()
                         .flex()
                         .flex_col()
                         .font_family(".SystemMonoFont")
                         .text_xs()
-                        .children(diff.lines().map(|line| {
-                            let (bg, text_color) = if line.starts_with('+') && !line.starts_with("+++") {
+                        .children(diff.lines().filter_map(|line| {
+                            if line.starts_with("index ")
+                                || line.starts_with("---")
+                                || line.starts_with("+++")
+                                || line.starts_with("new file mode")
+                                || line.starts_with("deleted file mode")
+                                || line.starts_with("old mode")
+                                || line.starts_with("new mode")
+                                || line.starts_with("similarity index")
+                                || line.starts_with("dissimilarity index")
+                                || line.starts_with("copy from")
+                                || line.starts_with("copy to")
+                                || line.starts_with("rename from")
+                                || line.starts_with("rename to")
+                                || line.starts_with("Binary files")
+                                || line.starts_with(r"\ No newline")
+                                || line.starts_with("@@")
+                            {
+                                return None;
+                            }
+
+                            if line.starts_with("diff --git") {
+                                if !multi_file {
+                                    return None;
+                                }
+                                let file_name = line.split(" b/").nth(1).unwrap_or(line);
+                                return Some(
+                                    div()
+                                        .w_full()
+                                        .px(px(8.))
+                                        .py(px(4.))
+                                        .bg(t.bg_sidebar)
+                                        .border_y_1()
+                                        .border_color(t.border)
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .text_color(t.text_primary)
+                                        .child(format!("📄 {}", file_name))
+                                );
+                            }
+
+                            let (bg, text_color) = if line.starts_with('+') {
                                 (Some(green_bg), green_text)
-                            } else if line.starts_with('-') && !line.starts_with("---") {
+                            } else if line.starts_with('-') {
                                 (Some(red_bg), red_text)
                             } else if line.starts_with("@@") {
                                 (None, t.primary)
@@ -2081,12 +2355,14 @@ fn render_diff_content(diff_content: Option<String>, view_mode: DiffViewMode) ->
                                 (None, gray_text)
                             };
 
-                            div()
-                                .px(px(6.))
-                                .py(px(1.))
-                                .when_some(bg, |this, b| this.bg(b))
-                                .text_color(text_color)
-                                .child(line.to_string())
+                            Some(
+                                div()
+                                    .px(px(6.))
+                                    .py(px(1.))
+                                    .when_some(bg, |this, b| this.bg(b))
+                                    .text_color(text_color)
+                                    .child(line.to_string())
+                            )
                         }))
                         .into_any_element()
                 }
@@ -2108,5 +2384,123 @@ fn render_diff_content(diff_content: Option<String>, view_mode: DiffViewMode) ->
                 .child("Select a modified or staged file to view its git diff.")
                 .into_any_element()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_diff_filters_new_file_mode_and_initial_hunk() {
+        let raw_diff = r#"diff --git a/collections/speedtest/new/new-request.yaml b/collections/speedtest/new/new-request.yaml
+new file mode 100644
+index 0000000..c221a93
+--- /dev/null
++++ b/collections/speedtest/new/new-request.yaml
+@@ -0,0 +1,3 @@
++name: New Request
++method: GET
++url: https://example.com"#;
+
+        let rows = parse_side_by_side_diff(raw_diff);
+
+        // Should NOT have new file mode as code row
+        for r in &rows {
+            if let SideBySideRow::Diff { left, right } = r {
+                if let Some(l) = left {
+                    assert!(!l.content.contains("new file mode"));
+                    assert!(!l.content.contains("@@"));
+                }
+                if let Some(r) = right {
+                    assert!(!r.content.contains("new file mode"));
+                    assert!(!r.content.contains("@@"));
+                }
+            }
+        }
+
+        // Must have 3 added lines
+        assert_eq!(rows.len(), 3);
+        if let SideBySideRow::Diff { left: None, right: Some(r) } = &rows[0] {
+            assert_eq!(r.content, "name: New Request");
+            assert_eq!(r.kind, DiffLineKind::Added);
+            assert_eq!(r.line_no, Some(1));
+        } else {
+            panic!("Expected added diff row at index 0");
+        }
+    }
+
+    #[test]
+    fn test_parse_diff_suppresses_hunk_headers_and_numbers_accurately() {
+        let raw_diff = r#"diff --git a/file.txt b/file.txt
+index 1111111..2222222 100644
+--- a/file.txt
++++ b/file.txt
+@@ -10,3 +10,3 @@
+ normal line
+-old line
++new line"#;
+
+        let rows = parse_side_by_side_diff(raw_diff);
+        // Hunk header @@ -10,3 is suppressed: only 2 code rows (1 normal line + 1 modified row)
+        assert_eq!(rows.len(), 2);
+        if let SideBySideRow::Diff { left: Some(l), right: Some(r) } = &rows[0] {
+            assert_eq!(l.content, "normal line");
+            assert_eq!(l.line_no, Some(10));
+            assert_eq!(r.line_no, Some(10));
+        } else {
+            panic!("Expected normal diff row at index 0");
+        }
+    }
+
+    #[test]
+    fn test_parse_multi_file_diff_inserts_file_headers() {
+        let raw_diff = r#"diff --git a/file1.txt b/file1.txt
+index 1111111..2222222 100644
+--- a/file1.txt
++++ b/file1.txt
+@@ -1,1 +1,1 @@
+-a
++b
+diff --git a/file2.txt b/file2.txt
+index 3333333..4444444 100644
+--- a/file2.txt
++++ b/file2.txt
+@@ -1,1 +1,1 @@
+-c
++d"#;
+
+        let rows = parse_side_by_side_diff(raw_diff);
+        let file_headers: Vec<_> = rows.iter().filter_map(|r| match r {
+            SideBySideRow::FileHeader(f) => Some(f.as_str()),
+            _ => None,
+        }).collect();
+
+        assert_eq!(file_headers, vec!["file1.txt", "file2.txt"]);
+    }
+
+    #[test]
+    fn test_split_diff_into_files() {
+        let diff = r#"diff --git a/file1.txt b/file1.txt
+index 1111111..2222222 100644
+--- a/file1.txt
++++ b/file1.txt
+@@ -1,1 +1,1 @@
+-a
++b
+diff --git a/dir/file2.rs b/dir/file2.rs
+index 3333333..4444444 100644
+--- a/dir/file2.rs
++++ b/dir/file2.rs
+@@ -1,1 +1,1 @@
+-c
++d"#;
+
+        let files = split_diff_into_files(diff);
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].0, "file1.txt");
+        assert!(files[0].1.contains("-a"));
+        assert_eq!(files[1].0, "dir/file2.rs");
+        assert!(files[1].1.contains("+d"));
     }
 }

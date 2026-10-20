@@ -64,9 +64,12 @@ pub struct WorkspaceState {
     pub git_history: Vec<restclient_core::git::GitCommitInfo>,
     pub git_branches: Vec<restclient_core::git::GitBranchInfo>,
     pub git_remotes: Vec<restclient_core::git::GitRemote>,
+    pub git_selected_staged_files: HashSet<String>,
+    pub git_selected_unstaged_files: HashSet<String>,
     pub git_selected_file: Option<(String, bool)>,
     pub git_diff_content: Option<String>,
     pub git_selected_commit: Option<restclient_core::git::GitCommitDetail>,
+    pub git_expanded_history_files: HashSet<String>,
     pub git_commit_message: String,
     pub git_error: Option<String>,
     pub git_loading: bool,
@@ -168,9 +171,12 @@ impl WorkspaceState {
             git_history: Vec::new(),
             git_branches,
             git_remotes: Vec::new(),
+            git_selected_staged_files: HashSet::new(),
+            git_selected_unstaged_files: HashSet::new(),
             git_selected_file: None,
             git_diff_content: None,
             git_selected_commit: None,
+            git_expanded_history_files: HashSet::new(),
             git_commit_message: String::new(),
             git_error: None,
             git_loading: false,
@@ -1580,9 +1586,12 @@ impl WorkspaceState {
         self.git_error = None;
         match modal {
             GitActiveModal::Commit => {
+                self.git_selected_unstaged_files.clear();
+                self.git_selected_staged_files.clear();
                 self.refresh_git_status(cx);
             }
             GitActiveModal::History => {
+                self.git_expanded_history_files.clear();
                 self.refresh_git_history(cx);
             }
             GitActiveModal::NewBranch => {
@@ -1599,6 +1608,9 @@ impl WorkspaceState {
         self.active_git_modal = None;
         self.show_git_modal = false;
         self.git_error = None;
+        self.git_selected_unstaged_files.clear();
+        self.git_selected_staged_files.clear();
+        self.git_expanded_history_files.clear();
         cx.notify();
     }
 
@@ -1747,7 +1759,19 @@ impl WorkspaceState {
             if st.is_repo && !st.branch.is_empty() {
                 self.git_branch = Some(st.branch.clone());
             }
-            if let Some((path, staged)) = self.git_selected_file.clone() {
+            let valid_unstaged: HashSet<String> = st.unstaged_files.iter().chain(&st.untracked_files).map(|f| f.path.clone()).collect();
+            self.git_selected_unstaged_files.retain(|p| valid_unstaged.contains(p));
+
+            let valid_staged: HashSet<String> = st.staged_files.iter().map(|f| f.path.clone()).collect();
+            self.git_selected_staged_files.retain(|p| valid_staged.contains(p));
+
+            if let Some((path, mut staged)) = self.git_selected_file.clone() {
+                if valid_staged.contains(&path) {
+                    staged = true;
+                } else if valid_unstaged.contains(&path) {
+                    staged = false;
+                }
+                self.git_selected_file = Some((path.clone(), staged));
                 self.load_git_diff(&path, staged, cx);
             } else if let Some(first) = st.staged_files.first() {
                 let p = first.path.clone();
@@ -1807,8 +1831,18 @@ impl WorkspaceState {
     }
 
     pub fn select_git_commit(&mut self, hash: &str, cx: &mut Context<Self>) {
+        self.git_expanded_history_files.clear();
         if let Ok(detail) = restclient_core::git::git_commit_detail(&self.workspace_path, hash) {
             self.git_selected_commit = Some(detail);
+        }
+        cx.notify();
+    }
+
+    pub fn toggle_git_history_file_expansion(&mut self, file_path: &str, cx: &mut Context<Self>) {
+        if self.git_expanded_history_files.contains(file_path) {
+            self.git_expanded_history_files.remove(file_path);
+        } else {
+            self.git_expanded_history_files.insert(file_path.to_string());
         }
         cx.notify();
     }
@@ -1830,6 +1864,68 @@ impl WorkspaceState {
 
     pub fn git_unstage_all(&mut self, cx: &mut Context<Self>) {
         let _ = restclient_core::git::git_unstage_all(&self.workspace_path);
+        self.refresh_git_status(cx);
+    }
+
+    pub fn toggle_git_unstaged_selection(&mut self, path: &str, cx: &mut Context<Self>) {
+        if self.git_selected_unstaged_files.contains(path) {
+            self.git_selected_unstaged_files.remove(path);
+        } else {
+            self.git_selected_unstaged_files.insert(path.to_string());
+        }
+        cx.notify();
+    }
+
+    pub fn toggle_all_unstaged_selection(&mut self, select: bool, cx: &mut Context<Self>) {
+        if let Some(st) = &self.git_status {
+            if select {
+                self.git_selected_unstaged_files = st.unstaged_files.iter().chain(&st.untracked_files).map(|f| f.path.clone()).collect();
+            } else {
+                self.git_selected_unstaged_files.clear();
+            }
+        }
+        cx.notify();
+    }
+
+    pub fn toggle_git_staged_selection(&mut self, path: &str, cx: &mut Context<Self>) {
+        if self.git_selected_staged_files.contains(path) {
+            self.git_selected_staged_files.remove(path);
+        } else {
+            self.git_selected_staged_files.insert(path.to_string());
+        }
+        cx.notify();
+    }
+
+    pub fn toggle_all_staged_selection(&mut self, select: bool, cx: &mut Context<Self>) {
+        if let Some(st) = &self.git_status {
+            if select {
+                self.git_selected_staged_files = st.staged_files.iter().map(|f| f.path.clone()).collect();
+            } else {
+                self.git_selected_staged_files.clear();
+            }
+        }
+        cx.notify();
+    }
+
+    pub fn git_stage_selected(&mut self, cx: &mut Context<Self>) {
+        let paths: Vec<String> = self.git_selected_unstaged_files.iter().cloned().collect();
+        if paths.is_empty() {
+            return;
+        }
+        let str_paths: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+        let _ = restclient_core::git::git_stage_files(&self.workspace_path, &str_paths);
+        self.git_selected_unstaged_files.clear();
+        self.refresh_git_status(cx);
+    }
+
+    pub fn git_unstage_selected(&mut self, cx: &mut Context<Self>) {
+        let paths: Vec<String> = self.git_selected_staged_files.iter().cloned().collect();
+        if paths.is_empty() {
+            return;
+        }
+        let str_paths: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+        let _ = restclient_core::git::git_unstage_files(&self.workspace_path, &str_paths);
+        self.git_selected_staged_files.clear();
         self.refresh_git_status(cx);
     }
 
@@ -2097,9 +2193,12 @@ mod tests {
             git_history: Vec::new(),
             git_branches: Vec::new(),
             git_remotes: Vec::new(),
+            git_selected_staged_files: HashSet::new(),
+            git_selected_unstaged_files: HashSet::new(),
             git_selected_file: None,
             git_diff_content: None,
             git_selected_commit: None,
+            git_expanded_history_files: HashSet::new(),
             git_commit_message: String::new(),
             git_error: None,
             git_loading: false,
@@ -2192,9 +2291,12 @@ mod tests {
             git_history: Vec::new(),
             git_branches: Vec::new(),
             git_remotes: Vec::new(),
+            git_selected_staged_files: HashSet::new(),
+            git_selected_unstaged_files: HashSet::new(),
             git_selected_file: None,
             git_diff_content: None,
             git_selected_commit: None,
+            git_expanded_history_files: HashSet::new(),
             git_commit_message: String::new(),
             git_error: None,
             git_loading: false,
@@ -2322,9 +2424,12 @@ mod tests {
             git_history: Vec::new(),
             git_branches: Vec::new(),
             git_remotes: Vec::new(),
+            git_selected_staged_files: HashSet::new(),
+            git_selected_unstaged_files: HashSet::new(),
             git_selected_file: None,
             git_diff_content: None,
             git_selected_commit: None,
+            git_expanded_history_files: HashSet::new(),
             git_commit_message: String::new(),
             git_error: None,
             git_loading: false,
@@ -2427,9 +2532,12 @@ mod tests {
             git_history: Vec::new(),
             git_branches: Vec::new(),
             git_remotes: Vec::new(),
+            git_selected_staged_files: HashSet::new(),
+            git_selected_unstaged_files: HashSet::new(),
             git_selected_file: None,
             git_diff_content: None,
             git_selected_commit: None,
+            git_expanded_history_files: HashSet::new(),
             git_commit_message: String::new(),
             git_error: None,
             git_loading: false,
@@ -2520,9 +2628,12 @@ mod tests {
             git_history: Vec::new(),
             git_branches: Vec::new(),
             git_remotes: Vec::new(),
+            git_selected_staged_files: HashSet::new(),
+            git_selected_unstaged_files: HashSet::new(),
             git_selected_file: None,
             git_diff_content: None,
             git_selected_commit: None,
+            git_expanded_history_files: HashSet::new(),
             git_commit_message: String::new(),
             git_error: None,
             git_loading: false,
@@ -2625,9 +2736,12 @@ mod tests {
             git_history: Vec::new(),
             git_branches: Vec::new(),
             git_remotes: Vec::new(),
+            git_selected_staged_files: HashSet::new(),
+            git_selected_unstaged_files: HashSet::new(),
             git_selected_file: None,
             git_diff_content: None,
             git_selected_commit: None,
+            git_expanded_history_files: HashSet::new(),
             git_commit_message: String::new(),
             git_error: None,
             git_loading: false,

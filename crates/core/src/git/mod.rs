@@ -320,6 +320,34 @@ pub fn git_unstage_file(repo_dir: &Path, file_path: &str) -> Result<()> {
         .map(|_| ())
 }
 
+/// Stage multiple files in a single git command
+pub fn git_stage_files(repo_dir: &Path, file_paths: &[&str]) -> Result<()> {
+    if file_paths.is_empty() {
+        return Ok(());
+    }
+    let root = find_git_root(repo_dir).unwrap_or_else(|| repo_dir.to_path_buf());
+    let mut args = vec!["add", "--"];
+    args.extend_from_slice(file_paths);
+    run_git_cmd(&root, &args).map(|_| ())
+}
+
+/// Unstage multiple files in a single git command
+pub fn git_unstage_files(repo_dir: &Path, file_paths: &[&str]) -> Result<()> {
+    if file_paths.is_empty() {
+        return Ok(());
+    }
+    let root = find_git_root(repo_dir).unwrap_or_else(|| repo_dir.to_path_buf());
+    let mut args = vec!["restore", "--staged", "--"];
+    args.extend_from_slice(file_paths);
+    run_git_cmd(&root, &args)
+        .or_else(|_| {
+            let mut reset_args = vec!["reset", "HEAD", "--"];
+            reset_args.extend_from_slice(file_paths);
+            run_git_cmd(&root, &reset_args)
+        })
+        .map(|_| ())
+}
+
 /// Stage all modified and untracked files
 pub fn git_stage_all(repo_dir: &Path) -> Result<()> {
     let root = find_git_root(repo_dir).unwrap_or_else(|| repo_dir.to_path_buf());
@@ -670,6 +698,14 @@ mod tests {
 
         // 5. unstage file
         assert!(git_unstage_file(&temp_dir, "request.yaml").is_ok());
+        let status = git_status(&temp_dir).unwrap();
+        assert_eq!(status.staged_files.len(), 0);
+
+        // 5b. batch stage and unstage files
+        assert!(git_stage_files(&temp_dir, &["request.yaml"]).is_ok());
+        let status = git_status(&temp_dir).unwrap();
+        assert_eq!(status.staged_files.len(), 1);
+        assert!(git_unstage_files(&temp_dir, &["request.yaml"]).is_ok());
         let status = git_status(&temp_dir).unwrap();
         assert_eq!(status.staged_files.len(), 0);
 
