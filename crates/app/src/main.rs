@@ -51,6 +51,8 @@ pub struct AppView {
     xml_editor: Entity<CodeEditorState>,
     raw_textarea: Entity<TextareaState>,
     response_editor: Entity<CodeEditorState>,
+    request_url_textarea: Entity<TextareaState>,
+    request_body_editor: Entity<CodeEditorState>,
     pre_script_editor: Entity<CodeEditorState>,
     test_script_editor: Entity<CodeEditorState>,
     bearer_token_input: Entity<InputState>,
@@ -125,6 +127,12 @@ impl AppView {
             let mut state = CodeEditorState::new(window, cx);
             state.set_highlighter_factory(highlighter_factory.clone(), cx);
             state.language("json").line_number(true).folding(true)
+        });
+        let request_url_textarea = cx.new(|cx| TextareaState::new(window, cx).auto_grow(1, 8));
+        let request_body_editor = cx.new(|cx| {
+            let mut state = CodeEditorState::new(window, cx);
+            state.set_highlighter_factory(highlighter_factory.clone(), cx);
+            state.language("json").line_number(true).folding(false)
         });
         let pre_script_editor = cx.new(|cx| {
             let mut state = CodeEditorState::new(window, cx);
@@ -635,6 +643,8 @@ impl AppView {
             xml_editor,
             raw_textarea,
             response_editor,
+            request_url_textarea,
+            request_body_editor,
             pre_script_editor,
             test_script_editor,
             bearer_token_input,
@@ -1468,6 +1478,53 @@ impl Render for AppView {
                     txt.set_value(display_text, window, cx);
                     txt.set_highlighter(lang, cx);
                     txt.set_readonly(true, cx);
+                });
+            }
+        }
+
+        // Synchronize request_url_textarea and request_body_editor with RequestSent
+        {
+            let (sent_url, body_text, lang) = {
+                let resp_s = self.response_state.read(cx);
+                if let Some(resp) = &resp_s.current_response {
+                    if let Some(sent) = &resp.request_sent {
+                        let (body_text, lang) = if let Some(preview) = &sent.body_preview {
+                            let is_j = preview.trim_start().starts_with('{') || preview.trim_start().starts_with('[');
+                            let text = if is_j {
+                                serde_json::from_str::<serde_json::Value>(preview)
+                                    .map(|v| serde_json::to_string_pretty(&v).unwrap_or(preview.clone()))
+                                    .unwrap_or_else(|_| preview.clone())
+                            } else {
+                                preview.clone()
+                            };
+                            (text, if is_j { "json" } else { "plaintext" })
+                        } else {
+                            (String::new(), "plaintext")
+                        };
+                        (Some(sent.url.clone()), Some(body_text), Some(lang))
+                    } else {
+                        (None, None, None)
+                    }
+                } else {
+                    (None, None, None)
+                }
+            };
+
+            if let Some(sent_url) = sent_url {
+                self.request_url_textarea.update(cx, |txt, cx| {
+                    if txt.value() != sent_url {
+                        txt.set_value(sent_url, window, cx);
+                        txt.set_readonly(true, cx);
+                    }
+                });
+            }
+            if let (Some(body_text), Some(lang)) = (body_text, lang) {
+                self.request_body_editor.update(cx, |txt, cx| {
+                    if txt.value() != body_text {
+                        txt.set_value(body_text, window, cx);
+                        txt.set_highlighter(lang, cx);
+                        txt.set_readonly(true, cx);
+                    }
                 });
             }
         }
@@ -2379,7 +2436,14 @@ impl Render for AppView {
                                                 )
                                             });
 
-                                        let response_pane = ResponseViewer::new(ws_entity.clone(), ed_entity.clone(), resp_entity.clone(), self.response_editor.clone());
+                                        let response_pane = ResponseViewer::new(
+                                            ws_entity.clone(),
+                                            ed_entity.clone(),
+                                            resp_entity.clone(),
+                                            self.response_editor.clone(),
+                                            self.request_url_textarea.clone(),
+                                            self.request_body_editor.clone(),
+                                        );
 
                                         if is_vertical_split {
                                             div().size_full().child(

@@ -49,7 +49,6 @@ pub struct ResponseState {
     pub previous_response: Option<HttpResponseRecord>,
     pub session_responses: HashMap<String, HttpResponseRecord>,
     pub previous_responses: HashMap<String, HttpResponseRecord>,
-    pub comparing_with_previous: bool,
     pub active_example_name: Option<String>,
     pub active_tab: ResponseTabKind,
     pub view_mode: ResponseViewMode,
@@ -71,7 +70,6 @@ impl ResponseState {
             previous_response: None,
             session_responses: HashMap::new(),
             previous_responses: HashMap::new(),
-            comparing_with_previous: false,
             active_example_name: None,
             active_tab: ResponseTabKind::Response,
             view_mode: ResponseViewMode::Pretty,
@@ -93,7 +91,6 @@ impl ResponseState {
         store: &dyn WorkspaceStore,
     ) {
         self.active_example_name = None;
-        self.comparing_with_previous = false;
         if let Some(cached) = self.session_responses.get(req_id).cloned() {
             self.test_results = cached.test_results.clone();
             self.console_logs = cached.console_logs.clone();
@@ -158,16 +155,8 @@ impl ResponseState {
         }
     }
 
-    pub fn toggle_compare_with_previous(&mut self, cx: &mut Context<Self>) {
-        if self.previous_response.is_some() {
-            self.comparing_with_previous = !self.comparing_with_previous;
-            cx.notify();
-        }
-    }
-
     pub fn view_example(&mut self, example: &RequestExampleFile, cx: &mut Context<Self>) {
         self.active_example_name = Some(example.name.clone());
-        self.comparing_with_previous = false;
         let headers: Vec<(String, String)> = example
             .headers
             .iter()
