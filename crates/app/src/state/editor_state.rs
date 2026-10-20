@@ -503,13 +503,18 @@ impl EditorState {
     }
 
     // Auth
-    pub fn set_auth(&mut self, auth: Auth, cx: &mut Context<Self>) {
+    pub fn apply_set_auth(&mut self, auth: Auth) {
         if let Some(req) = &mut self.active_request {
             req.auth = auth;
             self.auth_dropdown_open = false;
             self.is_dirty = true;
-            cx.notify();
+            self.request_version = self.request_version.wrapping_add(1);
         }
+    }
+
+    pub fn set_auth(&mut self, auth: Auth, cx: &mut Context<Self>) {
+        self.apply_set_auth(auth);
+        cx.notify();
     }
 
     pub fn apply_set_bearer_token(&mut self, token: String) {
@@ -875,6 +880,12 @@ mod tests {
             editor.active_request.as_ref().unwrap().script.as_ref().unwrap().post_response.as_deref(),
             Some("pm.test('ok', () => {});")
         );
+
+        // Apply auth
+        let ver = editor.request_version;
+        editor.apply_set_auth(Auth::Bearer { token: "token_abc".to_string() });
+        assert_eq!(editor.request_version, ver + 1);
+        assert_eq!(editor.active_request.as_ref().unwrap().auth, Auth::Bearer { token: "token_abc".to_string() });
     }
 
     #[test]
