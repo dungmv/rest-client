@@ -4,6 +4,22 @@ A fast, lightweight, and Git-friendly desktop REST API client (inspired by Yaak,
 
 Targeted for **macOS** and **Windows** with real HTTP request execution from the ground up and plain-text filesystem persistence designed for seamless Git collaboration.
 
+<p align="center">
+  <img src="assets/screenshot.png" alt="RestClient Application Screenshot" width="100%">
+</p>
+
+---
+
+## ✨ Key Features
+
+- ⚡ **Native GPUI Performance:** Hardware-accelerated 60–120 FPS rendering, zero webview overhead, instant startup, and tiny memory footprint.
+- 💾 **100% Filesystem-First:** Workspace data lives as clean, human-readable YAML files. No hidden SQLite database or proprietary locks.
+- 🐙 **Built-in Git Source Control GUI:** Staging, diff viewer, commit history, branch switcher, and remote sync (`push`/`pull`/`fetch`) right inside the app (`Cmd+Shift+G`).
+- 📥 **Universal Importers:** Direct support for OpenAPI 3.0/3.1 (JSON & YAML), Postman Collection v2.1, and bidirectional cURL CLI command translation (`Cmd+I`).
+- 🖱️ **Fluid Drag-and-Drop Organization:** Drag requests, folders, and pinned tabs with live dropzone indicators and root un-nesting.
+- 📜 **QuickJS Scripting Sandbox:** Embedded ECMAScript engine with `pm.*` Postman-compatible APIs, crypto helpers, Faker dynamic variables (`{{$guid}}`, `{{$randomEmail}}`), and test assertion runners.
+- 🔒 **Zero-Leak Secret Separation:** Environment files only commit variable definitions; actual secret values remain strictly local in `.local/secrets/`.
+
 ---
 
 ## 🎨 Visual Design
@@ -88,7 +104,9 @@ restclient/
 │   ├── core/                  # Pure business logic, models, executor, storage
 │   │   ├── src/
 │   │   │   ├── curl/          # cURL CLI importer and exporter
+│   │   │   ├── git/           # Git integration (status, diffs, branches, stage, commit, sync)
 │   │   │   ├── http/          # HttpExecutor trait & ReqwestExecutor with timing breakdowns
+│   │   │   ├── importers/     # OpenAPI 3.0/3.1 & Postman v2.1 collection parsers and workspace importer
 │   │   │   ├── interpolation.rs # {{var}} interpolation & syntax scanning
 │   │   │   ├── models.rs      # Data models (HttpRequestItem, HttpMethod, Auth, etc.)
 │   │   │   ├── scripting/     # Embedded QuickJS (rquickjs) sandbox, API bridge, faker
@@ -103,12 +121,12 @@ restclient/
 │   │   └── Cargo.toml
 │   └── app/                   # GPUI desktop application
 │       ├── src/
-│       │   ├── components/    # Reusable UI widgets
+│       │   ├── components/    # Reusable UI widgets (modals, tree, editors, badges)
 │       │   ├── platform/      # macOS vs Windows caption buttons & git branch chip
 │       │   ├── settings.rs    # OS config directory AppSettings
 │       │   ├── state/         # Fine-grained entity states (WorkspaceState, EditorState, ResponseState)
 │       │   ├── theme.rs       # Theme tokens & palettes
-│       │   └── main.rs        # App entry point, menu, keyboard shortcuts, split layouts
+│       │   └── main.rs        # App entry point, menus, keyboard shortcuts, split layouts
 │       └── Cargo.toml
 ├── Cargo.toml                 # Workspace root
 └── README.md
@@ -122,10 +140,12 @@ restclient/
 |---|---|
 | `Ctrl + Enter` (or `Cmd + Enter`) | Send active request (or Cancel if in-flight) |
 | `Ctrl + K` (or `Cmd + K`) | Toggle Command Palette |
-| `Ctrl + Shift + G` (or `Cmd + Shift + G`) | Toggle Git Source Control (Commit, Diff, History, Checkout) |
-| `Ctrl + [` (or `Cmd + [`) | Navigate back in history |
-| `Ctrl + ]` (or `Cmd + ]`) | Navigate forward in history |
-| `Ctrl + F` (or `Cmd + F`) | Focus search / filter |
+| `Ctrl + B` (or `Cmd + B`) | Toggle Sidebar visibility |
+| `Ctrl + Shift + G` (or `Cmd + Shift + G`) | Toggle Git Source Control Panel (Commit, Diff, History, Branch) |
+| `Ctrl + I` (or `Cmd + I`) | Open Import Modal (OpenAPI & Postman) |
+| `Ctrl + ,` (or `Cmd + ,`) | Open Settings Modal |
+| `Ctrl + [` (or `Cmd + [`) | Navigate back in request history |
+| `Ctrl + ]` (or `Cmd + ]`) | Navigate forward in request history |
 | `Escape` | Dismiss modal / Command Palette |
 
 ---
@@ -158,14 +178,14 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 ---
 
-## ⚠️ Known Gaps
+## 🗺️ Roadmap & Current Gaps
 
-1. **AST Code-Folding in Response Body Viewer:**
-   - *Current status:* Renders response lines virtualized with high performance, line numbering, and syntax styling.
-   - *Future work:* Integration with tree-sitter AST syntax folding when `gpui-component` editor AST folding stabilizes.
-2. **Native Pointer Drag-and-Drop Sidebar Reordering:**
-   - *Current status:* Requests are reordered via `_folder.yaml`, context menus, and alphabetized fallback. Pinned requests and examples support menu-based reordering.
-   - *Future work:* Interactive pointer drag handles once cross-platform mouse grab overlays are finalized.
-3. **OpenAPI & Postman Importers:**
-   - *Current status:* Full bidirectional cURL command import & export is supported.
-   - *Future work:* Direct import from OpenAPI 3.1 specifications and Postman v2.1 collection files.
+1. **AST Code-Folding in Response Viewer:**
+   - *Current status:* High-performance code editor view with syntax coloring, line numbers, and automatic fallback to a 120 FPS virtualized list (`uniform_list`) for large payloads (>2,000 lines).
+   - *Next step:* Full recursive AST syntax folding on brace blocks when `gpui-component` editor AST folding stabilizes.
+2. **WebSocket & Server-Sent Events (SSE) Streaming:**
+   - *Current status:* Complete support for HTTP/1.1 and HTTP/2 REST requests with timing breakdowns.
+   - *Planned:* Real-time bidirectional streaming connections for WebSockets and SSE event feeds.
+3. **GraphQL Visual Query Builder:**
+   - *Current status:* GraphQL queries can be executed via standard POST JSON requests.
+   - *Planned:* Schema introspection, autocomplete, and a visual query/variables builder.
