@@ -18,6 +18,7 @@ pub mod titlebar;
 pub mod toast;
 pub mod rename_workspace_modal;
 pub mod git_modal;
+pub mod import_modal;
 
 pub use body_editor::*;
 pub use command_palette::*;
@@ -38,3 +39,4 @@ pub use titlebar::*;
 pub use toast::*;
 pub use git_modal::*;
 pub use rename_workspace_modal::*;
+pub use import_modal::*;

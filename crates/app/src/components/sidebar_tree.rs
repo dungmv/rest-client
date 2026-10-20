@@ -933,6 +933,7 @@ impl RenderOnce for SidebarTree {
                                 let ws_req = ws_menu.clone();
                                 let ed_req = ed_menu.clone();
                                 let ws_folder = ws_menu.clone();
+                                let ws_import = ws_menu.clone();
 
                                 menu
                                     .item(
@@ -959,6 +960,15 @@ impl RenderOnce for SidebarTree {
                                                         state.start_renaming_folder(new_id, "new-folder".to_string(), window, cx);
                                                     });
                                                 }
+                                            }),
+                                    )
+                                    .separator()
+                                    .item(
+                                        PopupMenuItem::new("Import...")
+                                            .on_click(move |_, _, cx| {
+                                                ws_import.update(cx, |state, cx| {
+                                                    state.open_import_modal(None, cx);
+                                                });
                                             }),
                                     )
                             })

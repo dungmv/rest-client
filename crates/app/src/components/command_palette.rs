@@ -334,6 +334,43 @@ impl RenderOnce for CommandPalette {
                                         .child(div().text_xs().text_color(t.text_muted).child("Git"))
                                 )
                             })
+                            // Action: Import OpenAPI or Postman
+                            .when(q.is_empty() || "import".contains(&q) || "openapi".contains(&q) || "postman".contains(&q) || "swagger".contains(&q), |this| {
+                                let ws_s = ws_clone.clone();
+                                this.child(
+                                    div()
+                                        .id("cmd-import-spec")
+                                        .px(px(8.))
+                                        .py(px(6.))
+                                        .rounded(px(4.))
+                                        .hover(|s| s.bg(t.bg_hover))
+                                        .cursor_pointer()
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .on_click(move |_, _, cx| {
+                                            ws_s.update(cx, |state, cx| {
+                                                state.toggle_command_palette(cx);
+                                                state.open_import_modal(None, cx);
+                                            });
+                                        })
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(8.))
+                                                .child("📥")
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                        .text_color(t.text_primary)
+                                                        .child("Import: OpenAPI (YAML/JSON) or Postman"),
+                                                ),
+                                        )
+                                        .child(div().text_xs().text_color(t.text_muted).child("Ctrl+I"))
+                                )
+                            })
                             // Action: Git Commit History
                             .when(q.is_empty() || "git".contains(&q) || "history".contains(&q) || "log".contains(&q), |this| {
                                 let ws_s = ws_clone.clone();

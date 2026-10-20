@@ -29,7 +29,7 @@ use state::*;
 use std::sync::Arc;
 use theme::theme;
 
-actions!(restclient, [SendRequest, ToggleCommandPalette, ToggleSidebar, ToggleSettings, ToggleGitModal, NavigateBack, NavigateForward, DismissModal]);
+actions!(restclient, [SendRequest, ToggleCommandPalette, ToggleSidebar, ToggleSettings, ToggleGitModal, OpenImportModal, NavigateBack, NavigateForward, DismissModal]);
 
 pub enum HttpSendEvent {
     Progress(String),
@@ -913,6 +913,7 @@ impl Render for AppView {
         let show_cookies_modal = self.workspace_state.read(cx).show_cookies_modal;
         let show_settings_modal = self.workspace_state.read(cx).show_settings_modal;
         let show_git_modal = self.workspace_state.read(cx).show_git_modal;
+        let show_import_modal = self.workspace_state.read(cx).show_import_modal;
         let show_rename_workspace_modal = self.workspace_state.read(cx).show_rename_workspace_modal;
         let show_command_palette = self.workspace_state.read(cx).show_command_palette;
 
@@ -1149,6 +1150,14 @@ impl Render for AppView {
                 move |_: &ToggleGitModal, _, cx| {
                     ws_c.update(cx, |state, cx| {
                         state.toggle_git_modal(cx);
+                    });
+                }
+            })
+            .on_action({
+                let ws_c = ws_entity.clone();
+                move |_: &OpenImportModal, _, cx| {
+                    ws_c.update(cx, |state, cx| {
+                        state.open_import_modal(None, cx);
                     });
                 }
             })
@@ -1923,6 +1932,9 @@ impl Render for AppView {
             .when(show_git_modal, |this| {
                 this.child(GitModal::new(ws_entity.clone()))
             })
+            .when(show_import_modal, |this| {
+                this.child(ImportModal::new(ws_entity.clone(), toast_entity.clone()))
+            })
             .when(show_rename_workspace_modal, |this| {
                 this.child(RenameWorkspaceModal::new(ws_entity.clone()))
             })
@@ -1960,6 +1972,8 @@ fn main() {
             KeyBinding::new("cmd-,", ToggleSettings, None),
             KeyBinding::new("ctrl-shift-g", ToggleGitModal, None),
             KeyBinding::new("cmd-shift-g", ToggleGitModal, None),
+            KeyBinding::new("ctrl-i", OpenImportModal, None),
+            KeyBinding::new("cmd-i", OpenImportModal, None),
             KeyBinding::new("ctrl-[", NavigateBack, None),
             KeyBinding::new("cmd-[", NavigateBack, None),
             KeyBinding::new("ctrl-]", NavigateForward, None),

@@ -162,6 +162,7 @@ impl RenderOnce for AppTitleBar {
                         let ws_rename = ws_s.clone();
                         let ws_folder = ws_s.clone();
                         let ws_clean = ws_s.clone();
+                        let ws_import = ws_s.clone();
 
                         let mut m = menu
                             .item(
@@ -185,6 +186,14 @@ impl RenderOnce for AppTitleBar {
                                     .on_click(move |_, _, cx| {
                                         ws_clean.update(cx, |state, cx| {
                                             state.clean_history(cx);
+                                        });
+                                    })
+                            )
+                            .item(
+                                PopupMenuItem::new("📥 Import...")
+                                    .on_click(move |_, _, cx| {
+                                        ws_import.update(cx, |state, cx| {
+                                            state.open_import_modal(None, cx);
                                         });
                                     })
                             )

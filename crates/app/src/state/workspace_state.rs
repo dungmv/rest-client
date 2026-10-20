@@ -58,6 +58,8 @@ pub struct WorkspaceState {
     pub show_settings_modal: bool,
     pub show_git_modal: bool,
     pub show_rename_workspace_modal: bool,
+    pub show_import_modal: bool,
+    pub import_target_folder_rel: Option<String>,
     pub active_git_modal: Option<GitActiveModal>,
     pub git_tab: GitTab,
     pub git_status: Option<restclient_core::git::GitStatusResult>,
@@ -160,6 +162,8 @@ impl WorkspaceState {
             show_settings_modal: false,
             show_git_modal: false,
             show_rename_workspace_modal: false,
+            show_import_modal: false,
+            import_target_folder_rel: None,
             active_git_modal: None,
             git_tab: GitTab::Changes,
             git_status: None,
@@ -239,6 +243,56 @@ impl WorkspaceState {
         let store: Arc<dyn WorkspaceStore> = Arc::new(FsWorkspaceStore::new(&path));
         let _ = store.init_workspace(name);
         self.open_workspace(path, cx);
+    }
+
+    pub fn open_import_modal(&mut self, target_folder_rel: Option<String>, cx: &mut Context<Self>) {
+        self.show_import_modal = true;
+        self.import_target_folder_rel = target_folder_rel;
+        cx.notify();
+    }
+
+    pub fn close_import_modal(&mut self, cx: &mut Context<Self>) {
+        self.show_import_modal = false;
+        self.import_target_folder_rel = None;
+        cx.notify();
+    }
+
+    pub fn execute_import_current_workspace(
+        &mut self,
+        result: restclient_core::importers::ImportResult,
+        options: restclient_core::importers::ImportOptions,
+        cx: &mut Context<Self>,
+    ) -> anyhow::Result<restclient_core::importers::ImportSummary> {
+        let summary = restclient_core::importers::apply_import_to_workspace(
+            self.store.as_ref(),
+            &result,
+            &options,
+        )?;
+        self.reload_tree();
+        self.reload_environments();
+        self.refresh_git_status(cx);
+        self.close_import_modal(cx);
+        Ok(summary)
+    }
+
+    pub fn execute_import_new_workspace(
+        &mut self,
+        target_dir: PathBuf,
+        workspace_name: &str,
+        result: restclient_core::importers::ImportResult,
+        options: restclient_core::importers::ImportOptions,
+        cx: &mut Context<Self>,
+    ) -> anyhow::Result<restclient_core::importers::ImportSummary> {
+        let new_store = Arc::new(FsWorkspaceStore::new(&target_dir));
+        new_store.init_workspace(workspace_name)?;
+        let summary = restclient_core::importers::apply_import_to_workspace(
+            new_store.as_ref(),
+            &result,
+            &options,
+        )?;
+        self.close_import_modal(cx);
+        self.open_workspace(target_dir, cx);
+        Ok(summary)
     }
 
     pub fn reload_all(&mut self) {
@@ -1535,6 +1589,12 @@ impl WorkspaceState {
             self.close_git_modal(cx);
             return true;
         }
+        if self.show_import_modal {
+            self.show_import_modal = false;
+            self.import_target_folder_rel = None;
+            cx.notify();
+            return true;
+        }
         if self.show_cookies_modal {
             self.show_cookies_modal = false;
             cx.notify();
@@ -2351,6 +2411,8 @@ mod tests {
             show_settings_modal: false,
             show_git_modal: false,
             show_rename_workspace_modal: false,
+            show_import_modal: false,
+            import_target_folder_rel: None,
             active_git_modal: None,
             git_tab: GitTab::Changes,
             git_status: None,
@@ -2449,6 +2511,8 @@ mod tests {
             show_settings_modal: false,
             show_git_modal: false,
             show_rename_workspace_modal: false,
+            show_import_modal: false,
+            import_target_folder_rel: None,
             active_git_modal: None,
             git_tab: GitTab::Changes,
             git_status: None,
@@ -2582,6 +2646,8 @@ mod tests {
             show_settings_modal: false,
             show_git_modal: false,
             show_rename_workspace_modal: false,
+            show_import_modal: false,
+            import_target_folder_rel: None,
             active_git_modal: None,
             git_tab: GitTab::Changes,
             git_status: None,
@@ -2690,6 +2756,8 @@ mod tests {
             show_settings_modal: false,
             show_git_modal: false,
             show_rename_workspace_modal: false,
+            show_import_modal: false,
+            import_target_folder_rel: None,
             active_git_modal: None,
             git_tab: GitTab::Changes,
             git_status: None,
@@ -2786,6 +2854,8 @@ mod tests {
             show_settings_modal: false,
             show_git_modal: false,
             show_rename_workspace_modal: false,
+            show_import_modal: false,
+            import_target_folder_rel: None,
             active_git_modal: None,
             git_tab: GitTab::Changes,
             git_status: None,
@@ -2894,6 +2964,8 @@ mod tests {
             show_settings_modal: false,
             show_git_modal: false,
             show_rename_workspace_modal: false,
+            show_import_modal: false,
+            import_target_folder_rel: None,
             active_git_modal: None,
             git_tab: GitTab::Changes,
             git_status: None,
