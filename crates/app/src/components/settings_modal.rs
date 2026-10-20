@@ -1,6 +1,6 @@
 use crate::components::status_badge::MethodBadge;
 use crate::state::{EditorState, WorkspaceState};
-use crate::theme::theme;
+use crate::theme::{theme, ThemePreference};
 use gpui::{
     div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
     RenderOnce, StatefulInteractiveElement as _, Styled, Window,
@@ -30,6 +30,8 @@ impl RenderOnce for SettingsModal {
         let t = theme();
         let ws_clone = self.workspace_state.clone();
         let ed_clone = self.editor_state.clone();
+
+        let cur_pref = ws_clone.read(cx).theme_preference;
 
         let active_req = ed_clone.read(cx).active_request.clone();
         let settings = active_req
@@ -188,6 +190,117 @@ impl RenderOnce for SettingsModal {
                                         .child("No active request selected. Default settings shown.")
                                 }
                             })
+                            // Appearance section
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(t.text_secondary)
+                                    .child("APPEARANCE"),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(8.))
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .justify_between()
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                    .text_color(t.text_primary)
+                                                    .child("Theme Mode"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(t.text_muted)
+                                                    .child(match cur_pref {
+                                                        ThemePreference::System => "System Default",
+                                                        ThemePreference::Dark => "Dark",
+                                                        ThemePreference::Light => "Light",
+                                                    }),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(t.text_muted)
+                                            .child("Choose whether the app follows your macOS system appearance or stays in Dark or Light mode."),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .gap(px(8.))
+                                            .pt(px(2.))
+                                            .children([
+                                                (ThemePreference::System, "💻 System", "Follow OS"),
+                                                (ThemePreference::Dark, "🌙 Dark", "Slate / Zinc"),
+                                                (ThemePreference::Light, "☀️ Light", "Clean White"),
+                                            ].into_iter().map(|(pref, label, sublabel)| {
+                                                let is_cur = cur_pref == pref;
+                                                let ws_set = ws_clone.clone();
+                                                div()
+                                                    .id(format!("theme-pref-btn-{:?}", pref))
+                                                    .flex_1()
+                                                    .p(px(10.))
+                                                    .rounded(px(6.))
+                                                    .bg(if is_cur { t.bg_selected } else { t.bg_input })
+                                                    .border_1()
+                                                    .border_color(if is_cur { t.primary } else { t.border })
+                                                    .cursor_pointer()
+                                                    .flex()
+                                                    .flex_col()
+                                                    .gap(px(3.))
+                                                    .hover(|s| {
+                                                        if !is_cur {
+                                                            s.bg(t.bg_hover).border_color(t.text_muted)
+                                                        } else {
+                                                            s
+                                                        }
+                                                    })
+                                                    .on_click(move |_, _, cx| {
+                                                        ws_set.update(cx, |st, cx| {
+                                                            st.set_theme_preference(pref, cx);
+                                                        });
+                                                    })
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .items_center()
+                                                            .justify_between()
+                                                            .child(
+                                                                div()
+                                                                    .text_xs()
+                                                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                                    .text_color(if is_cur { t.primary } else { t.text_primary })
+                                                                    .child(label),
+                                                            )
+                                                            .child(if is_cur {
+                                                                div()
+                                                                    .text_xs()
+                                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                                    .text_color(t.primary)
+                                                                    .child("✓")
+                                                            } else {
+                                                                div().text_xs().child("")
+                                                            })
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(t.text_muted)
+                                                            .child(sublabel)
+                                                    )
+                                            }))
+                                    )
+                            )
+                            // Separator
+                            .child(div().h(px(1.)).bg(t.border))
                             // Network & Request section
                             .child(
                                 div()

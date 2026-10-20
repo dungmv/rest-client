@@ -552,6 +552,27 @@ impl AppView {
             }
         }));
 
+        // 5. Observe OS appearance changes for System theme preference
+        let ws_theme = workspace_state.clone();
+        _subscriptions.push(window.observe_window_appearance(move |window, cx| {
+            let app_appearance = window.appearance();
+            ws_theme.update(cx, |ws, cx| {
+                if ws.theme_preference == crate::theme::ThemePreference::System {
+                    let mode = crate::theme::resolve_theme_mode(crate::theme::ThemePreference::System, app_appearance);
+                    if crate::theme::current_theme_mode() != mode {
+                        crate::theme::set_theme(crate::theme::ThemePreference::System, mode);
+                        let gpui_mode = match mode {
+                            crate::theme::ThemeMode::Dark => gpui_component::ThemeMode::Dark,
+                            crate::theme::ThemeMode::Light => gpui_component::ThemeMode::Light,
+                        };
+                        gpui_component::Theme::change(gpui_mode, None, cx);
+                        cx.refresh_windows();
+                        cx.notify();
+                    }
+                }
+            });
+        }));
+
         let last_synced_request_id = initial_req.as_ref().map(|r| r.id.clone());
         let last_synced_body_version = editor_state.read(cx).body_version;
 
@@ -1954,12 +1975,32 @@ impl Render for AppView {
 }
 
 fn main() {
+    #[cfg(target_os = "macos")]
+    {
+        // Suppress benign internal Apple InputMethodKit / TSM logs
+        // (such as "ERROR: getApplicationProperty: called with invalid property")
+        // emitted when typing with macOS Vietnamese Telex / CJK input methods.
+        if std::env::var("OS_ACTIVITY_MODE").is_err() {
+            std::env::set_var("OS_ACTIVITY_MODE", "disable");
+        }
+    }
+
     let app = gpui_kit::application().with_assets(Assets);
 
     app.run(move |cx| {
         platform::set_dock_icon();
         gpui_kit::init(cx);
-        gpui_component::Theme::change(gpui_component::ThemeMode::Dark, None, cx);
+
+        let settings = settings::AppSettings::load();
+        let pref = theme::ThemePreference::from_str_opt(settings.theme.as_deref());
+        let mode = theme::resolve_theme_mode(pref, cx.window_appearance());
+        theme::set_theme(pref, mode);
+
+        let gpui_mode = match mode {
+            theme::ThemeMode::Dark => gpui_component::ThemeMode::Dark,
+            theme::ThemeMode::Light => gpui_component::ThemeMode::Light,
+        };
+        gpui_component::Theme::change(gpui_mode, None, cx);
 
         // Register keyboard shortcuts
         cx.bind_keys([

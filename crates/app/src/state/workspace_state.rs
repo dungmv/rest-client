@@ -56,6 +56,7 @@ pub struct WorkspaceState {
     pub show_cookies_modal: bool,
     pub show_command_palette: bool,
     pub show_settings_modal: bool,
+    pub theme_preference: crate::theme::ThemePreference,
     pub show_git_modal: bool,
     pub show_rename_workspace_modal: bool,
     pub show_import_modal: bool,
@@ -160,6 +161,7 @@ impl WorkspaceState {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            theme_preference: crate::theme::ThemePreference::from_str_opt(settings.theme.as_deref()),
             show_git_modal: false,
             show_rename_workspace_modal: false,
             show_import_modal: false,
@@ -1634,6 +1636,26 @@ impl WorkspaceState {
         cx.notify();
     }
 
+    pub fn set_theme_preference(&mut self, pref: crate::theme::ThemePreference, cx: &mut Context<Self>) {
+        self.theme_preference = pref;
+        let appearance = cx.window_appearance();
+        let mode = crate::theme::resolve_theme_mode(pref, appearance);
+        crate::theme::set_theme(pref, mode);
+
+        let gpui_mode = match mode {
+            crate::theme::ThemeMode::Dark => gpui_component::ThemeMode::Dark,
+            crate::theme::ThemeMode::Light => gpui_component::ThemeMode::Light,
+        };
+        gpui_component::Theme::change(gpui_mode, None, cx);
+
+        let mut settings = AppSettings::load();
+        settings.theme = Some(pref.as_str().to_string());
+        let _ = settings.save();
+
+        cx.refresh_windows();
+        cx.notify();
+    }
+
     pub fn open_git_modal(&mut self, modal: GitActiveModal, cx: &mut Context<Self>) {
         self.active_git_modal = Some(modal);
         self.show_git_modal = true;
@@ -2409,6 +2431,7 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            theme_preference: Default::default(),
             show_git_modal: false,
             show_rename_workspace_modal: false,
             show_import_modal: false,
@@ -2509,6 +2532,7 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            theme_preference: Default::default(),
             show_git_modal: false,
             show_rename_workspace_modal: false,
             show_import_modal: false,
@@ -2644,6 +2668,7 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            theme_preference: Default::default(),
             show_git_modal: false,
             show_rename_workspace_modal: false,
             show_import_modal: false,
@@ -2754,6 +2779,7 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            theme_preference: Default::default(),
             show_git_modal: false,
             show_rename_workspace_modal: false,
             show_import_modal: false,
@@ -2852,6 +2878,7 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            theme_preference: Default::default(),
             show_git_modal: false,
             show_rename_workspace_modal: false,
             show_import_modal: false,
@@ -2962,6 +2989,7 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            theme_preference: Default::default(),
             show_git_modal: false,
             show_rename_workspace_modal: false,
             show_import_modal: false,

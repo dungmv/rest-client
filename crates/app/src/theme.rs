@@ -1,5 +1,52 @@
-use gpui::{Hsla, Rgba};
+use gpui::{Hsla, Rgba, WindowAppearance};
 use restclient_core::models::HttpMethod;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemePreference {
+    #[default]
+    System,
+    Dark,
+    Light,
+}
+
+impl ThemePreference {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::Dark => "dark",
+            Self::Light => "light",
+        }
+    }
+
+    pub fn from_str_opt(s: Option<&str>) -> Self {
+        match s {
+            Some("light") => Self::Light,
+            Some("dark") => Self::Dark,
+            _ => Self::System,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeMode {
+    #[default]
+    Dark,
+    Light,
+}
+
+pub fn resolve_theme_mode(pref: ThemePreference, appearance: WindowAppearance) -> ThemeMode {
+    match pref {
+        ThemePreference::Dark => ThemeMode::Dark,
+        ThemePreference::Light => ThemeMode::Light,
+        ThemePreference::System => match appearance {
+            WindowAppearance::Light | WindowAppearance::VibrantLight => ThemeMode::Light,
+            WindowAppearance::Dark | WindowAppearance::VibrantDark => ThemeMode::Dark,
+        },
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct AppTheme {
@@ -27,12 +74,12 @@ pub struct AppTheme {
     pub text_muted: Hsla,
     pub text_disabled: Hsla,
 
-    // Primary action (Vibrant Blue #2563eb matching httpeep)
+    // Primary action
     pub primary: Hsla,
     pub primary_hover: Hsla,
     pub primary_foreground: Hsla,
 
-    // Method badge colors (httpeep style: GET is green #10b981)
+    // Method badge colors
     pub method_get: Hsla,
     pub method_post: Hsla,
     pub method_put: Hsla,
@@ -77,39 +124,39 @@ pub fn hex_alpha_to_hsla(hex: u32, alpha: f32) -> Hsla {
     Hsla::from(Rgba { r, g, b, a: alpha })
 }
 
-impl Default for AppTheme {
-    fn default() -> Self {
+impl AppTheme {
+    pub fn dark() -> Self {
         Self {
-            // Modern Charcoal / Obsidian Dark Theme matching httpeep: ~#0c0d12
-            bg_app: hex_to_hsla(0x0c0d12),
-            bg_titlebar: hex_to_hsla(0x0e0f14),
-            bg_sidebar: hex_to_hsla(0x101117),
-            bg_editor: hex_to_hsla(0x121319),
-            bg_response: hex_to_hsla(0x121319),
-            bg_panel: hex_to_hsla(0x15161e),
-            bg_card: hex_to_hsla(0x181922),
-            bg_input: hex_to_hsla(0x13141b),
-            bg_selected: hex_to_hsla(0x20222e),
-            bg_hover: hex_to_hsla(0x1a1b24),
-            bg_active: hex_to_hsla(0x242636),
+            // Modern Slate / Zinc Dark Theme: ~#15161c (soft, readable, comfortable)
+            bg_app: hex_to_hsla(0x15161c),
+            bg_titlebar: hex_to_hsla(0x181920),
+            bg_sidebar: hex_to_hsla(0x16171e),
+            bg_editor: hex_to_hsla(0x1a1b23),
+            bg_response: hex_to_hsla(0x1a1b23),
+            bg_panel: hex_to_hsla(0x1e1f29),
+            bg_card: hex_to_hsla(0x22232e),
+            bg_input: hex_to_hsla(0x1e1f29),
+            bg_selected: hex_to_hsla(0x2b2d3c),
+            bg_hover: hex_to_hsla(0x262836),
+            bg_active: hex_to_hsla(0x313445),
 
-            // Fine, subtle 1px borders
-            border: hex_to_hsla(0x20222d),
-            border_subtle: hex_to_hsla(0x181922),
-            border_focus: hex_to_hsla(0x2563eb),
+            // Fine, crisp borders
+            border: hex_to_hsla(0x2a2b38),
+            border_subtle: hex_to_hsla(0x22232f),
+            border_focus: hex_to_hsla(0x3b82f6),
 
             // Typography: crisp, high readability
-            text_primary: hex_to_hsla(0xf3f4f6),
-            text_secondary: hex_to_hsla(0x9ca3af),
-            text_muted: hex_to_hsla(0x525866),
-            text_disabled: hex_to_hsla(0x383c48),
+            text_primary: hex_to_hsla(0xf1f5f9),
+            text_secondary: hex_to_hsla(0x94a3b8),
+            text_muted: hex_to_hsla(0x64748b),
+            text_disabled: hex_to_hsla(0x475569),
 
             // Professional vibrant blue
-            primary: hex_to_hsla(0x2563eb),
-            primary_hover: hex_to_hsla(0x1d4ed8),
+            primary: hex_to_hsla(0x3b82f6),
+            primary_hover: hex_to_hsla(0x2563eb),
             primary_foreground: hex_to_hsla(0xffffff),
 
-            // Method colors (httpeep style: GET is clean green, POST is blue, etc.)
+            // Method colors
             method_get: hex_to_hsla(0x10b981),
             method_post: hex_to_hsla(0x3b82f6),
             method_put: hex_to_hsla(0xf59e0b),
@@ -134,17 +181,124 @@ impl Default for AppTheme {
             json_number: hex_to_hsla(0xfbbf24),     // Amber / Gold
             json_boolean: hex_to_hsla(0xc084fc),    // Purple / Violet
             json_null: hex_to_hsla(0xf87171),       // Soft coral red
-            json_punctuation: hex_to_hsla(0x9ca3af), // Slate / Muted gray
+            json_punctuation: hex_to_hsla(0x94a3b8), // Slate / Muted gray
+
+            transparent: gpui::transparent_black(),
+        }
+    }
+
+    pub fn light() -> Self {
+        Self {
+            // Modern Light Theme: Slate 50 / White
+            bg_app: hex_to_hsla(0xf8fafc),
+            bg_titlebar: hex_to_hsla(0xf1f5f9),
+            bg_sidebar: hex_to_hsla(0xf8fafc),
+            bg_editor: hex_to_hsla(0xffffff),
+            bg_response: hex_to_hsla(0xffffff),
+            bg_panel: hex_to_hsla(0xf1f5f9),
+            bg_card: hex_to_hsla(0xffffff),
+            bg_input: hex_to_hsla(0xffffff),
+            bg_selected: hex_to_hsla(0xe2e8f0),
+            bg_hover: hex_to_hsla(0xf1f5f9),
+            bg_active: hex_to_hsla(0xe2e8f0),
+
+            // Fine, crisp borders for light mode
+            border: hex_to_hsla(0xe2e8f0),
+            border_subtle: hex_to_hsla(0xf1f5f9),
+            border_focus: hex_to_hsla(0x2563eb),
+
+            // Typography: crisp dark text on light backgrounds
+            text_primary: hex_to_hsla(0x0f172a),
+            text_secondary: hex_to_hsla(0x475569),
+            text_muted: hex_to_hsla(0x64748b),
+            text_disabled: hex_to_hsla(0x94a3b8),
+
+            // Professional vibrant blue
+            primary: hex_to_hsla(0x2563eb),
+            primary_hover: hex_to_hsla(0x1d4ed8),
+            primary_foreground: hex_to_hsla(0xffffff),
+
+            // Method colors for light mode (rich, solid contrast)
+            method_get: hex_to_hsla(0x059669),
+            method_post: hex_to_hsla(0x2563eb),
+            method_put: hex_to_hsla(0xd97706),
+            method_delete: hex_to_hsla(0xdc2626),
+            method_patch: hex_to_hsla(0x7c3aed),
+            method_head: hex_to_hsla(0x0891b2),
+            method_options: hex_to_hsla(0x475569),
+
+            // Status colors
+            status_2xx: hex_to_hsla(0x059669),
+            status_3xx: hex_to_hsla(0x2563eb),
+            status_4xx: hex_to_hsla(0xd97706),
+            status_5xx: hex_to_hsla(0xdc2626),
+
+            // Interpolation variable highlight
+            var_resolved: hex_to_hsla(0x0284c7),
+            var_unresolved: hex_to_hsla(0xdc2626),
+
+            // JSON Syntax Highlighting for light backgrounds
+            json_key: hex_to_hsla(0x0284c7),        // Rich Blue/Cyan
+            json_string: hex_to_hsla(0x059669),     // Deep Emerald
+            json_number: hex_to_hsla(0xd97706),     // Warm Amber
+            json_boolean: hex_to_hsla(0x7c3aed),    // Violet
+            json_null: hex_to_hsla(0xe11d48),       // Rose Red
+            json_punctuation: hex_to_hsla(0x64748b), // Slate gray
 
             transparent: gpui::transparent_black(),
         }
     }
 }
 
-pub static THEME: std::sync::LazyLock<AppTheme> = std::sync::LazyLock::new(AppTheme::default);
+impl Default for AppTheme {
+    fn default() -> Self {
+        Self::dark()
+    }
+}
+
+// 0 = Dark, 1 = Light
+static CURRENT_MODE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+// 0 = System, 1 = Dark, 2 = Light
+static CURRENT_PREF: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+static DARK_THEME: std::sync::LazyLock<AppTheme> = std::sync::LazyLock::new(AppTheme::dark);
+static LIGHT_THEME: std::sync::LazyLock<AppTheme> = std::sync::LazyLock::new(AppTheme::light);
 
 pub fn theme() -> &'static AppTheme {
-    &THEME
+    match CURRENT_MODE.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => &LIGHT_THEME,
+        _ => &DARK_THEME,
+    }
+}
+
+pub fn current_theme_mode() -> ThemeMode {
+    match CURRENT_MODE.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => ThemeMode::Light,
+        _ => ThemeMode::Dark,
+    }
+}
+
+pub fn current_theme_preference() -> ThemePreference {
+    match CURRENT_PREF.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => ThemePreference::Dark,
+        2 => ThemePreference::Light,
+        _ => ThemePreference::System,
+    }
+}
+
+pub fn set_theme(preference: ThemePreference, resolved_mode: ThemeMode) {
+    let pref_val = match preference {
+        ThemePreference::System => 0,
+        ThemePreference::Dark => 1,
+        ThemePreference::Light => 2,
+    };
+    CURRENT_PREF.store(pref_val, std::sync::atomic::Ordering::Relaxed);
+
+    let mode_val = match resolved_mode {
+        ThemeMode::Dark => 0,
+        ThemeMode::Light => 1,
+    };
+    CURRENT_MODE.store(mode_val, std::sync::atomic::Ordering::Relaxed);
 }
 
 impl AppTheme {
@@ -168,5 +322,35 @@ impl AppTheme {
             500..=599 => self.status_5xx,
             _ => self.text_muted,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_theme_mode_switching() {
+        set_theme(ThemePreference::Light, ThemeMode::Light);
+        assert_eq!(current_theme_mode(), ThemeMode::Light);
+        assert_eq!(current_theme_preference(), ThemePreference::Light);
+        assert_eq!(theme().bg_app, LIGHT_THEME.bg_app);
+
+        set_theme(ThemePreference::Dark, ThemeMode::Dark);
+        assert_eq!(current_theme_mode(), ThemeMode::Dark);
+        assert_eq!(current_theme_preference(), ThemePreference::Dark);
+        assert_eq!(theme().bg_app, DARK_THEME.bg_app);
+
+        set_theme(ThemePreference::System, ThemeMode::Dark);
+        assert_eq!(current_theme_preference(), ThemePreference::System);
+        assert_eq!(current_theme_mode(), ThemeMode::Dark);
+    }
+
+    #[test]
+    fn test_resolve_theme_mode() {
+        assert_eq!(resolve_theme_mode(ThemePreference::Dark, WindowAppearance::Light), ThemeMode::Dark);
+        assert_eq!(resolve_theme_mode(ThemePreference::Light, WindowAppearance::Dark), ThemeMode::Light);
+        assert_eq!(resolve_theme_mode(ThemePreference::System, WindowAppearance::Light), ThemeMode::Light);
+        assert_eq!(resolve_theme_mode(ThemePreference::System, WindowAppearance::Dark), ThemeMode::Dark);
     }
 }
