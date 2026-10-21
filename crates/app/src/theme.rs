@@ -48,6 +48,7 @@ pub fn resolve_theme_mode(pref: ThemePreference, appearance: WindowAppearance) -
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct AppTheme {
     // Backgrounds
@@ -278,6 +279,7 @@ pub fn current_theme_mode() -> ThemeMode {
     }
 }
 
+#[allow(dead_code)]
 pub fn current_theme_preference() -> ThemePreference {
     match CURRENT_PREF.load(std::sync::atomic::Ordering::Relaxed) {
         1 => ThemePreference::Dark,

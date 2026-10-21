@@ -6,6 +6,7 @@ use gpui::{
 use std::rc::Rc;
 
 #[derive(IntoElement)]
+#[allow(clippy::type_complexity)]
 pub struct TabItem {
     id: ElementId,
     label: String,
@@ -37,6 +38,7 @@ impl TabItem {
         self
     }
 
+    #[allow(dead_code)]
     pub fn with_dropdown(mut self, has_dropdown: bool) -> Self {
         self.has_dropdown = has_dropdown;
         self

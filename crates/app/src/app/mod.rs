@@ -86,9 +86,11 @@ impl AppView {
                 .placeholder("Enter request URL (e.g. https://httpbin.org/get)")
         });
 
-        let highlighter_factory: std::rc::Rc<
+        type HighlighterFactory = std::rc::Rc<
             dyn Fn(&str) -> Option<Box<dyn gpui_component::input::InputHighlighter>>,
-        > = std::rc::Rc::new(|lang: &str| match lang {
+        >;
+
+        let highlighter_factory: HighlighterFactory = std::rc::Rc::new(|lang: &str| match lang {
             "json" => Some(Box::new(
                 crate::components::body_editor::JsonHighlighter::new(),
             )),

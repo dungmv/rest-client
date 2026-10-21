@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub mod editor_state;
 pub mod environment_state;
 pub mod git_ops;

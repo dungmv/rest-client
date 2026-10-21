@@ -19,6 +19,7 @@ pub struct SubscriptionTargets<'a> {
     pub git_state: &'a Entity<GitState>,
     pub editor_state: &'a Entity<EditorState>,
     pub response_state: &'a Entity<ResponseState>,
+    #[allow(dead_code)]
     pub toast_state: &'a Entity<ToastState>,
     pub url_input: &'a Entity<InputState>,
     pub json_editor: &'a Entity<CodeEditorState>,

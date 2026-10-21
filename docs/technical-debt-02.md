@@ -7,17 +7,17 @@
 
 | Mức độ | Số vấn đề |
 |--------|-----------|
-| 🔴 CRITICAL | 0 (1 đã sửa) |
-| 🟠 HIGH | 7 (3 đã sửa: PERF-002, PERF-003, CC-001) |
+| 🔴 CRITICAL | 0 (1 đã sửa: PERF-001) |
+| 🟠 HIGH | 5 (5 đã sửa: PERF-002, PERF-003, CC-001, TD-001, TD-004) |
 | 🟡 MEDIUM | 7 |
 | 🔵 LOW | 8 |
-| **Tổng** | **22 còn lại (4 đã sửa)** |
+| **Tổng** | **20 còn lại (6 đã sửa)** |
 
 > [!CAUTION]
 > **Top 3 ưu tiên xử lý tiếp theo:**
 > 1. **TD-003** — Git `pull/push/commit` chạy blocking trên UI thread → đóng băng app
-> 2. **TD-001** — Dead code: toàn bộ `FsStorage` (JSON-based, legacy)
-> 3. **PERF-004** — `effective_environment()` clone toàn bộ variables mỗi request
+> 2. **PERF-004** — `effective_environment()` clone toàn bộ variables mỗi request
+> 3. **SL-002** — `ResponseState` cache không có giới hạn
 
 ---
 
@@ -273,13 +273,13 @@ Fix: Spawn vào background executor như stage_file đã làm.
 
 ## 4. General Technical Debt
 
-### TD-001 🟠 HIGH — Dead code: toàn bộ `FsStorage` (JSON-based, legacy)
+### TD-001 🟠 HIGH — [RESOLVED] Dead code: toàn bộ `FsStorage` (JSON-based, legacy)
 **File:** [`crates/core/src/storage/fs.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/storage/fs.rs)
 
-`FsStorage` dùng JSON, layout workspace cũ — không được reference từ bất kỳ active code path nào. ~400 dòng dead code thuần túy.
+`FsStorage` dùng JSON, layout workspace cũ — không được reference từ bất kỳ active code path nào (~400 dòng dead code thuần túy).
 
 ```
-Fix: Xóa fs.rs sau khi xác nhận không có test nào reference.
+Fix: Đã xóa fs.rs và loại bỏ toàn bộ export liên quan trong storage/mod.rs.
 ```
 
 ---
@@ -307,13 +307,15 @@ Fix: Chuyển toàn bộ git I/O sang async background tasks.
 
 ---
 
-### TD-004 🟠 HIGH — Global `#![allow(dead_code, clippy::type_complexity)]`
+### TD-004 🟠 HIGH — [RESOLVED] Global `#![allow(dead_code, clippy::type_complexity)]`
 **File:** [`crates/app/src/main.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/main.rs#L1)
 
-Suppress **toàn bộ** dead code warning và type complexity warning trên cả crate `app`. Dead code và type phức tạp tích lũy vô hình.
+Trước đây suppress **toàn bộ** dead code warning và type complexity warning trên cả crate `app`, làm dead code và type phức tạp tích lũy vô hình.
 
 ```
-Fix: Xóa global allow. Thêm #[allow] có target tại từng site cụ thể.
+Fix: Đã xóa global allow. Xóa code chết thật sự (detect_git_branch, optional_modal_state).
+     Tạo type alias HighlighterFactory và thêm scoped #[allow] tại các GPUI callback/view models cụ thể.
+     Workspace hiện compile hoàn toàn sạch với 0 warning.
 ```
 
 ---
@@ -460,8 +462,8 @@ flowchart LR
 
     P1 --> i1["PERF-001: [RESOLVED] Tái sử dụng reqwest::Client"]
     P1 --> i2["PERF-002: [RESOLVED] Xóa probe_connection()"]
-    P1 --> i3["TD-001: Xóa dead FsStorage"]
-    P1 --> i4["TD-004: Xóa global #![allow(dead_code)]"]
+    P1 --> i3["TD-001: [RESOLVED] Xóa dead FsStorage"]
+    P1 --> i4["TD-004: [RESOLVED] Xóa global #![allow(dead_code)]"]
     P1 --> i5["TD-014: Fix recursive resolve_ref"]
 
     P2 --> i6["PERF-003: [RESOLVED] In-memory tree index"]

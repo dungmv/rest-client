@@ -438,6 +438,7 @@ pub struct ScriptCompletionProvider {
 }
 
 impl ScriptCompletionProvider {
+    #[allow(dead_code)]
     pub fn new(kind: ScriptEditorKind) -> Self {
         Self { kind, env_state: None }
     }
@@ -1064,6 +1065,7 @@ impl CompletionProvider for ScriptCompletionProvider {
 // ScriptEditor Component
 // =========================================================================
 
+#[allow(clippy::type_complexity)]
 #[derive(IntoElement)]
 pub struct ScriptEditor {
     editor: Entity<CodeEditorState>,

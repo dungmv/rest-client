@@ -1,8 +1,5 @@
-pub mod git;
 pub mod window;
 
-#[allow(unused_imports)]
-pub use git::detect_git_branch;
 pub use window::default_window_options;
 
 #[cfg(target_os = "macos")]

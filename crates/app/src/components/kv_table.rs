@@ -29,6 +29,7 @@ struct RowEnvData {
     val_completions: Option<(usize, usize, Vec<EnvVarCandidate>)>,
 }
 
+#[allow(clippy::type_complexity)]
 #[derive(IntoElement)]
 pub struct KvTable {
     id_prefix: String,
@@ -71,11 +72,6 @@ impl KvTable {
 
     pub fn modal_state(mut self, modal: Entity<ModalState>) -> Self {
         self.modal_state = Some(modal);
-        self
-    }
-
-    pub fn optional_modal_state(mut self, modal: Option<Entity<ModalState>>) -> Self {
-        self.modal_state = modal;
         self
     }
 }

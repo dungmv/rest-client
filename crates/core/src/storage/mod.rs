@@ -1,4 +1,3 @@
-pub mod fs;
 pub mod fs_ops;
 pub mod fs_store;
 pub mod models;
@@ -7,7 +6,6 @@ pub mod slug;
 pub mod traits;
 pub mod watcher;
 
-pub use fs::FsStorage;
 pub use fs_store::FsWorkspaceStore;
 pub use models::*;
 pub use traits::WorkspaceStore;

@@ -1,4 +1,3 @@
-#![allow(dead_code, clippy::type_complexity)]
 #![recursion_limit = "512"]
 #![windows_subsystem = "windows"]
 

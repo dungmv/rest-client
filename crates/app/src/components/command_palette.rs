@@ -14,6 +14,7 @@ use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
 
+#[allow(clippy::type_complexity)]
 #[derive(IntoElement)]
 pub struct CommandPalette {
     workspace_state: Entity<WorkspaceDataState>,
