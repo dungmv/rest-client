@@ -9,6 +9,7 @@ pub struct ConnectionProbeResult {
 }
 
 /// Probes DNS lookup and TCP connection times for the given URL
+#[deprecated(note = "probe_connection creates redundant TCP handshakes and is no longer used by ReqwestExecutor")]
 pub async fn probe_connection(url_str: &str, _validate_tls: bool) -> Option<ConnectionProbeResult> {
     let parsed_url = Url::parse(url_str).ok()?;
     let host = parsed_url.host_str()?;

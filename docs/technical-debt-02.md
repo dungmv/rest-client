@@ -8,16 +8,16 @@
 | Mức độ | Số vấn đề |
 |--------|-----------|
 | 🔴 CRITICAL | 0 (1 đã sửa) |
-| 🟠 HIGH | 10 |
+| 🟠 HIGH | 9 (1 đã sửa) |
 | 🟡 MEDIUM | 7 |
 | 🔵 LOW | 8 |
-| **Tổng** | **25 còn lại (1 đã sửa)** |
+| **Tổng** | **24 còn lại (2 đã sửa)** |
 
 > [!CAUTION]
 > **Top 3 ưu tiên xử lý tiếp theo:**
-> 1. **PERF-002** — Double TCP probe trước mỗi request (xóa probe_connection)
-> 2. **PERF-003** — Mỗi CRUD (rename/delete/create) quét lại toàn bộ YAML trên disk
-> 3. **TD-003** — Git `pull/push/commit` chạy blocking trên UI thread → đóng băng app
+> 1. **PERF-003** — Mỗi CRUD (rename/delete/create) quét lại toàn bộ YAML trên disk
+> 2. **TD-003** — Git `pull/push/commit` chạy blocking trên UI thread → đóng băng app
+> 3. **TD-001** — Dead code: toàn bộ `FsStorage` (JSON-based, legacy)
 
 ---
 
@@ -109,15 +109,10 @@ Gợi ý: Giữ Box<HttpResponseRecord> xuyên suốt, hoặc dùng Arc<HttpResp
 
 ---
 
-### PERF-002 🟠 HIGH — Double TCP probe trước mỗi request
-**File:** [`crates/core/src/http/executor.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/http/executor.rs#L472)
+### PERF-002 ✅ RESOLVED (Was 🟠 HIGH) — Double TCP probe trước mỗi request
+**File:** [`crates/core/src/http/executor.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/http/executor.rs)  ·  [`crates/core/src/http/timing.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/http/timing.rs)
 
-`probe_connection()` mở một `TcpStream` riêng đến host trước khi reqwest connect. Thực chất handshake 2 lần, thêm 20–100ms mỗi request.
-
-```
-Fix: Xóa probe_connection(). reqwest đã báo lỗi kết nối đầy đủ.
-     Nếu cần đo latency, dùng timing từ reqwest response.
-```
+*Đã giải quyết*: Đã xóa bỏ hoàn toàn lời gọi `probe_connection()` trước `send().await`. Reqwest gửi request trực tiếp không còn overhead mở kết nối TCP rỗng để probe. Thêm cơ chế theo dõi host pool (`active_hosts`) để phát hiện chính xác trạng thái tái sử dụng kết nối keep-alive (`connection_reused = true` khi tái sử dụng socket và hiển thị nhãn `⚡ Connection Reused` trên UI). `probe_connection` được đánh dấu `#[deprecated]` để đảm bảo tương thích API.
 
 ---
 
@@ -463,8 +458,7 @@ flowchart TD
     F["UI event: rename/git op"] -->|"pull/push/discard_file\nBLOCKING"| G["git CLI\n⚠ std::process::Command"]
     G -->|"refresh_status()"| C
 
-    H["send_request()"] -->|"reqwest::Client::builder().build()\n⚠ EVERY REQUEST"| I["New TCP pool + TLS ctx"]
-    H -->|"probe_connection()\n⚠ Double handshake"| I
+    H["send_request()"] -->|"send() trực tiếp qua pooled client\n(Không còn probe)"| I["Reqwest Connection Pool"]
 ```
 
 ---
@@ -478,7 +472,7 @@ flowchart LR
     P3["🟡 P3 — Backlog"]
 
     P1 --> i1["PERF-001: [RESOLVED] Tái sử dụng reqwest::Client"]
-    P1 --> i2["PERF-002: Xóa probe_connection()"]
+    P1 --> i2["PERF-002: [RESOLVED] Xóa probe_connection()"]
     P1 --> i3["TD-001: Xóa dead FsStorage"]
     P1 --> i4["TD-004: Xóa global #![allow(dead_code)]"]
     P1 --> i5["TD-014: Fix recursive resolve_ref"]

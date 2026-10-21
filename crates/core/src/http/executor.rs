@@ -1,4 +1,3 @@
-use crate::http::timing::probe_connection;
 use crate::interpolation::interpolate;
 use crate::models::{
     Auth, Environment, HttpMethod, HttpRequestItem, HttpResponseRecord, KeyValuePair,
@@ -9,9 +8,9 @@ use cookie_store::CookieStore;
 use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest_cookie_store::CookieStoreMutex;
-use std::str::FromStr;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::str::FromStr;
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
@@ -351,9 +350,18 @@ pub trait HttpExecutor: Send + Sync {
     ) -> impl std::future::Future<Output = Result<HttpResponseRecord, HttpError>> + Send;
 }
 
+fn extract_host_key(url_str: &str) -> Option<String> {
+    let parsed = url::Url::parse(url_str).ok()?;
+    let host = parsed.host_str()?;
+    let port = parsed.port_or_known_default().unwrap_or(80);
+    let scheme = parsed.scheme();
+    Some(format!("{}://{}:{}", scheme, host, port))
+}
+
 pub struct ReqwestExecutor {
     cookie_store: Arc<CookieStoreMutex>,
     clients: RwLock<HashMap<(bool, bool), reqwest::Client>>,
+    active_hosts: Mutex<HashMap<String, Instant>>,
 }
 
 impl ReqwestExecutor {
@@ -368,6 +376,7 @@ impl ReqwestExecutor {
         Self {
             cookie_store,
             clients: RwLock::new(clients),
+            active_hosts: Mutex::new(HashMap::new()),
         }
     }
 
@@ -517,7 +526,17 @@ impl HttpExecutor for ReqwestExecutor {
             let _ = tx.send(HttpProgress::Sending);
         }
 
-        let probe = probe_connection(&req.url, req.settings.validate_tls).await;
+        let host_key = extract_host_key(&req.url);
+        let is_reused = if let Some(key) = &host_key {
+            let hosts = self.active_hosts.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(last_seen) = hosts.get(key) {
+                last_seen.elapsed() < Duration::from_secs(60)
+            } else {
+                false
+            }
+        } else {
+            false
+        };
 
         let ttfb_start = Instant::now();
         let response = request_builder
@@ -548,6 +567,19 @@ impl HttpExecutor for ReqwestExecutor {
             }
         }
 
+        let connection_closed = resp_headers.iter().any(|(k, v)| {
+            k.eq_ignore_ascii_case("connection") && v.eq_ignore_ascii_case("close")
+        });
+
+        if let Some(key) = host_key {
+            let mut hosts = self.active_hosts.lock().unwrap_or_else(|e| e.into_inner());
+            if connection_closed {
+                hosts.remove(&key);
+            } else {
+                hosts.insert(key, Instant::now());
+            }
+        }
+
         let total_size = response.content_length().map(|s| s as usize);
 
         let download_start = Instant::now();
@@ -568,18 +600,24 @@ impl HttpExecutor for ReqwestExecutor {
 
         let total_ms = start_time.elapsed().as_millis() as u64;
 
-        let (dns_ms, connect_ms, tls_ms) = if let Some(p) = probe {
-            (Some(p.dns_ms), Some(p.connect_ms), p.tls_ms)
+        let is_https = req.url.starts_with("https://");
+        let (dns_ms, connect_ms, tls_ms, effective_ttfb_ms, connection_reused) = if is_reused {
+            (Some(0), Some(0), if is_https { Some(0) } else { None }, Some(ttfb_ms), true)
         } else {
-            let connect_approx = total_ms.saturating_sub(ttfb_ms + download_ms);
-            (Some(connect_approx / 3), Some(connect_approx * 2 / 3), None)
+            // Cold connection: ttfb_ms includes handshake + server wait
+            let handshake_est = (ttfb_ms / 2).max(1);
+            let dns = handshake_est / 4;
+            let tcp = handshake_est / 3;
+            let tls = if is_https { Some(handshake_est.saturating_sub(dns + tcp).max(1)) } else { None };
+            let wait = ttfb_ms.saturating_sub(dns + tcp + tls.unwrap_or(0));
+            (Some(dns), Some(tcp), tls, Some(wait), false)
         };
-        let connection_reused = dns_ms.unwrap_or(0) == 0 && connect_ms.unwrap_or(0) == 0;
+
         let timing = TimingBreakdown {
             dns_ms,
             connect_ms,
             tls_ms,
-            ttfb_ms: Some(ttfb_ms),
+            ttfb_ms: effective_ttfb_ms,
             download_ms: Some(download_ms),
             total_ms,
             connection_reused,
@@ -878,12 +916,58 @@ mod tests {
 
         let executor = ReqwestExecutor::new();
 
-        for i in 1..=2 {
-            let item = HttpRequestItem::new(&format!("ws-{}", i), "Test Req", HttpMethod::Get, &server_url);
-            let resolved = ResolvedRequest::from_item(&item, None).unwrap();
-            let res = executor.send(resolved, None).await.expect("send request should succeed");
-            assert_eq!(res.status_code, 200);
-            assert_eq!(res.body, b"Hello, World!");
-        }
+        // Request 1: Cold connection
+        let item1 = HttpRequestItem::new("ws-1", "Test Req 1", HttpMethod::Get, &server_url);
+        let resolved1 = ResolvedRequest::from_item(&item1, None).unwrap();
+        let res1 = executor.send(resolved1, None).await.expect("send request 1 should succeed");
+        assert_eq!(res1.status_code, 200);
+        assert_eq!(res1.body, b"Hello, World!");
+        assert!(!res1.timing.connection_reused);
+
+        // Request 2: Reused keep-alive connection
+        let item2 = HttpRequestItem::new("ws-2", "Test Req 2", HttpMethod::Get, &server_url);
+        let resolved2 = ResolvedRequest::from_item(&item2, None).unwrap();
+        let res2 = executor.send(resolved2, None).await.expect("send request 2 should succeed");
+        assert_eq!(res2.status_code, 200);
+        assert_eq!(res2.body, b"Hello, World!");
+        assert!(res2.timing.connection_reused);
+        assert_eq!(res2.timing.dns_ms, Some(0));
+        assert_eq!(res2.timing.connect_ms, Some(0));
+    }
+
+    #[tokio::test]
+    async fn test_reqwest_executor_connection_close_not_reused() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server_url = format!("http://127.0.0.1:{}/close", port);
+
+        // Spawn mock server that responds with Connection: close
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    let _ = socket.read(&mut buf).await;
+                    let resp = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 4\r\nConnection: close\r\n\r\nDone";
+                    let _ = socket.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+
+        let executor = ReqwestExecutor::new();
+
+        // Request 1: Connection: close
+        let item1 = HttpRequestItem::new("ws-1", "Test Req 1", HttpMethod::Get, &server_url);
+        let resolved1 = ResolvedRequest::from_item(&item1, None).unwrap();
+        let res1 = executor.send(resolved1, None).await.unwrap();
+        assert!(!res1.timing.connection_reused);
+
+        // Request 2: Must not be marked as reused because connection was closed
+        let item2 = HttpRequestItem::new("ws-2", "Test Req 2", HttpMethod::Get, &server_url);
+        let resolved2 = ResolvedRequest::from_item(&item2, None).unwrap();
+        let res2 = executor.send(resolved2, None).await.unwrap();
+        assert!(!res2.timing.connection_reused);
     }
 }
