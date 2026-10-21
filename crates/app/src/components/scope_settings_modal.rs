@@ -832,9 +832,6 @@ impl RenderOnce for ScopeSettingsModal {
                                                         )
                                                 }
                                                 Auth::ApiKey { in_header, .. } => {
-                                                    let ws_toggle = ws_s.clone();
-                                                    let tgt_toggle = tgt.clone();
-
                                                     div()
                                                         .flex()
                                                         .flex_col()
@@ -916,76 +913,91 @@ impl RenderOnce for ScopeSettingsModal {
                                                                         .text_color(t.text_secondary)
                                                                         .child("Add to:"),
                                                                 )
-                                                                .child(
-                                                                    div()
-                                                                        .flex()
-                                                                        .items_center()
-                                                                        .gap(px(12.))
-                                                                        .child({
-                                                                            let ws_th = ws_toggle.clone();
-                                                                            let tgt_th = tgt_toggle.clone();
+                                                                .child({
+                                                                    let loc_label = if in_header { "Header" } else { "Query Params" };
+                                                                    let ws_loc = ws_s.clone();
+                                                                    let tgt_loc = tgt.clone();
+                                                                    let k_input = api_key_input.clone();
+                                                                    let v_input = api_val_input.clone();
+
+                                                                    Button::new("btn-scope-auth-apikey-location-dropdown")
+                                                                        .ghost()
+                                                                        .compact()
+                                                                        .px(px(8.))
+                                                                        .py(px(4.))
+                                                                        .h(px(28.))
+                                                                        .rounded(px(4.))
+                                                                        .bg(t.bg_card)
+                                                                        .border_1()
+                                                                        .border_color(t.border)
+                                                                        .child(
                                                                             div()
-                                                                                .id("btn-scope-auth-in-header")
                                                                                 .flex()
                                                                                 .items_center()
-                                                                                .gap(px(4.))
-                                                                                .cursor_pointer()
-                                                                                .on_click(move |_, _, cx| {
-                                                                                    match &tgt_th {
-                                                                                        ScopeSettingsTarget::Workspace => {
-                                                                                            let (k, v) = match &ws_th.read(cx).workspace_meta.auth {
-                                                                                                restclient_core::storage::models::RequestAuth::ApiKey { key, value, .. } => (key.clone(), value.clone()),
-                                                                                                _ => ("X-API-Key".to_string(), String::new()),
-                                                                                            };
-                                                                                            let cur_h = ws_th.read(cx).active_workspace.as_ref().map(|w| w.headers.clone()).unwrap_or_default();
-                                                                                            ws_th.update(cx, |s, cx| s.save_workspace_scope_settings(cur_h, Auth::ApiKey { key: k, value: v, in_header: true }, cx));
+                                                                                .gap(px(6.))
+                                                                                .child(
+                                                                                    div()
+                                                                                        .text_xs()
+                                                                                        .font_weight(gpui::FontWeight::MEDIUM)
+                                                                                        .text_color(t.text_primary)
+                                                                                        .child(loc_label),
+                                                                                )
+                                                                                .child(
+                                                                                    div()
+                                                                                        .text_xs()
+                                                                                        .text_color(t.text_muted)
+                                                                                        .child("▾"),
+                                                                                ),
+                                                                        )
+                                                                        .dropdown_menu(move |menu, _window, _cx| {
+                                                                            let ws_h = ws_loc.clone();
+                                                                            let tgt_h = tgt_loc.clone();
+                                                                            let k_h = k_input.clone();
+                                                                            let v_h = v_input.clone();
+
+                                                                            let ws_q = ws_loc.clone();
+                                                                            let tgt_q = tgt_loc.clone();
+                                                                            let k_q = k_input.clone();
+                                                                            let v_q = v_input.clone();
+
+                                                                            menu.item(
+                                                                                PopupMenuItem::new("Header")
+                                                                                    .checked(in_header)
+                                                                                    .on_click(move |_, _, cx| {
+                                                                                        let key = k_h.read(cx).value().to_string();
+                                                                                        let val = v_h.read(cx).value().to_string();
+                                                                                        match &tgt_h {
+                                                                                            ScopeSettingsTarget::Workspace => {
+                                                                                                let cur_h = ws_h.read(cx).active_workspace.as_ref().map(|w| w.headers.clone()).unwrap_or_default();
+                                                                                                ws_h.update(cx, |s, cx| s.save_workspace_scope_settings(cur_h, Auth::ApiKey { key, value: val, in_header: true }, cx));
+                                                                                            }
+                                                                                            ScopeSettingsTarget::Folder(fid) => {
+                                                                                                let cur_h = ws_h.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| f.headers.clone()).unwrap_or_default();
+                                                                                                ws_h.update(cx, |s, cx| s.save_folder_scope_settings(fid, cur_h, Auth::ApiKey { key, value: val, in_header: true }, cx));
+                                                                                            }
                                                                                         }
-                                                                                        ScopeSettingsTarget::Folder(fid) => {
-                                                                                            let (k, v) = match ws_th.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| &f.auth) {
-                                                                                                Some(Auth::ApiKey { key, value, .. }) => (key.clone(), value.clone()),
-                                                                                                _ => ("X-API-Key".to_string(), String::new()),
-                                                                                            };
-                                                                                            let cur_h = ws_th.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| f.headers.clone()).unwrap_or_default();
-                                                                                            ws_th.update(cx, |s, cx| s.save_folder_scope_settings(fid, cur_h, Auth::ApiKey { key: k, value: v, in_header: true }, cx));
+                                                                                    }),
+                                                                            )
+                                                                            .item(
+                                                                                PopupMenuItem::new("Query Params")
+                                                                                    .checked(!in_header)
+                                                                                    .on_click(move |_, _, cx| {
+                                                                                        let key = k_q.read(cx).value().to_string();
+                                                                                        let val = v_q.read(cx).value().to_string();
+                                                                                        match &tgt_q {
+                                                                                            ScopeSettingsTarget::Workspace => {
+                                                                                                let cur_h = ws_q.read(cx).active_workspace.as_ref().map(|w| w.headers.clone()).unwrap_or_default();
+                                                                                                ws_q.update(cx, |s, cx| s.save_workspace_scope_settings(cur_h, Auth::ApiKey { key, value: val, in_header: false }, cx));
+                                                                                            }
+                                                                                            ScopeSettingsTarget::Folder(fid) => {
+                                                                                                let cur_h = ws_q.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| f.headers.clone()).unwrap_or_default();
+                                                                                                ws_q.update(cx, |s, cx| s.save_folder_scope_settings(fid, cur_h, Auth::ApiKey { key, value: val, in_header: false }, cx));
+                                                                                            }
                                                                                         }
-                                                                                    }
-                                                                                })
-                                                                                .child(if in_header { "🔘" } else { "⚪" })
-                                                                                .child(div().text_xs().text_color(t.text_primary).child("Header"))
+                                                                                    }),
+                                                                            )
                                                                         })
-                                                                        .child({
-                                                                            let ws_tq = ws_toggle.clone();
-                                                                            let tgt_tq = tgt_toggle.clone();
-                                                                            div()
-                                                                                .id("btn-scope-auth-in-query")
-                                                                                .flex()
-                                                                                .items_center()
-                                                                                .gap(px(4.))
-                                                                                .cursor_pointer()
-                                                                                .on_click(move |_, _, cx| {
-                                                                                    match &tgt_tq {
-                                                                                        ScopeSettingsTarget::Workspace => {
-                                                                                            let (k, v) = match &ws_tq.read(cx).workspace_meta.auth {
-                                                                                                restclient_core::storage::models::RequestAuth::ApiKey { key, value, .. } => (key.clone(), value.clone()),
-                                                                                                _ => ("X-API-Key".to_string(), String::new()),
-                                                                                            };
-                                                                                            let cur_h = ws_tq.read(cx).active_workspace.as_ref().map(|w| w.headers.clone()).unwrap_or_default();
-                                                                                            ws_tq.update(cx, |s, cx| s.save_workspace_scope_settings(cur_h, Auth::ApiKey { key: k, value: v, in_header: false }, cx));
-                                                                                        }
-                                                                                        ScopeSettingsTarget::Folder(fid) => {
-                                                                                            let (k, v) = match ws_tq.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| &f.auth) {
-                                                                                                Some(Auth::ApiKey { key, value, .. }) => (key.clone(), value.clone()),
-                                                                                                _ => ("X-API-Key".to_string(), String::new()),
-                                                                                            };
-                                                                                            let cur_h = ws_tq.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| f.headers.clone()).unwrap_or_default();
-                                                                                            ws_tq.update(cx, |s, cx| s.save_folder_scope_settings(fid, cur_h, Auth::ApiKey { key: k, value: v, in_header: false }, cx));
-                                                                                        }
-                                                                                    }
-                                                                                })
-                                                                                .child(if !in_header { "🔘" } else { "⚪" })
-                                                                                .child(div().text_xs().text_color(t.text_primary).child("Query Params"))
-                                                                        }),
-                                                                ),
+                                                                }),
                                                         )
                                                 }
                                             }
