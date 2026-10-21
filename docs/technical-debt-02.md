@@ -110,9 +110,9 @@ Gợi ý: Giữ Box<HttpResponseRecord> xuyên suốt, hoặc dùng Arc<HttpResp
 ---
 
 ### PERF-002 ✅ RESOLVED (Was 🟠 HIGH) — Double TCP probe trước mỗi request
-**File:** [`crates/core/src/http/executor.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/http/executor.rs)  ·  [`crates/core/src/http/timing.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/http/timing.rs)
+**File:** [`crates/core/src/http/executor.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/http/executor.rs)
 
-*Đã giải quyết*: Đã xóa bỏ hoàn toàn lời gọi `probe_connection()` trước `send().await`. Reqwest gửi request trực tiếp không còn overhead mở kết nối TCP rỗng để probe. Thêm cơ chế theo dõi host pool (`active_hosts`) để phát hiện chính xác trạng thái tái sử dụng kết nối keep-alive (`connection_reused = true` khi tái sử dụng socket và hiển thị nhãn `⚡ Connection Reused` trên UI). `probe_connection` được đánh dấu `#[deprecated]` để đảm bảo tương thích API.
+*Đã giải quyết*: Đã xóa bỏ hoàn toàn lời gọi `probe_connection()` trước `send().await` và xóa bỏ toàn bộ file `timing.rs`. Reqwest gửi request trực tiếp không còn overhead mở kết nối TCP rỗng để probe. Thêm cơ chế theo dõi host pool (`active_hosts`) để phát hiện chính xác trạng thái tái sử dụng kết nối keep-alive (`connection_reused = true` khi tái sử dụng socket và hiển thị nhãn `⚡ Connection Reused` trên UI).
 
 ---
 
