@@ -379,4 +379,68 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
+
+    #[test]
+    fn test_incremental_crud_operations() {
+        let temp_dir = std::env::temp_dir().join(format!("restclient-test-crud-{}", uuid::Uuid::new_v4().simple()));
+        let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
+        store.init_workspace("Incremental WS").unwrap();
+
+        let mut ws_state = WorkspaceDataState::new_for_path(temp_dir.clone(), store.clone());
+
+        // 1. Create Request
+        let req1 = ws_state.create_request_internal(None);
+        assert_eq!(ws_state.requests.len(), 1);
+        assert_eq!(ws_state.requests[0].id, req1.id);
+        assert_eq!(ws_state.requests[0].name, "New Request");
+
+        // 2. Rename Request
+        let new_id = ws_state.rename_request_internal(&req1.id, "Get Users").expect("rename request should succeed");
+        assert_eq!(ws_state.requests.len(), 1);
+        assert_eq!(ws_state.requests[0].id, new_id);
+        assert_eq!(ws_state.requests[0].name, "Get Users");
+        assert_eq!(ws_state.last_renamed_request, Some((req1.id.clone(), new_id.clone())));
+
+        // 3. Duplicate Request
+        let dup = ws_state.duplicate_request_internal(&new_id).expect("duplicate should succeed");
+        assert_eq!(ws_state.requests.len(), 2);
+        assert!(dup.name.contains("(Copy)"));
+
+        // 4. Create Folder
+        let folder_id = ws_state.create_folder_internal(None, "Auth".to_string()).expect("create folder should succeed");
+        assert_eq!(ws_state.folders.len(), 1);
+        assert_eq!(ws_state.folders[0].name, "Auth");
+        assert_eq!(ws_state.folders[0].id, folder_id);
+
+        // 5. Move Request to Folder
+        let moved_id = ws_state.move_request_to_folder_internal(&dup.id, Some(folder_id.clone())).expect("move should succeed");
+        let moved_req = ws_state.requests.iter().find(|r| r.id == moved_id).expect("moved request should be found");
+        assert_eq!(moved_req.folder_id, Some(folder_id.clone()));
+
+        // 6. Rename Folder
+        let new_folder_id = ws_state.rename_folder_internal(&folder_id, "Authentication").expect("rename folder should succeed");
+        assert_eq!(ws_state.folders[0].name, "Authentication");
+        assert_eq!(ws_state.folders[0].id, new_folder_id);
+
+        // Nested request should have its folder_id and id updated with new prefix
+        let nested_req = ws_state.requests.iter().find(|r| r.folder_id == Some(new_folder_id.clone())).expect("nested request should reflect new folder_id");
+        assert!(nested_req.id.starts_with(&format!("{}/", new_folder_id)));
+
+        // 7. Delete Folder: Should remove folder and its nested request
+        ws_state.delete_folder_internal(&new_folder_id);
+        assert_eq!(ws_state.folders.len(), 0);
+        assert_eq!(ws_state.requests.len(), 1);
+        assert_eq!(ws_state.requests[0].id, new_id);
+
+        // 8. Delete Request
+        ws_state.delete_request_internal(&new_id);
+        assert_eq!(ws_state.requests.len(), 0);
+
+        // Verify disk matches: scan_tree returns empty workspace
+        let disk_tree = store.scan_tree().unwrap();
+        assert_eq!(disk_tree.root_requests.len(), 0);
+        assert_eq!(disk_tree.folders.len(), 0);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }

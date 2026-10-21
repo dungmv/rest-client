@@ -241,7 +241,6 @@ impl PersistenceState {
                 workspace_data.update(cx, |ws, cx| {
                     ws.parse_errors.remove(&path);
                     ws.requests.retain(|r| r.id != path);
-                    ws.reload_tree();
                     cx.notify();
                 });
                 cx.notify();

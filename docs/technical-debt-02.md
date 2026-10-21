@@ -8,16 +8,16 @@
 | Mức độ | Số vấn đề |
 |--------|-----------|
 | 🔴 CRITICAL | 0 (1 đã sửa) |
-| 🟠 HIGH | 9 (1 đã sửa) |
+| 🟠 HIGH | 7 (3 đã sửa: PERF-002, PERF-003, CC-001) |
 | 🟡 MEDIUM | 7 |
 | 🔵 LOW | 8 |
-| **Tổng** | **24 còn lại (2 đã sửa)** |
+| **Tổng** | **22 còn lại (4 đã sửa)** |
 
 > [!CAUTION]
 > **Top 3 ưu tiên xử lý tiếp theo:**
-> 1. **PERF-003** — Mỗi CRUD (rename/delete/create) quét lại toàn bộ YAML trên disk
-> 2. **TD-003** — Git `pull/push/commit` chạy blocking trên UI thread → đóng băng app
-> 3. **TD-001** — Dead code: toàn bộ `FsStorage` (JSON-based, legacy)
+> 1. **TD-003** — Git `pull/push/commit` chạy blocking trên UI thread → đóng băng app
+> 2. **TD-001** — Dead code: toàn bộ `FsStorage` (JSON-based, legacy)
+> 3. **PERF-004** — `effective_environment()` clone toàn bộ variables mỗi request
 
 ---
 
@@ -116,15 +116,10 @@ Gợi ý: Giữ Box<HttpResponseRecord> xuyên suốt, hoặc dùng Arc<HttpResp
 
 ---
 
-### PERF-003 🟠 HIGH — Full filesystem scan sau mỗi CRUD operation
-**File:** [`crates/core/src/storage/fs_store.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/storage/fs_store.rs#L330-L435)
+### PERF-003 ✅ RESOLVED (Was 🟠 HIGH) — Full filesystem scan sau mỗi CRUD operation
+**File:** [`crates/app/src/state/workspace_crud.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/state/workspace_crud.rs)  ·  [`crates/app/src/state/persistence_state.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/state/persistence_state.rs)
 
-`scan_tree()` đọc **TẤT CẢ file YAML** trong workspace. Được gọi sau: `create_request`, `duplicate_request`, `delete_request`, `rename_request`, `create_folder`, `delete_folder`, `rename_folder`, `move_request`... 500 request = 500 YAML reads sau mỗi rename.
-
-```
-Fix: Duy trì in-memory index. Chỉ update node bị ảnh hưởng sau mutation.
-     Chỉ full-rescan khi FsEvent::TreeChanged (external FS change).
-```
+*Đã giải quyết*: Chuyển toàn bộ các thao tác CRUD trong `workspace_crud.rs` sang mô hình cập nhật In-Memory Incremental ($O(1)$) trên `self.requests` và `self.folders`. Loại bỏ hoàn toàn việc gọi `reload_tree()` / `scan_tree()` sau mỗi thao tác tạo, nhân bản, đổi tên, di chuyển, xóa request/folder hoặc lưu file. Tiết kiệm $100\times - 500\times$ I/O đọc ổ cứng. `reload_tree()` chỉ được kích hoạt khi khởi tạo workspace hoặc khi file watcher phát hiện thay đổi cấu trúc đĩa từ bên ngoài (`FsEvent::TreeChanged`). (Giải quyết đồng thời **CC-001**).
 
 ---
 
@@ -225,17 +220,10 @@ Fix: Normalize trước khi insert vào suppressed set, so sánh trực tiếp.
 
 ## 3. Circular / Mutual Call Chains
 
-### CC-001 🟠 HIGH — workspace_crud → reload_tree → scan_tree (full I/O)
+### CC-001 ✅ RESOLVED (Was 🟠 HIGH) — workspace_crud → reload_tree → scan_tree (full I/O)
 **Files:** [`workspace_crud.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/state/workspace_crud.rs) → [`fs_store.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/storage/fs_store.rs)
 
-```
-workspace_crud::rename_request()
-  └─► self.reload_tree()
-        └─► FsWorkspaceStore::scan_tree()   ← đọc TẤT CẢ YAML trên disk
-              └─► cx.notify() → re-render
-```
-
-Vòng lặp: mỗi CRUD → full disk scan → notify → render → (lặp lại cho CRUD tiếp theo).
+*Đã giải quyết*: Đã cắt đứt hoàn toàn chuỗi gọi `workspace_crud -> reload_tree -> scan_tree`. Tất cả các thao tác CRUD nay cập nhật trực tiếp in-memory và notify UI ngay lập tức mà không kích hoạt đọc lại đĩa. (Cùng được xử lý trong **PERF-003**).
 
 ---
 
@@ -449,8 +437,7 @@ Fix: Dùng tokio::process::Command trong async context, hoặc thêm timeout.
 
 ```mermaid
 flowchart TD
-    A["workspace_crud\n(create/rename/delete)"] -->|"reload_tree()"| B["fs_store::scan_tree\n⚠ Full YAML read"]
-    B -->|"cx.notify()"| C["WorkspaceDataState"]
+    A["workspace_crud\n(create/rename/delete)"] -->|"Cập nhật In-memory O(1)"| C["WorkspaceDataState"]
     C -->|triggers| D["AppView::render()"]
     D -->|"sync_*() on every frame"| E["EditorState\nEnvironmentState"]
     E -->|"cx.notify() nếu thay đổi"| D
@@ -477,7 +464,7 @@ flowchart LR
     P1 --> i4["TD-004: Xóa global #![allow(dead_code)]"]
     P1 --> i5["TD-014: Fix recursive resolve_ref"]
 
-    P2 --> i6["PERF-003: In-memory tree index"]
+    P2 --> i6["PERF-003: [RESOLVED] In-memory tree index"]
     P2 --> i7["TD-003: Git ops → async background"]
     P2 --> i8["PERF-005: suppress_path → async"]
     P2 --> i9["SL-002: Cap ResponseState cache"]
