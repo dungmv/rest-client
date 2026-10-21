@@ -187,6 +187,7 @@ fn parse_single_request(
                     key: key.to_string(),
                     value: val.to_string(),
                     description: desc,
+                    extra: Default::default(),
                 });
             }
         }
@@ -281,6 +282,7 @@ fn extract_url_and_params(url_val: Option<&Value>) -> (String, Vec<KeyValuePair>
                     key: k.to_string(),
                     value: v.to_string(),
                     description: desc,
+                    extra: Default::default(),
                 });
             }
         }
@@ -362,7 +364,9 @@ fn extract_postman_body(body_val: Option<&Value>) -> RequestBody {
                 || raw_text.trim_start().starts_with('{')
                 || raw_text.trim_start().starts_with('[')
             {
-                RequestBody::Json(raw_text.to_string())
+                RequestBody::Json {
+                    content: raw_text.to_string(),
+                }
             } else {
                 RequestBody::Raw {
                     content: raw_text.to_string(),
@@ -387,11 +391,12 @@ fn extract_postman_body(body_val: Option<&Value>) -> RequestBody {
                             key: k.to_string(),
                             value: v.to_string(),
                             description: desc,
+                            extra: Default::default(),
                         });
                     }
                 }
             }
-            RequestBody::FormUrlEncoded(items)
+            RequestBody::FormUrlEncoded { params: items }
         }
         "formdata" => {
             let mut items = Vec::new();
@@ -414,7 +419,7 @@ fn extract_postman_body(body_val: Option<&Value>) -> RequestBody {
                     }
                 }
             }
-            RequestBody::Multipart(items)
+            RequestBody::Multipart { items }
         }
         _ => RequestBody::None,
     }
@@ -451,7 +456,7 @@ fn extract_postman_scripts(event_val: Option<&Value>) -> Option<ScriptConfig> {
         Some(ScriptConfig {
             pre_request,
             post_response,
-            enabled: true,
+            extra: Default::default(),
         })
     } else {
         None

@@ -927,15 +927,15 @@ impl RenderOnce for BodyEditor {
 
         let (is_none, is_json, is_xml, is_text, is_multipart, is_form, is_binary) = match body_ref {
             None | Some(RequestBody::None) => (true, false, false, false, false, false, false),
-            Some(RequestBody::Json(_)) => (false, true, false, false, false, false, false),
+            Some(RequestBody::Json { .. }) => (false, true, false, false, false, false, false),
             Some(RequestBody::Raw { content_type, .. })
                 if content_type == "application/xml" || content_type == "text/xml" =>
             {
                 (false, false, true, false, false, false, false)
             }
             Some(RequestBody::Raw { .. }) => (false, false, false, true, false, false, false),
-            Some(RequestBody::Multipart(_)) => (false, false, false, false, true, false, false),
-            Some(RequestBody::FormUrlEncoded(_)) => (false, false, false, false, false, true, false),
+            Some(RequestBody::Multipart { .. }) => (false, false, false, false, true, false, false),
+            Some(RequestBody::FormUrlEncoded { .. }) => (false, false, false, false, false, true, false),
             Some(RequestBody::Binary { .. }) => (false, false, false, false, false, false, true),
         };
 
@@ -1028,11 +1028,11 @@ impl RenderOnce for BodyEditor {
                                         .on_click(move |_, _, cx| {
                                             ed_json.update(cx, |state, cx| {
                                                 let current_str = match &state.active_request.as_ref().map(|r| &r.body) {
-                                                    Some(RequestBody::Json(s)) if !s.trim().is_empty() => s.clone(),
+                                                    Some(RequestBody::Json { content }) if !content.trim().is_empty() => content.clone(),
                                                     Some(RequestBody::Raw { content, .. }) if !content.trim().is_empty() => content.clone(),
                                                     _ => "{\n  \n}".to_string(),
                                                 };
-                                                state.set_body_type(RequestBody::Json(current_str), cx);
+                                                state.set_body_type(RequestBody::json(current_str), cx);
                                             });
                                         }),
                                 );
@@ -1066,7 +1066,7 @@ impl RenderOnce for BodyEditor {
                                             ed_text.update(cx, |state, cx| {
                                                 let current_str = match &state.active_request.as_ref().map(|r| &r.body) {
                                                     Some(RequestBody::Raw { content, .. }) => content.clone(),
-                                                    Some(RequestBody::Json(s)) => s.clone(),
+                                                    Some(RequestBody::Json { content }) => content.clone(),
                                                     _ => "".to_string(),
                                                 };
                                                 state.set_body_type(
@@ -1090,10 +1090,10 @@ impl RenderOnce for BodyEditor {
                                         .on_click(move |_, _, cx| {
                                             ed_mp.update(cx, |state, cx| {
                                                 let current_items = match &state.active_request.as_ref().map(|r| &r.body) {
-                                                    Some(RequestBody::Multipart(items)) if !items.is_empty() => items.clone(),
+                                                    Some(RequestBody::Multipart { items }) if !items.is_empty() => items.clone(),
                                                     _ => vec![MultipartItem::default()],
                                                 };
-                                                state.set_body_type(RequestBody::Multipart(current_items), cx);
+                                                state.set_body_type(RequestBody::multipart(current_items), cx);
                                             });
                                         }),
                                 );
@@ -1105,10 +1105,10 @@ impl RenderOnce for BodyEditor {
                                         .on_click(move |_, _, cx| {
                                             ed_form.update(cx, |state, cx| {
                                                 let current_pairs = match &state.active_request.as_ref().map(|r| &r.body) {
-                                                    Some(RequestBody::FormUrlEncoded(pairs)) if !pairs.is_empty() => pairs.clone(),
+                                                    Some(RequestBody::FormUrlEncoded { params }) if !params.is_empty() => params.clone(),
                                                     _ => vec![KeyValuePair::new("", "")],
                                                 };
-                                                state.set_body_type(RequestBody::FormUrlEncoded(current_pairs), cx);
+                                                state.set_body_type(RequestBody::form(current_pairs), cx);
                                             });
                                         }),
                                 );
@@ -1266,7 +1266,7 @@ impl RenderOnce for BodyEditor {
                                     )
                                     .into_any_element()
                             }
-                            Some(RequestBody::Json(_)) => {
+                            Some(RequestBody::Json { .. }) => {
                                 div()
                                     .size_full()
                                     .py(px(6.))
@@ -1279,7 +1279,7 @@ impl RenderOnce for BodyEditor {
                                     )
                                     .into_any_element()
                             }
-                            Some(RequestBody::FormUrlEncoded(pairs)) => {
+                            Some(RequestBody::FormUrlEncoded { params: pairs }) => {
                                 let pairs = pairs.clone();
                                 let ed_up = ed_entity.clone();
                                 let ws_up = self.workspace_state.clone();
@@ -1316,7 +1316,7 @@ impl RenderOnce for BodyEditor {
                                     )
                                     .into_any_element()
                             }
-                            Some(RequestBody::Multipart(items)) => {
+                            Some(RequestBody::Multipart { items }) => {
                                 let items = items.clone();
                                 let ed_c = ed_entity.clone();
                                 let req_id_str = req_id_str.clone();

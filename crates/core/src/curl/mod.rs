@@ -274,7 +274,9 @@ pub fn curl_to_request(workspace_id: &str, curl_str: &str) -> Result<HttpRequest
 
     // Determine request body
     let body = if !multipart_items.is_empty() {
-        RequestBody::Multipart(multipart_items)
+        RequestBody::Multipart {
+            items: multipart_items,
+        }
     } else if let Some(data) = body_data {
         let is_json = (data.trim().starts_with('{') && data.trim().ends_with('}'))
             || (data.trim().starts_with('[') && data.trim().ends_with(']'));
@@ -284,7 +286,7 @@ pub fn curl_to_request(workspace_id: &str, curl_str: &str) -> Result<HttpRequest
         });
 
         if is_json {
-            RequestBody::Json(data)
+            RequestBody::Json { content: data }
         } else if is_form {
             let mut pairs = Vec::new();
             for part in data.split('&') {
@@ -294,7 +296,7 @@ pub fn curl_to_request(workspace_id: &str, curl_str: &str) -> Result<HttpRequest
                     pairs.push(KeyValuePair::new(dec_k, dec_v));
                 }
             }
-            RequestBody::FormUrlEncoded(pairs)
+            RequestBody::FormUrlEncoded { params: pairs }
         } else {
             let ct = headers
                 .iter()
@@ -394,7 +396,7 @@ pub fn request_to_curl(item: &HttpRequestItem, env: Option<&Environment>) -> Str
     // Body
     match &item.body {
         RequestBody::None => {}
-        RequestBody::Json(raw_json) => {
+        RequestBody::Json { content: raw_json } => {
             let interpolated = interpolate(raw_json, env).text;
             parts.push("-H".to_string());
             parts.push("'Content-Type: application/json'".to_string());
@@ -416,7 +418,7 @@ pub fn request_to_curl(item: &HttpRequestItem, env: Option<&Environment>) -> Str
             parts.push("-d".to_string());
             parts.push(format!("'{}'", interpolated.replace('\'', "'\\''")));
         }
-        RequestBody::FormUrlEncoded(pairs) => {
+        RequestBody::FormUrlEncoded { params: pairs } => {
             for p in pairs {
                 if p.enabled && !p.key.trim().is_empty() {
                     let k = interpolate(&p.key, env).text;
@@ -515,7 +517,9 @@ mod tests {
         );
         assert_eq!(
             req.body,
-            RequestBody::Json("{\"name\": \"Alice\"}".to_string())
+            RequestBody::Json {
+                content: "{\"name\": \"Alice\"}".to_string()
+            }
         );
     }
 
@@ -542,7 +546,9 @@ mod tests {
         assert_eq!(req.url, "https://httpbin.org/post");
         assert_eq!(
             req.body,
-            RequestBody::Json("{\"key\": \"val\"}".to_string())
+            RequestBody::Json {
+                content: "{\"key\": \"val\"}".to_string()
+            }
         );
     }
 
@@ -552,7 +558,12 @@ mod tests {
         let req = curl_to_request("ws1", curl).unwrap();
         assert_eq!(req.method, HttpMethod::Post);
         assert_eq!(req.url, "https://httpbin.org/post");
-        assert_eq!(req.body, RequestBody::Json("{\"ps\": 1}".to_string()));
+        assert_eq!(
+            req.body,
+            RequestBody::Json {
+                content: "{\"ps\": 1}".to_string()
+            }
+        );
     }
 
     #[test]

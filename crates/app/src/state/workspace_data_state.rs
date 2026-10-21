@@ -162,8 +162,8 @@ impl WorkspaceDataState {
             name: initial_name,
             description: String::new(),
             active_environment_id: None,
-            headers: self.workspace_meta.headers.iter().cloned().map(Into::into).collect(),
-            auth: self.workspace_meta.auth.clone().into(),
+            headers: self.workspace_meta.headers.clone(),
+            auth: self.workspace_meta.auth.clone(),
         });
 
         self.pins = self.store.load_pins().unwrap_or_default();
@@ -197,8 +197,8 @@ impl WorkspaceDataState {
                 let mut f = Folder::new(ws_name, &folder_node.file.name);
                 f.id = folder_node.rel_path.clone();
                 f.parent_id = parent_id;
-                f.headers = folder_node.file.headers.iter().cloned().map(Into::into).collect();
-                f.auth = folder_node.file.auth.clone().into();
+                f.headers = folder_node.file.headers.clone();
+                f.auth = folder_node.file.auth.clone();
                 all_folders.push(f);
 
                 for req_node in &folder_node.requests {
@@ -251,8 +251,8 @@ impl WorkspaceDataState {
         auth: Auth,
         cx: &mut Context<Self>,
     ) {
-        self.workspace_meta.headers = headers.iter().cloned().map(Into::into).collect();
-        self.workspace_meta.auth = auth.clone().into();
+        self.workspace_meta.headers = headers.clone();
+        self.workspace_meta.auth = auth.clone();
         if let Some(ws) = &mut self.active_workspace {
             ws.headers = headers;
             ws.auth = auth;
@@ -273,8 +273,8 @@ impl WorkspaceDataState {
             f.auth = auth.clone();
         }
         if let Ok(mut meta) = self.store.load_folder_meta(folder_id) {
-            meta.headers = headers.into_iter().map(Into::into).collect();
-            meta.auth = auth.into();
+            meta.headers = headers;
+            meta.auth = auth;
             let _ = self.store.save_folder_meta(folder_id, &meta);
         }
         cx.notify();

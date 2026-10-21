@@ -358,7 +358,7 @@ impl EditorState {
     // Body
     pub fn apply_set_body_json(&mut self, json_str: String) {
         if let Some(req) = &mut self.active_request {
-            req.body = RequestBody::Json(json_str);
+            req.body = RequestBody::json(json_str);
             self.is_dirty = true;
         }
     }
@@ -381,21 +381,21 @@ impl EditorState {
     // Form Urlencoded
     pub fn update_form_param(&mut self, index: usize, key: String, val: String, enabled: bool, cx: &mut Context<Self>) {
         let prev_enabled = self.active_request.as_ref().and_then(|r| match &r.body {
-            RequestBody::FormUrlEncoded(pairs) => pairs.get(index).map(|p| p.enabled),
+            RequestBody::FormUrlEncoded { params } => params.get(index).map(|p| p.enabled),
             _ => None,
         });
         let had_template = self.active_request.as_ref().and_then(|r| match &r.body {
-            RequestBody::FormUrlEncoded(pairs) => pairs.get(index).map(|p| p.key.contains("{{") || p.value.contains("{{")),
+            RequestBody::FormUrlEncoded { params } => params.get(index).map(|p| p.key.contains("{{") || p.value.contains("{{")),
             _ => None,
         }).unwrap_or(false);
         let starts_template = !had_template && (key.contains("{{") || val.contains("{{"));
         let enabled_changed = prev_enabled != Some(enabled);
         if let Some(req) = &mut self.active_request {
-            if let RequestBody::FormUrlEncoded(pairs) = &mut req.body {
-                if index < pairs.len() {
-                    pairs[index].key = key;
-                    pairs[index].value = val;
-                    pairs[index].enabled = enabled;
+            if let RequestBody::FormUrlEncoded { params } = &mut req.body {
+                if index < params.len() {
+                    params[index].key = key;
+                    params[index].value = val;
+                    params[index].enabled = enabled;
                     self.is_dirty = true;
                     if enabled_changed {
                         cx.notify();
@@ -409,8 +409,8 @@ impl EditorState {
 
     pub fn add_form_param(&mut self, cx: &mut Context<Self>) {
         if let Some(req) = &mut self.active_request {
-            if let RequestBody::FormUrlEncoded(pairs) = &mut req.body {
-                pairs.push(KeyValuePair::new("", ""));
+            if let RequestBody::FormUrlEncoded { params } = &mut req.body {
+                params.push(KeyValuePair::new("", ""));
                 self.is_dirty = true;
                 cx.notify();
             }
@@ -419,9 +419,9 @@ impl EditorState {
 
     pub fn remove_form_param(&mut self, index: usize, cx: &mut Context<Self>) {
         if let Some(req) = &mut self.active_request {
-            if let RequestBody::FormUrlEncoded(pairs) = &mut req.body {
-                if index < pairs.len() {
-                    pairs.remove(index);
+            if let RequestBody::FormUrlEncoded { params } = &mut req.body {
+                if index < params.len() {
+                    params.remove(index);
                     self.is_dirty = true;
                     cx.notify();
                 }
@@ -433,7 +433,7 @@ impl EditorState {
     #[allow(clippy::too_many_arguments)]
     pub fn update_multipart_item(&mut self, index: usize, key: String, val: String, is_file: bool, file_path: Option<String>, enabled: bool, cx: &mut Context<Self>) {
         let previous = self.active_request.as_ref().and_then(|r| match &r.body {
-            RequestBody::Multipart(items) => items.get(index).map(|item| (item.enabled, item.is_file, item.file_path.clone(), item.key.contains("{{") || item.value.contains("{{"))),
+            RequestBody::Multipart { items } => items.get(index).map(|item| (item.enabled, item.is_file, item.file_path.clone(), item.key.contains("{{") || item.value.contains("{{"))),
             _ => None,
         });
         let starts_template = !previous.as_ref().map(|p| p.3).unwrap_or(false)
@@ -442,7 +442,7 @@ impl EditorState {
             || previous.as_ref().map(|p| p.1) != Some(is_file)
             || previous.as_ref().map(|p| p.2.clone()) != Some(file_path.clone());
         if let Some(req) = &mut self.active_request {
-            if let RequestBody::Multipart(items) = &mut req.body {
+            if let RequestBody::Multipart { items } = &mut req.body {
                 if index < items.len() {
                     items[index].key = key;
                     items[index].value = val;
@@ -462,7 +462,7 @@ impl EditorState {
 
     pub fn add_multipart_item(&mut self, cx: &mut Context<Self>) {
         if let Some(req) = &mut self.active_request {
-            if let RequestBody::Multipart(items) = &mut req.body {
+            if let RequestBody::Multipart { items } = &mut req.body {
                 items.push(MultipartItem::default());
                 self.is_dirty = true;
                 cx.notify();
@@ -472,7 +472,7 @@ impl EditorState {
 
     pub fn remove_multipart_item(&mut self, index: usize, cx: &mut Context<Self>) {
         if let Some(req) = &mut self.active_request {
-            if let RequestBody::Multipart(items) = &mut req.body {
+            if let RequestBody::Multipart { items } = &mut req.body {
                 if index < items.len() {
                     items.remove(index);
                     self.is_dirty = true;
@@ -602,7 +602,7 @@ impl EditorState {
 
     pub fn set_timeout_secs(&mut self, secs: u64, cx: &mut Context<Self>) {
         if let Some(req) = &mut self.active_request {
-            req.settings.timeout_secs = secs;
+            req.settings.set_timeout_secs(secs);
             self.is_dirty = true;
             cx.notify();
         }
@@ -913,7 +913,7 @@ mod tests {
         assert_eq!(req.params[0].value, "web");
         assert_eq!(req.name, "users");
         assert_eq!(req.auth, Auth::Bearer { token: "token123".to_string() });
-        assert_eq!(req.body, RequestBody::Json("{\"name\":\"Bob\"}".to_string()));
+        assert_eq!(req.body, RequestBody::json("{\"name\":\"Bob\"}"));
     }
 }
 

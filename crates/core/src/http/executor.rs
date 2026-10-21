@@ -215,14 +215,14 @@ impl ResolvedRequest {
         let mut multipart_data = None;
         let body_bytes = match &item.body {
             RequestBody::None => None,
-            RequestBody::Json(raw_json) => {
+            RequestBody::Json { content: raw_json } => {
                 if !content_type_set {
                     headers.push(("Content-Type".to_string(), "application/json".to_string()));
                 }
                 let interpolated = interpolator.interpolate_cow(raw_json);
                 Some(interpolated.into_owned().into_bytes())
             }
-            RequestBody::FormUrlEncoded(pairs) => {
+            RequestBody::FormUrlEncoded { params: pairs } => {
                 if !content_type_set {
                     headers.push((
                         "Content-Type".to_string(),
@@ -241,7 +241,7 @@ impl ResolvedRequest {
                     .join("&");
                 Some(form_str.into_bytes())
             }
-            RequestBody::Multipart(items) => {
+            RequestBody::Multipart { items } => {
                 let interpolated_items: Vec<MultipartItem> = items
                     .iter()
                     .filter(|p| p.enabled && !p.key.trim().is_empty())
@@ -483,8 +483,8 @@ impl HttpExecutor for ReqwestExecutor {
 
         let mut request_builder = client.request(reqwest_method, &req.url);
 
-        if req.settings.timeout_secs > 0 {
-            request_builder = request_builder.timeout(Duration::from_secs(req.settings.timeout_secs));
+        if req.settings.timeout_secs() > 0 {
+            request_builder = request_builder.timeout(Duration::from_secs(req.settings.timeout_secs()));
         }
 
         let mut header_map = HeaderMap::new();
@@ -544,7 +544,7 @@ impl HttpExecutor for ReqwestExecutor {
             .await
             .map_err(|e| {
                 if e.is_timeout() {
-                    HttpError::Timeout(req.settings.timeout_secs)
+                    HttpError::Timeout(req.settings.timeout_secs())
                 } else {
                     HttpError::Network(e.to_string())
                 }
@@ -747,6 +747,7 @@ mod tests {
                 key: "disabled".to_string(),
                 value: "val".to_string(),
                 description: None,
+                extra: Default::default(),
             },
             KeyValuePair::new("limit", "25"),
         ];
@@ -757,10 +758,12 @@ mod tests {
     #[test]
     fn test_resolved_request_multipart() {
         let mut item = HttpRequestItem::new("ws-1", "Test Multipart", HttpMethod::Post, "http://localhost:8080/upload");
-        item.body = RequestBody::Multipart(vec![
-            MultipartItem::new_text("description", "A test file upload"),
-            MultipartItem::new_file("file", "C:/dummy/path.png"),
-        ]);
+        item.body = RequestBody::Multipart {
+            items: vec![
+                MultipartItem::new_text("description", "A test file upload"),
+                MultipartItem::new_file("file", "C:/dummy/path.png"),
+            ],
+        };
 
         let resolved = ResolvedRequest::from_item(&item, None).unwrap();
         assert!(resolved.multipart.is_some());

@@ -200,6 +200,7 @@ pub fn parse_openapi(content: &str) -> Result<ImportResult> {
                     key: p_name,
                     value: sample_val,
                     description: p_desc,
+                    extra: Default::default(),
                 };
 
                 match p_in {
@@ -352,7 +353,12 @@ fn extract_request_body(root: &Value, op_obj: &Map<String, Value>) -> (RequestBo
             // Check application/json
             if let Some(json_media) = content.get("application/json") {
                 let sample_json = generate_media_sample(root, json_media);
-                return (RequestBody::Json(sample_json), Some("application/json".to_string()));
+                return (
+                    RequestBody::Json {
+                        content: sample_json,
+                    },
+                    Some("application/json".to_string()),
+                );
             }
 
             // Check form urlencoded
@@ -368,7 +374,9 @@ fn extract_request_body(root: &Value, op_obj: &Map<String, Value>) -> (RequestBo
                     }
                 }
                 return (
-                    RequestBody::FormUrlEncoded(form_items),
+                    RequestBody::FormUrlEncoded {
+                        params: form_items,
+                    },
                     Some("application/x-www-form-urlencoded".to_string()),
                 );
             }
@@ -386,7 +394,9 @@ fn extract_request_body(root: &Value, op_obj: &Map<String, Value>) -> (RequestBo
                     }
                 }
                 return (
-                    RequestBody::Multipart(multi_items),
+                    RequestBody::Multipart {
+                        items: multi_items,
+                    },
                     Some("multipart/form-data".to_string()),
                 );
             }
@@ -413,7 +423,10 @@ fn extract_request_body(root: &Value, op_obj: &Map<String, Value>) -> (RequestBo
                 if let Some(schema) = res_param.get("schema") {
                     let sample = generate_schema_sample(root, schema, 0);
                     let pretty = serde_json::to_string_pretty(&sample).unwrap_or_default();
-                    return (RequestBody::Json(pretty), Some("application/json".to_string()));
+                    return (
+                        RequestBody::Json { content: pretty },
+                        Some("application/json".to_string()),
+                    );
                 }
             }
         }

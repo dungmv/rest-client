@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "UPPERCASE")]
@@ -53,12 +54,16 @@ impl std::str::FromStr for HttpMethod {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct KeyValuePair {
+    #[serde(rename = "name", alias = "key")]
+    pub key: String,
+    #[serde(default)]
+    pub value: String,
     #[serde(default = "default_true")]
     pub enabled: bool,
-    pub key: String,
-    pub value: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(default, flatten)]
+    pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 fn default_true() -> bool {
@@ -72,12 +77,13 @@ impl KeyValuePair {
             key: key.into(),
             value: value.into(),
             description: None,
+            extra: BTreeMap::new(),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "lowercase")]
 pub enum Auth {
     #[default]
     Inherit,
@@ -89,6 +95,7 @@ pub enum Auth {
         username: String,
         password: String,
     },
+    #[serde(alias = "api_key")]
     ApiKey {
         key: String,
         value: String,
@@ -111,6 +118,7 @@ impl Auth {
 pub struct MultipartItem {
     #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(rename = "name", alias = "key")]
     pub key: String,
     pub value: String,
     #[serde(default)]
@@ -166,65 +174,114 @@ impl From<KeyValuePair> for MultipartItem {
     }
 }
 
+fn default_raw_type() -> String {
+    "text/plain".to_string()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "lowercase")]
 pub enum RequestBody {
     #[default]
     None,
-    Json(String),
-    FormUrlEncoded(Vec<KeyValuePair>),
-    Multipart(Vec<MultipartItem>),
-    Raw {
+    Json {
+        #[serde(default)]
         content: String,
+    },
+    #[serde(rename = "form")]
+    FormUrlEncoded {
+        #[serde(default, rename = "params")]
+        params: Vec<KeyValuePair>,
+    },
+    Multipart {
+        #[serde(default, rename = "items")]
+        items: Vec<MultipartItem>,
+    },
+    Raw {
+        #[serde(default)]
+        content: String,
+        #[serde(default = "default_raw_type")]
         content_type: String,
     },
     Binary {
+        #[serde(default)]
         file_path: String,
     },
 }
 
+impl RequestBody {
+    pub fn json(content: impl Into<String>) -> Self {
+        Self::Json {
+            content: content.into(),
+        }
+    }
+
+    pub fn form(params: Vec<KeyValuePair>) -> Self {
+        Self::FormUrlEncoded { params }
+    }
+
+    pub fn multipart(items: Vec<MultipartItem>) -> Self {
+        Self::Multipart { items }
+    }
+
+    pub fn raw(content: impl Into<String>, content_type: impl Into<String>) -> Self {
+        Self::Raw {
+            content: content.into(),
+            content_type: content_type.into(),
+        }
+    }
+
+    pub fn binary(file_path: impl Into<String>) -> Self {
+        Self::Binary {
+            file_path: file_path.into(),
+        }
+    }
+}
+
+fn default_timeout_ms() -> u64 {
+    30000
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestSettings {
-    #[serde(default = "default_timeout")]
-    pub timeout_secs: u64,
+    #[serde(default = "default_timeout_ms", alias = "timeout_secs")]
+    pub timeout_ms: u64,
     #[serde(default = "default_true")]
     pub follow_redirects: bool,
     #[serde(default = "default_true")]
     pub validate_tls: bool,
-}
-
-fn default_timeout() -> u64 {
-    30
+    #[serde(default, flatten)]
+    pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 impl Default for RequestSettings {
     fn default() -> Self {
         Self {
-            timeout_secs: default_timeout(),
+            timeout_ms: default_timeout_ms(),
             follow_redirects: true,
             validate_tls: true,
+            extra: BTreeMap::new(),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+impl RequestSettings {
+    pub fn timeout_secs(&self) -> u64 {
+        self.timeout_ms / 1000
+    }
+
+    pub fn set_timeout_secs(&mut self, secs: u64) {
+        self.timeout_ms = secs * 1000;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ScriptConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pre_request: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub post_response: Option<String>,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-}
-
-impl Default for ScriptConfig {
-    fn default() -> Self {
-        Self {
-            pre_request: None,
-            post_response: None,
-            enabled: true,
-        }
-    }
+    #[serde(default, flatten)]
+    pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

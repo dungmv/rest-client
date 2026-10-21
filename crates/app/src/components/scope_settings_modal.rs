@@ -160,7 +160,7 @@ impl RenderOnce for ScopeSettingsModal {
                         let u = inp.read(cx).value().to_string();
                         let p = match &tgt {
                             ScopeSettingsTarget::Workspace => match &ws_s.read(cx).workspace_meta.auth {
-                                restclient_core::storage::models::RequestAuth::Basic { password, .. } => password.clone(),
+                                Auth::Basic { password, .. } => password.clone(),
                                 _ => String::new(),
                             },
                             ScopeSettingsTarget::Folder(fid) => match ws_s.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| &f.auth) {
@@ -205,7 +205,7 @@ impl RenderOnce for ScopeSettingsModal {
                         let p = inp.read(cx).value().to_string();
                         let u = match &tgt {
                             ScopeSettingsTarget::Workspace => match &ws_s.read(cx).workspace_meta.auth {
-                                restclient_core::storage::models::RequestAuth::Basic { username, .. } => username.clone(),
+                                Auth::Basic { username, .. } => username.clone(),
                                 _ => String::new(),
                             },
                             ScopeSettingsTarget::Folder(fid) => match ws_s.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| &f.auth) {
@@ -250,7 +250,7 @@ impl RenderOnce for ScopeSettingsModal {
                         let k = inp.read(cx).value().to_string();
                         let (v, in_h) = match &tgt {
                             ScopeSettingsTarget::Workspace => match &ws_s.read(cx).workspace_meta.auth {
-                                restclient_core::storage::models::RequestAuth::ApiKey { value, in_header, .. } => (value.clone(), *in_header),
+                                Auth::ApiKey { value, in_header, .. } => (value.clone(), *in_header),
                                 _ => (String::new(), true),
                             },
                             ScopeSettingsTarget::Folder(fid) => match ws_s.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| &f.auth) {
@@ -295,7 +295,7 @@ impl RenderOnce for ScopeSettingsModal {
                         let v = inp.read(cx).value().to_string();
                         let (k, in_h) = match &tgt {
                             ScopeSettingsTarget::Workspace => match &ws_s.read(cx).workspace_meta.auth {
-                                restclient_core::storage::models::RequestAuth::ApiKey { key, in_header, .. } => (key.clone(), *in_header),
+                                Auth::ApiKey { key, in_header, .. } => (key.clone(), *in_header),
                                 _ => ("X-API-Key".to_string(), true),
                             },
                             ScopeSettingsTarget::Folder(fid) => match ws_s.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| &f.auth) {

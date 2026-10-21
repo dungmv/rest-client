@@ -210,7 +210,7 @@ impl AppView {
                 inp.set_value(tokenized_url, window, cx);
             });
 
-            if let RequestBody::Json(json_content) = &req.body {
+            if let RequestBody::Json { content: json_content } = &req.body {
                 json_editor.update(cx, |txt, cx| {
                     txt.set_value(json_content.clone(), window, cx);
                 });

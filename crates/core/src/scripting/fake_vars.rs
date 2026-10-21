@@ -68,15 +68,15 @@ pub fn resolve_fake_vars_in_request(req_item: &mut HttpRequestItem) {
         resolve_fake_vars_in_place(&mut h.value);
     }
     match &mut req_item.body {
-        RequestBody::Json(s) => resolve_fake_vars_in_place(s),
+        RequestBody::Json { content } => resolve_fake_vars_in_place(content),
         RequestBody::Raw { content, .. } => resolve_fake_vars_in_place(content),
-        RequestBody::FormUrlEncoded(pairs) => {
-            for p in pairs {
+        RequestBody::FormUrlEncoded { params } => {
+            for p in params {
                 resolve_fake_vars_in_place(&mut p.key);
                 resolve_fake_vars_in_place(&mut p.value);
             }
         }
-        RequestBody::Multipart(items) => {
+        RequestBody::Multipart { items } => {
             for item in items {
                 resolve_fake_vars_in_place(&mut item.key);
                 resolve_fake_vars_in_place(&mut item.value);

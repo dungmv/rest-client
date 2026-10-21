@@ -335,7 +335,7 @@ impl RenderOnce for SettingsModal {
                                                 div()
                                                     .text_xs()
                                                     .text_color(t.text_muted)
-                                                    .child(format!("Current: {}s", settings.timeout_secs)),
+                                                    .child(format!("Current: {}s", settings.timeout_secs())),
                                             ),
                                     )
                                     .child(
@@ -350,7 +350,7 @@ impl RenderOnce for SettingsModal {
                                             .gap(px(8.))
                                             .pt(px(2.))
                                             .children([10, 30, 60, 120].into_iter().map(|s| {
-                                                let is_cur = settings.timeout_secs == s;
+                                                let is_cur = settings.timeout_secs() == s;
                                                 let ed_set = ed_clone.clone();
                                                 div()
                                                     .id(format!("timeout-{}s", s))

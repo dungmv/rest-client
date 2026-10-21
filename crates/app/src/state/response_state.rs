@@ -184,7 +184,7 @@ impl ResponseState {
         let headers: Vec<(String, String)> = example
             .headers
             .iter()
-            .map(|h| (h.name.clone(), h.value.clone()))
+            .map(|h| (h.key.clone(), h.value.clone()))
             .collect();
         let body = example.body.as_deref().unwrap_or("").as_bytes().to_vec();
         let size_bytes = body.len();

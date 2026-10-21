@@ -8,10 +8,10 @@
 | Mức độ | Số vấn đề |
 |--------|-----------|
 | 🔴 CRITICAL | 0 (1 đã sửa: PERF-001) |
-| 🟠 HIGH | 5 (5 đã sửa: PERF-002, PERF-003, CC-001, TD-001, TD-004) |
+| 🟠 HIGH | 4 (6 đã sửa: PERF-002, PERF-003, CC-001, TD-001, TD-004, TD-002) |
 | 🟡 MEDIUM | 7 |
 | 🔵 LOW | 8 |
-| **Tổng** | **20 còn lại (6 đã sửa)** |
+| **Tổng** | **19 còn lại (7 đã sửa)** |
 
 > [!CAUTION]
 > **Top 3 ưu tiên xử lý tiếp theo:**
@@ -284,13 +284,15 @@ Fix: Đã xóa fs.rs và loại bỏ toàn bộ export liên quan trong storage/
 
 ---
 
-### TD-002 🟠 HIGH — Duplicate type hierarchy: domain model ↔ storage model
+### TD-002 🟠 HIGH — [RESOLVED] Duplicate type hierarchy: domain model ↔ storage model
 **Files:** [`core/src/models.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/models.rs) vs [`storage/models.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/storage/models.rs)
 
-`Auth` ↔ `RequestAuth`, `RequestBody` ↔ `RequestBodyFile`, `RequestSettings` ↔ `RequestSettingsFile`, `ScriptConfig` ↔ `RequestScriptFile` — cấu trúc giống hệt nhau, chỉ khác tên, với bidirectional `From<>` impls thuần boilerplate.
+Trước đây bị nhân đôi toàn bộ các model: `Auth` ↔ `RequestAuth`, `RequestBody` ↔ `RequestBodyFile`, `RequestSettings` ↔ `RequestSettingsFile`, `ScriptConfig` ↔ `RequestScriptFile`, `KeyValuePair` ↔ `RequestKvItem`, `MultipartItem` ↔ `MultipartItemFile` kèm theo hàng trăm dòng bidirectional `From<>` boilerplate.
 
 ```
-Fix: Một type canonical duy nhất với #[serde(rename)] cho YAML keys.
+Fix: Hợp nhất toàn bộ thành canonical types trong `models.rs` với serde tag/rename tương thích hoàn hảo.
+     Xóa bỏ các struct/enum duplicate và toàn bộ boilerplate `From<>`.
+     `RequestFile` và `HttpRequestItem` chia sẻ 100% cùng các kiểu dữ liệu, loại bỏ hoàn toàn các bước convert `.into()`.
 ```
 
 ---
@@ -473,7 +475,7 @@ flowchart LR
     P2 --> i10["PERF-006: sync → subscriptions"]
 
     P3 --> i11["SL-001: Tách AppView God Struct"]
-    P3 --> i12["TD-002: Unified type hierarchy"]
+    P3 --> i12["TD-002: [RESOLVED] Unified type hierarchy"]
     P3 --> i13["SL-004: RenamingState generic"]
     P3 --> i14["TD-017: Split body_editor.rs"]
 ```

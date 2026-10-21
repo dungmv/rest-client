@@ -10,10 +10,6 @@ fn default_true() -> bool {
     true
 }
 
-fn default_timeout_ms() -> u64 {
-    30000
-}
-
 fn default_version() -> u32 {
     1
 }
@@ -26,9 +22,9 @@ pub struct WorkspaceMeta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_environment: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub headers: Vec<RequestKvItem>,
-    #[serde(default, skip_serializing_if = "RequestAuth::is_none")]
-    pub auth: RequestAuth,
+    pub headers: Vec<KeyValuePair>,
+    #[serde(default, skip_serializing_if = "Auth::is_none")]
+    pub auth: Auth,
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_yaml::Value>,
 }
@@ -40,7 +36,7 @@ impl Default for WorkspaceMeta {
             name: "My Workspace".to_string(),
             default_environment: Some("local".to_string()),
             headers: Vec::new(),
-            auth: RequestAuth::None,
+            auth: Auth::None,
             extra: BTreeMap::new(),
         }
     }
@@ -52,294 +48,19 @@ pub struct FolderFile {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub order: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub headers: Vec<RequestKvItem>,
-    #[serde(default, skip_serializing_if = "RequestAuth::is_inherit")]
-    pub auth: RequestAuth,
+    pub headers: Vec<KeyValuePair>,
+    #[serde(default, skip_serializing_if = "Auth::is_inherit")]
+    pub auth: Auth,
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RequestKvItem {
-    #[serde(alias = "key")]
-    pub name: String,
-    #[serde(default)]
-    pub value: String,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
-}
-
-impl RequestKvItem {
-    pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            value: value.into(),
-            enabled: true,
-            description: None,
-            extra: BTreeMap::new(),
-        }
-    }
-}
-
-impl From<KeyValuePair> for RequestKvItem {
-    fn from(kv: KeyValuePair) -> Self {
-        Self {
-            name: kv.key,
-            value: kv.value,
-            enabled: kv.enabled,
-            description: kv.description,
-            extra: BTreeMap::new(),
-        }
-    }
-}
-
-impl From<RequestKvItem> for KeyValuePair {
-    fn from(item: RequestKvItem) -> Self {
-        Self {
-            enabled: item.enabled,
-            key: item.name,
-            value: item.value,
-            description: item.description,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum RequestAuth {
-    #[default]
-    Inherit,
-    None,
-    Bearer {
-        token: String,
-    },
-    Basic {
-        username: String,
-        password: String,
-    },
-    ApiKey {
-        key: String,
-        value: String,
-        #[serde(default = "default_true")]
-        in_header: bool,
-    },
-}
-
-impl RequestAuth {
-    pub fn is_inherit(&self) -> bool {
-        matches!(self, RequestAuth::Inherit)
-    }
-
-    pub fn is_none(&self) -> bool {
-        matches!(self, RequestAuth::None)
-    }
-}
-
-impl From<Auth> for RequestAuth {
-    fn from(auth: Auth) -> Self {
-        match auth {
-            Auth::Inherit => RequestAuth::Inherit,
-            Auth::None => RequestAuth::None,
-            Auth::Bearer { token } => RequestAuth::Bearer { token },
-            Auth::Basic { username, password } => RequestAuth::Basic { username, password },
-            Auth::ApiKey { key, value, in_header } => RequestAuth::ApiKey { key, value, in_header },
-        }
-    }
-}
-
-impl From<RequestAuth> for Auth {
-    fn from(auth: RequestAuth) -> Self {
-        match auth {
-            RequestAuth::Inherit => Auth::Inherit,
-            RequestAuth::None => Auth::None,
-            RequestAuth::Bearer { token } => Auth::Bearer { token },
-            RequestAuth::Basic { username, password } => Auth::Basic { username, password },
-            RequestAuth::ApiKey { key, value, in_header } => Auth::ApiKey { key, value, in_header },
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MultipartItemFile {
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(alias = "key")]
-    pub name: String,
-    pub value: String,
-    #[serde(default)]
-    pub is_file: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub file_path: Option<String>,
-}
-
-impl From<MultipartItem> for MultipartItemFile {
-    fn from(m: MultipartItem) -> Self {
-        Self {
-            enabled: m.enabled,
-            name: m.key,
-            value: m.value,
-            is_file: m.is_file,
-            file_path: m.file_path,
-        }
-    }
-}
-
-impl From<MultipartItemFile> for MultipartItem {
-    fn from(m: MultipartItemFile) -> Self {
-        Self {
-            enabled: m.enabled,
-            key: m.name,
-            value: m.value,
-            is_file: m.is_file,
-            file_path: m.file_path,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum RequestBodyFile {
-    #[default]
-    None,
-    Json {
-        #[serde(default)]
-        content: String,
-    },
-    Form {
-        #[serde(default)]
-        params: Vec<RequestKvItem>,
-    },
-    Multipart {
-        #[serde(default)]
-        items: Vec<MultipartItemFile>,
-    },
-    Raw {
-        #[serde(default)]
-        content: String,
-        #[serde(default = "default_raw_type")]
-        content_type: String,
-    },
-    Binary {
-        #[serde(default)]
-        file_path: String,
-    },
-}
-
-fn default_raw_type() -> String {
-    "text/plain".to_string()
-}
-
-impl From<RequestBody> for RequestBodyFile {
-    fn from(body: RequestBody) -> Self {
-        match body {
-            RequestBody::None => RequestBodyFile::None,
-            RequestBody::Json(content) => RequestBodyFile::Json { content },
-            RequestBody::FormUrlEncoded(params) => RequestBodyFile::Form {
-                params: params.into_iter().map(Into::into).collect(),
-            },
-            RequestBody::Multipart(items) => RequestBodyFile::Multipart {
-                items: items.into_iter().map(Into::into).collect(),
-            },
-            RequestBody::Raw { content, content_type } => RequestBodyFile::Raw { content, content_type },
-            RequestBody::Binary { file_path } => RequestBodyFile::Binary { file_path },
-        }
-    }
-}
-
-impl From<RequestBodyFile> for RequestBody {
-    fn from(body: RequestBodyFile) -> Self {
-        match body {
-            RequestBodyFile::None => RequestBody::None,
-            RequestBodyFile::Json { content } => RequestBody::Json(content),
-            RequestBodyFile::Form { params } => RequestBody::FormUrlEncoded(
-                params.into_iter().map(Into::into).collect(),
-            ),
-            RequestBodyFile::Multipart { items } => RequestBody::Multipart(
-                items.into_iter().map(Into::into).collect(),
-            ),
-            RequestBodyFile::Raw { content, content_type } => RequestBody::Raw { content, content_type },
-            RequestBodyFile::Binary { file_path } => RequestBody::Binary { file_path },
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RequestSettingsFile {
-    #[serde(default = "default_timeout_ms")]
-    pub timeout_ms: u64,
-    #[serde(default = "default_true")]
-    pub follow_redirects: bool,
-    #[serde(default = "default_true")]
-    pub validate_tls: bool,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
-}
-
-impl Default for RequestSettingsFile {
-    fn default() -> Self {
-        Self {
-            timeout_ms: default_timeout_ms(),
-            follow_redirects: true,
-            validate_tls: true,
-            extra: BTreeMap::new(),
-        }
-    }
-}
-
-impl From<RequestSettings> for RequestSettingsFile {
-    fn from(s: RequestSettings) -> Self {
-        Self {
-            timeout_ms: s.timeout_secs * 1000,
-            follow_redirects: s.follow_redirects,
-            validate_tls: s.validate_tls,
-            extra: BTreeMap::new(),
-        }
-    }
-}
-
-impl From<RequestSettingsFile> for RequestSettings {
-    fn from(s: RequestSettingsFile) -> Self {
-        Self {
-            timeout_secs: s.timeout_ms / 1000,
-            follow_redirects: s.follow_redirects,
-            validate_tls: s.validate_tls,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct RequestScriptFile {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pre_request: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub post_response: Option<String>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
-}
-
-impl From<ScriptConfig> for RequestScriptFile {
-    fn from(s: ScriptConfig) -> Self {
-        Self {
-            pre_request: s.pre_request,
-            post_response: s.post_response,
-            extra: BTreeMap::new(),
-        }
-    }
-}
-
-impl From<RequestScriptFile> for ScriptConfig {
-    fn from(s: RequestScriptFile) -> Self {
-        Self {
-            pre_request: s.pre_request,
-            post_response: s.post_response,
-            enabled: true,
-        }
-    }
-}
+pub type RequestKvItem = KeyValuePair;
+pub type RequestAuth = Auth;
+pub type MultipartItemFile = MultipartItem;
+pub type RequestBodyFile = RequestBody;
+pub type RequestSettingsFile = RequestSettings;
+pub type RequestScriptFile = ScriptConfig;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestExampleFile {
@@ -422,14 +143,14 @@ impl RequestFile {
             name: self.name.clone(),
             method: self.method,
             url: self.url.clone(),
-            params: self.params.iter().cloned().map(Into::into).collect(),
-            headers: self.headers.iter().cloned().map(Into::into).collect(),
-            auth: self.auth.clone().into(),
-            body: self.body.clone().into(),
-            settings: self.settings.clone().into(),
+            params: self.params.clone(),
+            headers: self.headers.clone(),
+            auth: self.auth.clone(),
+            body: self.body.clone(),
+            settings: self.settings.clone(),
             sort_order: 0,
             last_status_code: None,
-            script: self.script.clone().map(Into::into),
+            script: self.script.clone(),
             examples: self.examples.clone(),
         }
     }
@@ -438,12 +159,12 @@ impl RequestFile {
         self.name = item.name.clone();
         self.method = item.method;
         self.url = item.url.clone();
-        self.params = item.params.iter().cloned().map(Into::into).collect();
-        self.headers = item.headers.iter().cloned().map(Into::into).collect();
-        self.auth = item.auth.clone().into();
-        self.body = item.body.clone().into();
-        self.settings = item.settings.clone().into();
-        self.script = item.script.clone().map(Into::into);
+        self.params = item.params.clone();
+        self.headers = item.headers.clone();
+        self.auth = item.auth.clone();
+        self.body = item.body.clone();
+        self.settings = item.settings.clone();
+        self.script = item.script.clone();
         self.examples = item.examples.clone();
     }
 }

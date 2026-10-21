@@ -48,20 +48,8 @@ impl AppView {
         let mut effective_env = Some(env_entity.read(cx).effective_environment());
 
         // 2. Pre-request Script execution
-        let pre_script_code = req_item.script.as_ref().and_then(|s| {
-            if s.enabled {
-                s.pre_request.clone()
-            } else {
-                None
-            }
-        });
-        let post_script_code = req_item.script.as_ref().and_then(|s| {
-            if s.enabled {
-                s.post_response.clone()
-            } else {
-                None
-            }
-        });
+        let pre_script_code = req_item.script.as_ref().and_then(|s| s.pre_request.clone());
+        let post_script_code = req_item.script.as_ref().and_then(|s| s.post_response.clone());
 
         let pre_output = if let Some(code) = pre_script_code {
             let pre_ctx = PreRequestContext::from_request_and_env(&req_item, effective_env.as_ref());

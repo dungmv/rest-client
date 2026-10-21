@@ -164,7 +164,7 @@ impl AppView {
         if req_switched || req_ver_changed || body_ver_changed {
             self.last_synced_body_version = ed_body_ver;
             match &req.body {
-                RequestBody::Json(json_str) => {
+                RequestBody::Json { content: json_str } => {
                     self.json_editor.update(cx, |txt, cx| {
                         txt.set_value(json_str.clone(), window, cx);
                     });
@@ -183,8 +183,8 @@ impl AppView {
                     });
                 }
                 RequestBody::None
-                | RequestBody::FormUrlEncoded(_)
-                | RequestBody::Multipart(_)
+                | RequestBody::FormUrlEncoded { .. }
+                | RequestBody::Multipart { .. }
                 | RequestBody::Binary { .. } => {
                     self.json_editor.update(cx, |txt, cx| {
                         txt.set_value(String::new(), window, cx);

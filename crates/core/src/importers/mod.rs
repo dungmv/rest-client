@@ -115,12 +115,12 @@ pub fn apply_import_to_workspace(
             name: req.name.clone(),
             method: req.method,
             url: req.url.clone(),
-            params: req.params.iter().cloned().map(Into::into).collect(),
-            headers: req.headers.iter().cloned().map(Into::into).collect(),
-            auth: req.auth.clone().into(),
-            body: req.body.clone().into(),
+            params: req.params.clone(),
+            headers: req.headers.clone(),
+            auth: req.auth.clone(),
+            body: req.body.clone(),
             settings: Default::default(),
-            script: req.script.clone().map(Into::into),
+            script: req.script.clone(),
             extra: BTreeMap::new(),
             examples: req.examples.clone(),
         };
@@ -247,7 +247,7 @@ mod tests {
         let post_req = res.requests.iter().find(|r| r.method == HttpMethod::Post).unwrap();
         assert_eq!(post_req.name, "Create a pet");
         match &post_req.body {
-            crate::models::RequestBody::Json(body) => {
+            crate::models::RequestBody::Json { content: body } => {
                 assert!(body.contains("Doggie"));
             }
             _ => panic!("Expected JSON body"),

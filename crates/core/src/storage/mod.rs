@@ -31,14 +31,14 @@ mod tests {
             method: HttpMethod::Post,
             url: "{{base_url}}/api/auth/login".to_string(),
             params: vec![RequestKvItem {
-                name: "debug".to_string(),
+                key: "debug".to_string(),
                 value: "1".to_string(),
                 enabled: false,
                 description: None,
                 extra: BTreeMap::new(),
             }],
             headers: vec![RequestKvItem {
-                name: "Content-Type".to_string(),
+                key: "Content-Type".to_string(),
                 value: "application/json".to_string(),
                 enabled: true,
                 description: None,
@@ -66,7 +66,7 @@ mod tests {
                 name: "Success".to_string(),
                 status: 200,
                 headers: vec![RequestKvItem {
-                    name: "Content-Type".to_string(),
+                    key: "Content-Type".to_string(),
                     value: "application/json".to_string(),
                     enabled: true,
                     description: None,
