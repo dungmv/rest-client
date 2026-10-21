@@ -1,7 +1,7 @@
 use gpui::*;
 use restclient_core::http::{HttpError, HttpExecutor, HttpProgress, ResolvedRequest};
 use restclient_core::models::{
-    Environment, EnvironmentVariable, HttpResponseRecord,
+    EnvironmentVariable, HttpResponseRecord,
 };
 use restclient_core::scripting::{
     resolve_fake_vars_in_request, PostResponseContext, PostResponseOutput, PreRequestContext,
@@ -45,14 +45,14 @@ impl AppView {
         resolve_fake_vars_in_request(&mut req_item);
 
         let env_entity = self.env_state.clone();
-        let mut effective_env = Some(env_entity.read(cx).effective_environment());
+        let cached_env = env_entity.read(cx).effective_environment();
 
         // 2. Pre-request Script execution
         let pre_script_code = req_item.script.as_ref().and_then(|s| s.pre_request.clone());
         let post_script_code = req_item.script.as_ref().and_then(|s| s.post_response.clone());
 
         let pre_output = if let Some(code) = pre_script_code {
-            let pre_ctx = PreRequestContext::from_request_and_env(&req_item, effective_env.as_ref());
+            let pre_ctx = PreRequestContext::from_request_and_env(&req_item, Some(&cached_env));
             ScriptSandbox::run_pre_request(&code, pre_ctx)
         } else {
             PreRequestOutput::default()
@@ -69,8 +69,9 @@ impl AppView {
         }
 
         // 3. Merge pre-script env mutations into effective environment
-        if !pre_output.env_mutations.is_empty() {
-            let temp_env = effective_env.get_or_insert_with(|| Environment::new("scratch", "Temp"));
+        let mut mutated_env = None;
+        let effective_env_ref = if !pre_output.env_mutations.is_empty() {
+            let mut temp_env = (*cached_env).clone();
             for (k, v_opt) in &pre_output.env_mutations {
                 if let Some(val) = v_opt {
                     if let Some(v_item) = temp_env.variables.iter_mut().find(|v| v.key == *k) {
@@ -87,10 +88,14 @@ impl AppView {
                     temp_env.variables.retain(|v| v.key != *k);
                 }
             }
-        }
+            mutated_env = Some(temp_env);
+            mutated_env.as_ref()
+        } else {
+            Some(&*cached_env)
+        };
 
         // 4. Resolve Request with effective environment & apply pre-script mutations
-        let mut resolved = match ResolvedRequest::from_item(&req_item, effective_env.as_ref()) {
+        let mut resolved = match ResolvedRequest::from_item(&req_item, effective_env_ref) {
             Ok(r) => r,
             Err(e) => {
                 let err_msg = e.to_string();
@@ -136,7 +141,7 @@ impl AppView {
             }
         });
 
-        let eff_env_for_post = effective_env.clone();
+        let eff_env_for_post = mutated_env.map(std::sync::Arc::new).or(Some(cached_env));
         // Spawn background HTTP send task on tokio runtime
         rt.spawn(async move {
             tokio::select! {
@@ -148,7 +153,7 @@ impl AppView {
                         Ok(mut record) => {
                             // 5. Post-response / Test Script
                             let post_output = if let Some(code) = post_script_code {
-                                let post_ctx = PostResponseContext::from_response_and_env(&record, eff_env_for_post.as_ref());
+                                let post_ctx = PostResponseContext::from_response_and_env(&record, eff_env_for_post.as_deref());
                                 ScriptSandbox::run_post_response(&code, post_ctx)
                             } else {
                                 PostResponseOutput::default()

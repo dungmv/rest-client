@@ -443,4 +443,51 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
+
+    #[test]
+    fn test_effective_environment_caching_and_invalidation() {
+        let temp_dir = std::env::temp_dir().join(format!("test_env_cache_{}", uuid::Uuid::new_v4().simple()));
+        let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
+        let _ = store.init_workspace("Test Cache");
+
+        let mut env_state = EnvironmentState::new(store.clone(), "Test Cache".to_string(), None);
+        env_state.global_environment.variables.push(EnvironmentVariable {
+            key: "API_URL".to_string(),
+            initial_value: "https://api.dev.com".to_string(),
+            current_value: "".to_string(),
+            secret: false,
+        });
+
+        // 1. Initial call populates cache
+        let arc1 = env_state.effective_environment();
+        assert_eq!(arc1.variables.len(), 1);
+        assert_eq!(arc1.variables[0].key, "API_URL");
+
+        // 2. Subsequent call returns the exact same Arc (O(1) pointer reuse, no allocation/clone)
+        let arc2 = env_state.effective_environment();
+        assert!(Arc::ptr_eq(&arc1, &arc2), "Subsequent effective_environment calls must reuse the cached Arc");
+
+        // 3. Mutating global environment invalidates cache
+        let mut new_global = env_state.global_environment.clone();
+        new_global.variables.push(EnvironmentVariable {
+            key: "API_KEY".to_string(),
+            initial_value: "secret_123".to_string(),
+            current_value: "".to_string(),
+            secret: true,
+        });
+        env_state.save_global_environment_silently(new_global);
+
+        // 4. Next call produces fresh Arc with updated values
+        let arc3 = env_state.effective_environment();
+        assert!(!Arc::ptr_eq(&arc1, &arc3), "Cache must be invalidated after modifying global environment");
+        assert_eq!(arc3.variables.len(), 2);
+
+        // 5. Explicit invalidate_cache works
+        env_state.invalidate_cache();
+        let arc4 = env_state.effective_environment();
+        assert!(!Arc::ptr_eq(&arc3, &arc4), "Explicit invalidate_cache must trigger recomputation");
+        assert_eq!(arc4.variables.len(), 2);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }

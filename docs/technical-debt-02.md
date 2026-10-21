@@ -8,16 +8,16 @@
 | Mức độ | Số vấn đề |
 |--------|-----------|
 | 🔴 CRITICAL | 0 (1 đã sửa: PERF-001) |
-| 🟠 HIGH | 4 (6 đã sửa: PERF-002, PERF-003, CC-001, TD-001, TD-004, TD-002) |
+| 🟠 HIGH | 3 (7 đã sửa: PERF-002, PERF-003, CC-001, TD-001, TD-004, TD-002, PERF-004) |
 | 🟡 MEDIUM | 7 |
 | 🔵 LOW | 8 |
-| **Tổng** | **19 còn lại (7 đã sửa)** |
+| **Tổng** | **18 còn lại (8 đã sửa)** |
 
 > [!CAUTION]
 > **Top 3 ưu tiên xử lý tiếp theo:**
 > 1. **TD-003** — Git `pull/push/commit` chạy blocking trên UI thread → đóng băng app
-> 2. **PERF-004** — `effective_environment()` clone toàn bộ variables mỗi request
-> 3. **SL-002** — `ResponseState` cache không có giới hạn
+> 2. **SL-002** — `ResponseState` cache không có giới hạn
+> 3. **PERF-005** — `suppress_path()` spawn OS thread mới mỗi lần write file
 
 ---
 
@@ -123,14 +123,15 @@ Gợi ý: Giữ Box<HttpResponseRecord> xuyên suốt, hoặc dùng Arc<HttpResp
 
 ---
 
-### PERF-004 🟠 HIGH — `effective_environment()` clone toàn bộ variables mỗi request
+### PERF-004 🟠 HIGH — [RESOLVED] `effective_environment()` clone toàn bộ variables mỗi request
 **File:** [`crates/app/src/state/environment_state.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/state/environment_state.rs#L93-L111)
 
-100 biến environment = 100 String clones mỗi lần send request.
+Trước đây mỗi lần render UI (`request_bar`, `kv_table`, autocomplete) hoặc gửi request qua `pipeline`, hàm `effective_environment()` đều chạy linear scan $O(M \times N)$ và deep clone toàn bộ danh sách biến String.
 
 ```
-Fix: Cache effective environment, invalidate chỉ khi env thay đổi.
-     Dùng Arc<str> cho values để share không clone.
+Fix: Caching Arc<Environment> trong EnvironmentState và tự động invalidate khi có cập nhật môi trường.
+     Tối ưu thuật toán merge variables từ O(N^2) xuống O(N) bằng hash map index.
+     Các UI components và HTTP pipeline mượn trực tiếp &Environment từ Arc với chi phí O(1), zero allocation.
 ```
 
 ---

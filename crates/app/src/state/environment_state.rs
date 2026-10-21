@@ -3,7 +3,7 @@ use restclient_core::models::Environment;
 use restclient_core::storage::models::EnvironmentFile;
 use restclient_core::storage::WorkspaceStore;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 pub struct EnvironmentState {
     pub store: Arc<dyn WorkspaceStore>,
@@ -13,6 +13,7 @@ pub struct EnvironmentState {
     pub active_environment_id: Option<String>,
     pub corrupt_secrets_warning: Option<String>,
     pub env_save_task: Option<Task<()>>,
+    cached_effective_env: RwLock<Option<Arc<Environment>>>,
 }
 
 impl EnvironmentState {
@@ -25,6 +26,7 @@ impl EnvironmentState {
             active_environment_id: initial_active_id,
             corrupt_secrets_warning: None,
             env_save_task: None,
+            cached_effective_env: RwLock::new(None),
         };
         state.reload_environments();
         state
@@ -36,10 +38,12 @@ impl EnvironmentState {
         self.active_environment_id = active_env;
         self.corrupt_secrets_warning = None;
         self.global_environment = Environment::new(&workspace_name, "Globals");
+        self.invalidate_cache();
         self.reload_environments();
     }
 
     pub fn reload_environments(&mut self) {
+        self.invalidate_cache();
         let ws_name = self.workspace_name.clone();
         let env_names = self.store.list_environments().unwrap_or_default();
         let mut envs = Vec::new();
@@ -78,6 +82,7 @@ impl EnvironmentState {
     }
 
     pub fn active_environment_mut(&mut self) -> Option<&mut Environment> {
+        self.invalidate_cache();
         if let Some(env_id) = &self.active_environment_id {
             self.environments.iter_mut().find(|e| &e.id == env_id || &e.name == env_id)
         } else {
@@ -87,22 +92,46 @@ impl EnvironmentState {
 
     pub fn set_active_environment(&mut self, env_id: Option<String>, cx: &mut Context<Self>) {
         self.active_environment_id = env_id;
+        self.invalidate_cache();
         cx.notify();
     }
 
-    pub fn effective_environment(&self) -> Environment {
+    pub fn invalidate_cache(&self) {
+        if let Ok(mut lock) = self.cached_effective_env.write() {
+            *lock = None;
+        }
+    }
+
+    pub fn effective_environment(&self) -> Arc<Environment> {
+        if let Ok(lock) = self.cached_effective_env.read() {
+            if let Some(cached) = &*lock {
+                return cached.clone();
+            }
+        }
+
+        let effective = Arc::new(self.compute_effective_environment());
+        if let Ok(mut lock) = self.cached_effective_env.write() {
+            *lock = Some(effective.clone());
+        }
+        effective
+    }
+
+    fn compute_effective_environment(&self) -> Environment {
         let ws_name = self.workspace_name.as_str();
         let mut effective = Environment::new(ws_name, "Effective");
+        let mut key_map = HashMap::<&str, usize>::new();
 
         for v in &self.global_environment.variables {
+            key_map.insert(v.key.as_str(), effective.variables.len());
             effective.variables.push(v.clone());
         }
 
         if let Some(active_env) = self.active_environment() {
             for v in &active_env.variables {
-                if let Some(existing) = effective.variables.iter_mut().find(|x| x.key == v.key) {
-                    *existing = v.clone();
+                if let Some(&idx) = key_map.get(v.key.as_str()) {
+                    effective.variables[idx] = v.clone();
                 } else {
+                    key_map.insert(v.key.as_str(), effective.variables.len());
                     effective.variables.push(v.clone());
                 }
             }
@@ -112,10 +141,12 @@ impl EnvironmentState {
 
     pub fn save_global_environment_silently(&mut self, env: Environment) {
         self.global_environment = env;
+        self.invalidate_cache();
     }
 
     pub fn save_global_environment(&mut self, env: Environment, cx: &mut Context<Self>) {
         self.global_environment = env;
+        self.invalidate_cache();
         cx.notify();
     }
 
