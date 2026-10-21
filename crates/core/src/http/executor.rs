@@ -706,7 +706,7 @@ mod tests {
         ];
         let ws_auth = Auth::Bearer { token: "ws-token".to_string() };
 
-        let folder_headers = vec![
+        let folder_headers = [
             KeyValuePair::new("X-Folder", "f-val"),
             KeyValuePair::new("X-Override-Me", "from-folder"),
         ];

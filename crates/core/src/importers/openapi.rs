@@ -193,7 +193,7 @@ pub fn parse_openapi(content: &str) -> Result<ImportResult> {
                     .unwrap_or(false);
 
                 // Sample value
-                let sample_val = extract_param_sample(&root, &resolved_param);
+                let sample_val = extract_param_sample(&root, resolved_param);
 
                 let kv = KeyValuePair {
                     enabled: required,
@@ -290,8 +290,7 @@ fn format_path_params(path: &str) -> String {
 
 fn resolve_ref<'a>(root: &'a Value, val: &'a Value) -> &'a Value {
     if let Some(ref_str) = val.get("$ref").and_then(|r| r.as_str()) {
-        if ref_str.starts_with('#') {
-            let pointer_path = &ref_str[1..];
+        if let Some(pointer_path) = ref_str.strip_prefix('#') {
             if let Some(target) = root.pointer(pointer_path) {
                 return resolve_ref(root, target);
             }
@@ -393,7 +392,7 @@ fn extract_request_body(root: &Value, op_obj: &Map<String, Value>) -> (RequestBo
             }
 
             // Check raw / text
-            for (media_type, media_obj) in content {
+            if let Some((media_type, media_obj)) = content.iter().next() {
                 let sample = generate_media_sample(root, media_obj);
                 return (
                     RequestBody::Raw {
