@@ -1,5 +1,6 @@
 use crate::models::{Environment, EnvironmentVariable};
 use regex::Regex;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -21,6 +22,44 @@ pub struct InterpolationResult {
     pub spans: Vec<VariableSpan>,
 }
 
+/// Pre-indexes environment variables for high-throughput interpolation without re-allocating
+/// `HashMap` on every placeholder or field lookup.
+pub struct VariableInterpolator<'a> {
+    var_map: HashMap<&'a str, &'a str>,
+}
+
+impl<'a> VariableInterpolator<'a> {
+    pub fn new(env: Option<&'a Environment>) -> Self {
+        let mut var_map = HashMap::new();
+        if let Some(env) = env {
+            for v in &env.variables {
+                var_map.insert(v.key.as_str(), v.resolved_value());
+            }
+        }
+        Self { var_map }
+    }
+
+    pub fn from_vars(vars: &'a [EnvironmentVariable]) -> Self {
+        let mut var_map = HashMap::new();
+        for v in vars {
+            var_map.insert(v.key.as_str(), v.resolved_value());
+        }
+        Self { var_map }
+    }
+
+    /// Interpolate `text`, returning `Cow::Borrowed` if no `{{` placeholder exists.
+    pub fn interpolate_cow<'s>(&self, text: &'s str) -> Cow<'s, str> {
+        if !text.contains("{{") {
+            return Cow::Borrowed(text);
+        }
+        Cow::Owned(interpolate_with_map(text, &self.var_map).text)
+    }
+
+    pub fn interpolate(&self, text: &str) -> InterpolationResult {
+        interpolate_with_map(text, &self.var_map)
+    }
+}
+
 /// Pure function to interpolate `{{var}}` placeholders using variables from the given environment.
 /// Any unresolved variables remain in their `{{var}}` form in the output string,
 /// and are reported in `unresolved_variables`.
@@ -32,13 +71,15 @@ pub fn interpolate(text: &str, env: Option<&Environment>) -> InterpolationResult
             spans: Vec::new(),
         };
     }
-    let mut var_map = HashMap::new();
-    if let Some(env) = env {
-        for v in &env.variables {
-            var_map.insert(v.key.as_str(), v.resolved_value());
-        }
+    VariableInterpolator::new(env).interpolate(text)
+}
+
+/// Returns `Cow::Borrowed` if text does not contain `{{`, avoiding heap allocations.
+pub fn interpolate_cow<'a>(text: &'a str, env: Option<&Environment>) -> Cow<'a, str> {
+    if !text.contains("{{") {
+        return Cow::Borrowed(text);
     }
-    interpolate_with_map(text, &var_map)
+    Cow::Owned(interpolate(text, env).text)
 }
 
 pub fn interpolate_with_vars(text: &str, vars: &[EnvironmentVariable]) -> InterpolationResult {
@@ -49,11 +90,7 @@ pub fn interpolate_with_vars(text: &str, vars: &[EnvironmentVariable]) -> Interp
             spans: Vec::new(),
         };
     }
-    let mut var_map = HashMap::new();
-    for v in vars {
-        var_map.insert(v.key.as_str(), v.resolved_value());
-    }
-    interpolate_with_map(text, &var_map)
+    VariableInterpolator::from_vars(vars).interpolate(text)
 }
 
 pub fn interpolate_with_map(text: &str, var_map: &HashMap<&str, &str>) -> InterpolationResult {
@@ -88,9 +125,7 @@ pub fn interpolate_with_map(text: &str, var_map: &HashMap<&str, &str>) -> Interp
                 value: Some(val.to_string()),
             });
         } else if var_name.starts_with('$') {
-            let fake_template = format!("{{{{{}}}}}", var_name);
-            let resolved_fake = crate::scripting::fake_vars::resolve_fake_vars(&fake_template);
-            if resolved_fake != fake_template {
+            if let Some(resolved_fake) = crate::scripting::fake_vars::generate_fake_var_value(var_name) {
                 result.push_str(&resolved_fake);
                 let end_pos = result.len();
                 spans.push(VariableSpan {
@@ -157,9 +192,7 @@ pub fn scan_variables(raw_text: &str, env: Option<&Environment>) -> Vec<Variable
         let (is_resolved, value) = if is_in_env {
             (true, var_map.get(var_name).map(|v| v.to_string()))
         } else if var_name.starts_with('$') {
-            let fake_template = format!("{{{{{}}}}}", var_name);
-            let resolved_fake = crate::scripting::fake_vars::resolve_fake_vars(&fake_template);
-            if resolved_fake != fake_template {
+            if let Some(resolved_fake) = crate::scripting::fake_vars::generate_fake_var_value(var_name) {
                 (true, Some(resolved_fake))
             } else {
                 (false, None)
@@ -270,5 +303,15 @@ mod tests {
         assert!(spans[0].value.is_some());
         assert_eq!(spans[1].name, "$randomInt");
         assert!(spans[1].is_resolved);
+    }
+
+    #[test]
+    fn test_interpolator_cow_no_alloc() {
+        let env = Environment::new("ws1", "local");
+        let interpolator = VariableInterpolator::new(Some(&env));
+        let plain = "https://api.example.com/users";
+        let res = interpolator.interpolate_cow(plain);
+        assert_eq!(res, plain);
+        assert!(matches!(res, Cow::Borrowed(_)));
     }
 }

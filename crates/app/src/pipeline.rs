@@ -1,11 +1,11 @@
 use gpui::*;
 use restclient_core::http::{HttpError, HttpExecutor, HttpProgress, ResolvedRequest};
 use restclient_core::models::{
-    Auth, Environment, EnvironmentVariable, HttpResponseRecord, RequestBody,
+    Environment, EnvironmentVariable, HttpResponseRecord,
 };
 use restclient_core::scripting::{
-    resolve_fake_vars, PostResponseContext, PostResponseOutput, PreRequestContext, PreRequestOutput,
-    ScriptSandbox,
+    resolve_fake_vars_in_request, PostResponseContext, PostResponseOutput, PreRequestContext,
+    PreRequestOutput, ScriptSandbox,
 };
 
 use crate::app::AppView;
@@ -43,48 +43,10 @@ impl AppView {
         }
 
         // 1. Resolve Dynamic Fake Variables ({{$uuid}}, {{$timestamp}}, etc.)
-        req_item.url = resolve_fake_vars(&req_item.url);
-        for p in &mut req_item.params {
-            p.key = resolve_fake_vars(&p.key);
-            p.value = resolve_fake_vars(&p.value);
-        }
-        for h in &mut req_item.headers {
-            h.key = resolve_fake_vars(&h.key);
-            h.value = resolve_fake_vars(&h.value);
-        }
-        match &mut req_item.body {
-            RequestBody::Json(s) => *s = resolve_fake_vars(s),
-            RequestBody::Raw { content, .. } => *content = resolve_fake_vars(content),
-            RequestBody::FormUrlEncoded(pairs) => {
-                for p in pairs {
-                    p.key = resolve_fake_vars(&p.key);
-                    p.value = resolve_fake_vars(&p.value);
-                }
-            }
-            RequestBody::Multipart(items) => {
-                for item in items {
-                    item.key = resolve_fake_vars(&item.key);
-                    item.value = resolve_fake_vars(&item.value);
-                }
-            }
-            _ => {}
-        }
-
-        match &mut req_item.auth {
-            Auth::Bearer { token } => *token = resolve_fake_vars(token),
-            Auth::Basic { username, password } => {
-                *username = resolve_fake_vars(username);
-                *password = resolve_fake_vars(password);
-            }
-            Auth::ApiKey { key, value, .. } => {
-                *key = resolve_fake_vars(key);
-                *value = resolve_fake_vars(value);
-            }
-            _ => {}
-        }
+        resolve_fake_vars_in_request(&mut req_item);
 
         let ws = ws_entity.read(cx);
-        let env = Some(ws.effective_environment());
+        let mut effective_env = Some(ws.effective_environment());
 
         // 2. Pre-request Script execution
         let pre_script_code = req_item.script.as_ref().and_then(|s| {
@@ -103,7 +65,7 @@ impl AppView {
         });
 
         let pre_output = if let Some(code) = pre_script_code {
-            let pre_ctx = PreRequestContext::from_request_and_env(&req_item, env.as_ref());
+            let pre_ctx = PreRequestContext::from_request_and_env(&req_item, effective_env.as_ref());
             ScriptSandbox::run_pre_request(&code, pre_ctx)
         } else {
             PreRequestOutput::default()
@@ -120,9 +82,8 @@ impl AppView {
         }
 
         // 3. Merge pre-script env mutations into effective environment
-        let mut effective_env = env.clone();
         if !pre_output.env_mutations.is_empty() {
-            let mut temp_env = effective_env.unwrap_or_else(|| Environment::new("scratch", "Temp"));
+            let temp_env = effective_env.get_or_insert_with(|| Environment::new("scratch", "Temp"));
             for (k, v_opt) in &pre_output.env_mutations {
                 if let Some(val) = v_opt {
                     if let Some(v_item) = temp_env.variables.iter_mut().find(|v| v.key == *k) {
@@ -139,7 +100,6 @@ impl AppView {
                     temp_env.variables.retain(|v| v.key != *k);
                 }
             }
-            effective_env = Some(temp_env);
         }
 
         // 4. Resolve Request with effective environment & apply pre-script mutations

@@ -13,7 +13,7 @@
 | **TD-03** | Unbounded Memory Cache ở `ResponseState` (No LRU) | `crates/app/src/state/response_state.rs` | **P1 (High)** | Trung bình | 🔴 Chưa xử lý |
 | **TD-04** | Giant Component Files (> 2.000 LOC / file) | `git_modal.rs`, `sidebar_tree.rs`, `app.rs` | **P1 (High)** | Cao | 🔴 Chưa xử lý |
 | **TD-05** | Dual-State Sync & Race condition tiềm ẩn | `crates/app/src/app.rs`, `editor_state.rs` | **P1 (High)** | Trung bình | 🔴 Chưa xử lý |
-| **TD-06** | Lạm dụng `.clone()` trong HTTP Request Pipeline | `crates/app/src/pipeline.rs` | **P2 (Medium)** | Thấp | 🔴 Chưa xử lý |
+| **TD-06** | Lạm dụng `.clone()` trong HTTP Request Pipeline | `crates/app/src/pipeline.rs` | **P2 (Medium)** | Thấp | 🟢 Đã giải quyết |
 | **TD-07** | Panics tiềm ẩn do `unwrap()` trên Mutex / Option | `crates/core/src/http/executor.rs` | **P2 (Medium)** | Thấp | 🔴 Chưa xử lý |
 | **TD-08** | Inconsistent Code Comments & Documentation Language | `crates/core/src/http/executor.rs` | **P2 (Medium)** | Thấp | 🔴 Chưa xử lý |
 | **TD-09** | Memory alignment & Padding của Data Structs | `crates/core/src/models.rs` (`TimingBreakdown`) | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |

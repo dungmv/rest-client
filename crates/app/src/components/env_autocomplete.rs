@@ -158,8 +158,7 @@ pub fn get_variable_details(ws: &WorkspaceState, var_name: &str) -> (String, Str
 
     // 3. Check dynamic variables
     if var_name.starts_with('$') {
-        let fake = restclient_core::scripting::fake_vars::resolve_fake_vars(&format!("{{{{{}}}}}", var_name));
-        if fake != format!("{{{{{}}}}}", var_name) {
+        if let Some(fake) = restclient_core::scripting::generate_fake_var_value(var_name) {
             return (format!("Dynamic: {}", fake), "Dynamic".to_string(), true);
         }
     }

@@ -111,8 +111,9 @@ pub struct ResolvedRequest {
 
 impl ResolvedRequest {
     pub fn from_item(item: &HttpRequestItem, env: Option<&Environment>) -> Result<Self, HttpError> {
+        let interpolator = crate::interpolation::VariableInterpolator::new(env);
         let raw_url = item.url.trim();
-        let interpolated_url = interpolate(raw_url, env).text;
+        let interpolated_url = interpolator.interpolate_cow(raw_url);
 
         // Base URL (strip any residual query string from URL if params are provided, or use parse_query_from_url)
         let (base_interpolated, raw_url_params) = parse_query_from_url(&interpolated_url);
@@ -128,18 +129,18 @@ impl ResolvedRequest {
         let mut enabled_params = Vec::new();
         for p in &item.params {
             if p.enabled && !p.key.trim().is_empty() {
-                let k = interpolate(&p.key, env).text;
-                let v = interpolate(&p.value, env).text;
+                let k = interpolator.interpolate_cow(&p.key);
+                let v = interpolator.interpolate_cow(&p.value);
                 enabled_params.push((k, v));
             }
         }
 
         // If item.params had no entries, use raw_url_params from URL
         if enabled_params.is_empty() {
-            for p in raw_url_params {
+            for p in &raw_url_params {
                 if p.enabled && !p.key.trim().is_empty() {
-                    let k = interpolate(&p.key, env).text;
-                    let v = interpolate(&p.value, env).text;
+                    let k = interpolator.interpolate_cow(&p.key);
+                    let v = interpolator.interpolate_cow(&p.value);
                     enabled_params.push((k, v));
                 }
             }
@@ -148,8 +149,8 @@ impl ResolvedRequest {
         // Check if auth is ApiKey in query
         if let Auth::ApiKey { key, value, in_header } = &item.auth {
             if !in_header && !key.trim().is_empty() {
-                let k = interpolate(key, env).text;
-                let v = interpolate(value, env).text;
+                let k = interpolator.interpolate_cow(key);
+                let v = interpolator.interpolate_cow(value);
                 enabled_params.push((k, v));
             }
         }
@@ -177,12 +178,12 @@ impl ResolvedRequest {
 
         for h in &item.headers {
             if h.enabled && !h.key.trim().is_empty() {
-                let k = interpolate(&h.key, env).text;
-                let v = interpolate(&h.value, env).text;
+                let k = interpolator.interpolate_cow(&h.key);
+                let v = interpolator.interpolate_cow(&h.value);
                 if k.eq_ignore_ascii_case("content-type") {
                     content_type_set = true;
                 }
-                headers.push((k, v));
+                headers.push((k.into_owned(), v.into_owned()));
             }
         }
 
@@ -190,12 +191,12 @@ impl ResolvedRequest {
         match &item.auth {
             Auth::Inherit | Auth::None => {}
             Auth::Bearer { token } => {
-                let t = interpolate(token, env).text;
+                let t = interpolator.interpolate_cow(token);
                 headers.push(("Authorization".to_string(), format!("Bearer {}", t)));
             }
             Auth::Basic { username, password } => {
-                let u = interpolate(username, env).text;
-                let p = interpolate(password, env).text;
+                let u = interpolator.interpolate_cow(username);
+                let p = interpolator.interpolate_cow(password);
                 use base64::Engine as _;
                 let creds = format!("{}:{}", u, p);
                 let encoded = base64::engine::general_purpose::STANDARD.encode(creds.as_bytes());
@@ -203,9 +204,9 @@ impl ResolvedRequest {
             }
             Auth::ApiKey { key, value, in_header } => {
                 if *in_header && !key.trim().is_empty() {
-                    let k = interpolate(key, env).text;
-                    let v = interpolate(value, env).text;
-                    headers.push((k, v));
+                    let k = interpolator.interpolate_cow(key);
+                    let v = interpolator.interpolate_cow(value);
+                    headers.push((k.into_owned(), v.into_owned()));
                 }
             }
         }
@@ -218,8 +219,8 @@ impl ResolvedRequest {
                 if !content_type_set {
                     headers.push(("Content-Type".to_string(), "application/json".to_string()));
                 }
-                let interpolated = interpolate(raw_json, env).text;
-                Some(interpolated.into_bytes())
+                let interpolated = interpolator.interpolate_cow(raw_json);
+                Some(interpolated.into_owned().into_bytes())
             }
             RequestBody::FormUrlEncoded(pairs) => {
                 if !content_type_set {
@@ -232,8 +233,8 @@ impl ResolvedRequest {
                     .iter()
                     .filter(|p| p.enabled && !p.key.trim().is_empty())
                     .map(|p| {
-                        let k = interpolate(&p.key, env).text;
-                        let v = interpolate(&p.value, env).text;
+                        let k = interpolator.interpolate_cow(&p.key);
+                        let v = interpolator.interpolate_cow(&p.value);
                         format!("{}={}", urlencoding::encode(&k), urlencoding::encode(&v))
                     })
                     .collect::<Vec<_>>()
@@ -245,13 +246,13 @@ impl ResolvedRequest {
                     .iter()
                     .filter(|p| p.enabled && !p.key.trim().is_empty())
                     .map(|p| {
-                        let k = interpolate(&p.key, env).text;
-                        let v = interpolate(&p.value, env).text;
-                        let file_path = p.file_path.as_ref().map(|path| interpolate(path, env).text);
+                        let k = interpolator.interpolate_cow(&p.key);
+                        let v = interpolator.interpolate_cow(&p.value);
+                        let file_path = p.file_path.as_ref().map(|path| interpolator.interpolate_cow(path).into_owned());
                         MultipartItem {
                             enabled: true,
-                            key: k,
-                            value: v,
+                            key: k.into_owned(),
+                            value: v.into_owned(),
                             is_file: p.is_file,
                             file_path,
                         }
@@ -264,8 +265,8 @@ impl ResolvedRequest {
                 if !content_type_set && !content_type.trim().is_empty() {
                     headers.push(("Content-Type".to_string(), content_type.clone()));
                 }
-                let interpolated = interpolate(content, env).text;
-                Some(interpolated.into_bytes())
+                let interpolated = interpolator.interpolate_cow(content);
+                Some(interpolated.into_owned().into_bytes())
             }
             RequestBody::Binary { file_path } => {
                 if !content_type_set {
@@ -589,18 +590,23 @@ pub fn resolve_hierarchical_headers_and_auth<'a>(
 
     // 2. Resolve Headers
     let mut header_order: Vec<String> = Vec::new();
-    let mut header_map: std::collections::HashMap<String, KeyValuePair> = std::collections::HashMap::new();
+    let mut header_map: std::collections::HashMap<String, &'a KeyValuePair> = std::collections::HashMap::new();
 
-    let mut apply_kv = |kv: &KeyValuePair| {
+    let mut apply_kv = |kv: &'a KeyValuePair| {
         let trimmed_key = kv.key.trim();
         if trimmed_key.is_empty() {
             return;
         }
         let lower = trimmed_key.to_lowercase();
-        if !header_map.contains_key(&lower) {
-            header_order.push(lower.clone());
+        match header_map.entry(lower) {
+            std::collections::hash_map::Entry::Occupied(mut occ) => {
+                occ.insert(kv);
+            }
+            std::collections::hash_map::Entry::Vacant(vac) => {
+                header_order.push(vac.key().clone());
+                vac.insert(kv);
+            }
         }
-        header_map.insert(lower, kv.clone());
     };
 
     for h in workspace_headers {
@@ -618,6 +624,7 @@ pub fn resolve_hierarchical_headers_and_auth<'a>(
     let merged_headers: Vec<KeyValuePair> = header_order
         .into_iter()
         .filter_map(|k| header_map.remove(&k))
+        .cloned()
         .collect();
 
     (merged_headers, resolved_auth)
