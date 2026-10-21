@@ -1,4 +1,4 @@
-use crate::state::{ConsoleFilter, ResponseState};
+﻿use crate::state::{ConsoleFilter, ResponseState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -6,6 +6,8 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::scroll::ScrollableElement as _;
+use gpui_component::Icon;
+use gpui_kit::assets::IconName;
 use restclient_core::models::{ConsoleLogLevel, ConsoleLogSource};
 
 #[derive(IntoElement)]
@@ -263,7 +265,7 @@ impl RenderOnce for ConsolePanel {
                                                 copy_str.clone(),
                                             ));
                                         })
-                                        .child("📋 Copy All"),
+                                        .child(Icon::new(IconName::Copy).size(px(14.))).child(" Copy All"),
                                 )
                             })
                             // Clear
@@ -479,7 +481,7 @@ impl RenderOnce for ConsolePanel {
                                                         .on_click(move |_, _, cx| {
                                                             cx.write_to_clipboard(gpui::ClipboardItem::new_string(msg_copy.clone()));
                                                         })
-                                                        .child("📋"),
+                                                        .child(Icon::new(IconName::Copy).size(px(14.))),
                                                 ),
                                         )
                                         // Log message body

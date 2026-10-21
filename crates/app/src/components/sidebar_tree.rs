@@ -1,4 +1,4 @@
-use crate::components::status_badge::{MethodBadge, StatusCodeBadge};
+﻿use crate::components::status_badge::{MethodBadge, StatusCodeBadge};
 use crate::state::{EditorState, GitActiveModal, ResponseState, ToastState, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
@@ -9,7 +9,8 @@ use gpui::{
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenuItem};
 use gpui_component::scroll::ScrollableElement as _;
-use gpui_component::{Icon, IconName};
+use gpui_component::Icon;
+use gpui_kit::assets::IconName;
 use restclient_core::models::{Folder, HttpMethod, HttpRequestItem};
 use restclient_core::storage::models::RequestFile;
 use restclient_core::storage::serialize::to_yaml_string;
@@ -571,7 +572,7 @@ impl RenderOnce for SidebarTree {
                                 div()
                                     .text_xs()
                                     .text_color(t.primary)
-                                    .child("⟳"),
+                                    .child(Icon::new(IconName::RefreshCw).size(px(12.))),
                             )
                         })
                         .when(unsaved_requests.contains(&req.id), |this| {
@@ -1174,9 +1175,9 @@ impl RenderOnce for SidebarTree {
                                             .gap(px(4.))
                                             .overflow_hidden()
                                             .child(
-                                                div()
-                                                    .text_color(t.primary)
-                                                    .child("⎇"),
+                                                Icon::new(IconName::GitBranch)
+                                                    .size(px(12.))
+                                                    .text_color(t.primary),
                                             )
                                             .child(
                                                 div()
@@ -1195,32 +1196,37 @@ impl RenderOnce for SidebarTree {
                                             .gap(px(4.))
                                             .when(is_syncing, |s| {
                                                 s.child(
-                                                    div()
-                                                        .text_xs()
-                                                        .text_color(t.primary)
-                                                        .child("⟳"),
+                                                    Icon::new(IconName::RefreshCw)
+                                                        .size(px(12.))
+                                                        .text_color(t.primary),
                                                 )
                                             })
                                             .when(ahead > 0, |s| {
                                                 s.child(
                                                     div()
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap(px(1.))
                                                         .text_color(t.text_muted)
-                                                        .child(format!("↑{}", ahead)),
+                                                        .child(Icon::new(IconName::ArrowUp).size(px(10.)))
+                                                        .child(div().text_xs().child(format!("{}", ahead))),
                                                 )
                                             })
                                             .when(behind > 0, |s| {
                                                 s.child(
                                                     div()
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap(px(1.))
                                                         .text_color(t.primary)
-                                                        .font_weight(gpui::FontWeight::BOLD)
-                                                        .child(format!("↓{}", behind)),
+                                                        .child(Icon::new(IconName::ArrowDown).size(px(10.)))
+                                                        .child(div().text_xs().font_weight(gpui::FontWeight::BOLD).child(format!("{}", behind))),
                                                 )
                                             })
                                             .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(t.text_muted)
-                                                    .child("▾"),
+                                                Icon::new(IconName::ChevronDown)
+                                                    .size(px(10.))
+                                                    .text_color(t.text_muted),
                                             ),
                                     ),
                             )
@@ -1253,7 +1259,7 @@ impl RenderOnce for SidebarTree {
 
                                 // 1. Commit...
                                 m = m.item(
-                                    PopupMenuItem::new("Commit...")
+                                    PopupMenuItem::new("Commit...").icon(IconName::GitCommitHorizontal)
                                         .on_click(move |_, _, cx| {
                                             ws_commit.update(cx, |ws, cx| {
                                                 ws.open_git_modal(GitActiveModal::Commit, cx);
@@ -1263,7 +1269,7 @@ impl RenderOnce for SidebarTree {
 
                                 // 2. History
                                 m = m.item(
-                                    PopupMenuItem::new("History")
+                                    PopupMenuItem::new("History").icon(IconName::Clock)
                                         .on_click(move |_, _, cx| {
                                             ws_history.update(cx, |ws, cx| {
                                                 ws.open_git_modal(GitActiveModal::History, cx);
@@ -1321,7 +1327,7 @@ impl RenderOnce for SidebarTree {
 
                                 // 4. New Branch...
                                 m = m.item(
-                                    PopupMenuItem::new("New Branch...")
+                                    PopupMenuItem::new("New Branch...").icon(IconName::GitBranchPlus)
                                         .on_click(move |_, _, cx| {
                                             ws_new_branch.update(cx, |ws, cx| {
                                                 ws.open_git_modal(GitActiveModal::NewBranch, cx);
@@ -1333,7 +1339,7 @@ impl RenderOnce for SidebarTree {
 
                                 // 5. Fetch
                                 m = m.item(
-                                    PopupMenuItem::new("Fetch")
+                                    PopupMenuItem::new("Fetch").icon(IconName::CloudDownload)
                                         .on_click(move |_, _, cx| {
                                             let ws_s = ws_fetch.clone();
                                             let toast_s = toast_fetch.clone();
@@ -1357,7 +1363,7 @@ impl RenderOnce for SidebarTree {
 
                                 // 6. Pull
                                 m = m.item(
-                                    PopupMenuItem::new("Pull")
+                                    PopupMenuItem::new("Pull").icon(IconName::ArrowDown)
                                         .on_click(move |_, _, cx| {
                                             let ws_s = ws_pull.clone();
                                             let toast_s = toast_pull.clone();
@@ -1387,7 +1393,7 @@ impl RenderOnce for SidebarTree {
 
                                 // 7. Push
                                 m = m.item(
-                                    PopupMenuItem::new("Push")
+                                    PopupMenuItem::new("Push").icon(IconName::ArrowUp)
                                         .on_click(move |_, _, cx| {
                                             let ws_s = ws_push.clone();
                                             let toast_s = toast_push.clone();
@@ -1413,7 +1419,7 @@ impl RenderOnce for SidebarTree {
 
                                 // 8. Manage Remotes...
                                 m = m.item(
-                                    PopupMenuItem::new("Manage Remotes...")
+                                    PopupMenuItem::new("Manage Remotes...").icon(IconName::Globe)
                                         .on_click(move |_, _, cx| {
                                             ws_remotes.update(cx, |ws, cx| {
                                                 ws.open_git_modal(GitActiveModal::Remotes, cx);

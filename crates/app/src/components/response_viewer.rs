@@ -1,4 +1,4 @@
-use crate::components::tabs_with_badge::TabItem;
+﻿use crate::components::tabs_with_badge::TabItem;
 use crate::state::{EditorState, ResponseState, ResponseTabKind, ResponseViewMode, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
@@ -201,7 +201,7 @@ impl RenderOnce for ResponseViewer {
                                                         state.restore_live_response(&req_id, cx);
                                                     });
                                                 })
-                                                .child("← Live"),
+                                                .child(div().flex().items_center().gap(px(4.)).child(Icon::new(IconName::ArrowLeft).size(px(14.))).child("Live")),
                                         ),
                                 )
                             }),
@@ -429,7 +429,7 @@ impl RenderOnce for ResponseViewer {
                                             div()
                                                 .text_3xl()
                                                 .text_color(t.text_muted)
-                                                .child("🌐"),
+                                                .child(Icon::new(IconName::Globe).size(px(14.))),
                                         )
                                         .child(
                                             div()
@@ -891,7 +891,7 @@ impl RenderOnce for ResponseViewer {
                                                                                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(url.clone()));
                                                                                 }
                                                                             })
-                                                                            .child("📋 Copy URL"),
+                                                                            .child(Icon::new(IconName::Copy).size(px(14.))).child(" Copy URL"),
                                                                     )
                                                                     .child(
                                                                         div()
@@ -970,7 +970,7 @@ impl RenderOnce for ResponseViewer {
                                                                         .on_click(move |_, _, cx| {
                                                                             cx.write_to_clipboard(gpui::ClipboardItem::new_string(all_hdrs.clone()));
                                                                         })
-                                                                        .child("📋 Copy All"),
+                                                                        .child(Icon::new(IconName::Copy).size(px(14.))).child(" Copy All"),
                                                                 )
                                                             }),
                                                     )
@@ -1022,7 +1022,7 @@ impl RenderOnce for ResponseViewer {
                                                                             .on_click(move |_, _, cx| {
                                                                                 cx.write_to_clipboard(gpui::ClipboardItem::new_string(val_copy.clone()));
                                                                             })
-                                                                            .child("📋"),
+                                                                            .child(Icon::new(IconName::Copy).size(px(14.))),
                                                                     )
                                                             })),
                                                     ),
@@ -1066,7 +1066,7 @@ impl RenderOnce for ResponseViewer {
                                                                                 cx.write_to_clipboard(gpui::ClipboardItem::new_string(b_copy.clone()));
                                                                             }
                                                                         })
-                                                                        .child("📋 Copy Body"),
+                                                                        .child(Icon::new(IconName::Copy).size(px(14.))).child(" Copy Body"),
                                                                 ),
                                                         )
                                                         .child(
@@ -1126,7 +1126,7 @@ impl RenderOnce for ResponseViewer {
                                                         .on_click(move |_, _, cx| {
                                                             cx.write_to_clipboard(gpui::ClipboardItem::new_string(val_copy.clone()));
                                                         })
-                                                        .child("📋"),
+                                                        .child(Icon::new(IconName::Copy).size(px(14.))),
                                                 )
                                         }))
                                         .into_any_element()

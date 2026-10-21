@@ -1,4 +1,4 @@
-use crate::state::{EditorState, WorkspaceState};
+﻿use crate::state::{EditorState, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -8,7 +8,8 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_component::{Icon, IconName, InteractiveElementExt as _};
+use gpui_component::{Icon, InteractiveElementExt as _};
+use gpui_kit::assets::IconName;
 use std::sync::{Arc, OnceLock};
 
 struct TitleBarState {
@@ -212,7 +213,7 @@ impl RenderOnce for AppTitleBar {
 
                         let mut m = menu
                             .item(
-                                PopupMenuItem::new("✏️ Rename Workspace...")
+                                PopupMenuItem::new("Rename Workspace...").icon(IconName::Pencil)
                                     .on_click(move |_, window, cx| {
                                         ws_rename.update(cx, |state, cx| {
                                             state.start_renaming_workspace(window, cx);
@@ -220,7 +221,7 @@ impl RenderOnce for AppTitleBar {
                                     })
                             )
                             .item(
-                                PopupMenuItem::new("📂 Open Folder")
+                                PopupMenuItem::new("Open Folder").icon(IconName::FolderOpen)
                                     .on_click(move |_, _, cx| {
                                         ws_folder.update(cx, |state, _| {
                                             state.open_workspace_folder();
@@ -228,7 +229,7 @@ impl RenderOnce for AppTitleBar {
                                     })
                             )
                             .item(
-                                PopupMenuItem::new("🧹 Clean History")
+                                PopupMenuItem::new("Clean History").icon(IconName::Trash)
                                     .on_click(move |_, _, cx| {
                                         ws_clean.update(cx, |state, cx| {
                                             state.clean_history(cx);
@@ -236,7 +237,7 @@ impl RenderOnce for AppTitleBar {
                                     })
                             )
                             .item(
-                                PopupMenuItem::new("📥 Import...")
+                                PopupMenuItem::new("Import...").icon(IconName::Download)
                                     .on_click(move |_, _, cx| {
                                         ws_import.update(cx, |state, cx| {
                                             state.open_import_modal(None, cx);
@@ -245,7 +246,7 @@ impl RenderOnce for AppTitleBar {
                             )
                             .separator()
                             .item(
-                                PopupMenuItem::new("📁 Open Workspace...")
+                                PopupMenuItem::new("Open Workspace...").icon(IconName::Folder)
                                     .on_click(move |_, _, cx| {
                                         if let Some(folder) = rfd::FileDialog::new().pick_folder() {
                                             ws_open.update(cx, |state, cx| {
@@ -255,7 +256,7 @@ impl RenderOnce for AppTitleBar {
                                     })
                             )
                             .item(
-                                PopupMenuItem::new("✨ New Workspace...")
+                                PopupMenuItem::new("New Workspace...").icon(IconName::FolderPlus)
                                     .on_click(move |_, _, cx| {
                                         if let Some(folder) = rfd::FileDialog::new().pick_folder() {
                                             let name = folder
@@ -369,7 +370,7 @@ impl RenderOnce for AppTitleBar {
                         // 3. Separator and "Environment Settings..."
                         let ws_settings = ws_s.clone();
                         m = m.separator().item(
-                            PopupMenuItem::new("⚙ Environment Settings...")
+                            PopupMenuItem::new("Environment Settings...").icon(IconName::Settings)
                                 .on_click(move |_, _, cx| {
                                     ws_settings.update(cx, |state, cx| {
                                         state.show_env_modal = true;

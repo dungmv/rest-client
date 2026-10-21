@@ -1,4 +1,4 @@
-use crate::state::{ToastState, WorkspaceState};
+﻿use crate::state::{ToastState, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -7,6 +7,8 @@ use gpui::{
 };
 use gpui_component::input::{Input, InputState};
 use gpui_component::scroll::ScrollableElement as _;
+use gpui_component::Icon;
+use gpui_kit::assets::IconName;
 use restclient_core::importers::{
     parse_content, ImportFormat, ImportOptions, ImportResult,
 };
@@ -197,7 +199,7 @@ impl RenderOnce for ImportModal {
                                     .flex()
                                     .items_center()
                                     .gap(px(8.))
-                                    .child(div().text_base().child("📥"))
+                                    .child(Icon::new(IconName::Download).size(px(24.)))
                                     .child(
                                         div()
                                             .text_sm()

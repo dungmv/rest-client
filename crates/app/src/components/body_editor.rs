@@ -1,4 +1,4 @@
-use std::ops::Range;
+﻿use std::ops::Range;
 use crate::components::kv_table::KvTable;
 use crate::state::{EditorState, ToastState, WorkspaceState};
 use crate::theme::theme;
@@ -14,6 +14,8 @@ use gpui_component::input::{
     InputHighlighter, Rope, Textarea, TextareaState,
 };
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
+use gpui_component::Icon;
+use gpui_kit::assets::IconName;
 use gpui_component::scroll::ScrollableElement as _;
 use restclient_core::models::{KeyValuePair, MultipartItem, RequestBody};
 
@@ -1476,7 +1478,7 @@ impl RenderOnce for BodyEditor {
                                                             state.update_multipart_item(idx, k.clone(), v.clone(), !is_file, fp.clone(), enabled, cx);
                                                         });
                                                     })
-                                                    .child(if is_file { "📁 File" } else { "🔤 Text" })
+                                                    .child(div().flex().items_center().gap(px(3.)).child(Icon::new(if is_file { IconName::File } else { IconName::Type }).size(px(12.))).child(if is_file { "File" } else { "Text" }))
                                             })
                                             // Value or Path
                                             .child(

@@ -1,10 +1,12 @@
-use crate::state::WorkspaceState;
+﻿use crate::state::WorkspaceState;
 use crate::theme::theme;
 use gpui::{
     div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
     RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::input::Input;
+use gpui_component::Icon;
+use gpui_kit::assets::IconName;
 
 #[derive(IntoElement)]
 pub struct RenameWorkspaceModal {
@@ -85,7 +87,7 @@ impl RenderOnce for RenameWorkspaceModal {
                                     .flex()
                                     .items_center()
                                     .gap(px(8.))
-                                    .child("✏️")
+                                    .child(Icon::new(IconName::Pencil).size(px(20.)))
                                     .child(
                                         div()
                                             .text_sm()

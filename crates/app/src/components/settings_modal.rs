@@ -1,4 +1,4 @@
-use crate::components::status_badge::MethodBadge;
+﻿use crate::components::status_badge::MethodBadge;
 use crate::state::{EditorState, WorkspaceState};
 use crate::theme::{theme, ThemePreference};
 use gpui::{
@@ -6,6 +6,8 @@ use gpui::{
     RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::scroll::ScrollableElement as _;
+use gpui_component::Icon;
+use gpui_kit::assets::IconName;
 
 #[derive(IntoElement)]
 pub struct SettingsModal {
@@ -114,7 +116,7 @@ impl RenderOnce for SettingsModal {
                                     .flex()
                                     .items_center()
                                     .gap(px(8.))
-                                    .child("⚙")
+                                    .child(Icon::new(IconName::Settings).size(px(20.)))
                                     .child(
                                         div()
                                             .text_sm()

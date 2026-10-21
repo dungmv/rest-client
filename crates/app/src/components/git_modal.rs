@@ -1,4 +1,4 @@
-use crate::state::{GitActiveModal, WorkspaceState};
+﻿use crate::state::{GitActiveModal, WorkspaceState};
 use crate::theme::theme;
 use std::collections::HashSet;
 use gpui::prelude::FluentBuilder as _;
@@ -8,6 +8,8 @@ use gpui::{
 };
 use gpui_component::input::{Input, InputState};
 use gpui_component::scroll::ScrollableElement as _;
+use gpui_component::Icon;
+use gpui_kit::assets::IconName;
 use restclient_core::git::GitFileStatus;
 
 #[derive(IntoElement)]
@@ -792,7 +794,7 @@ fn render_error_banner(ws_clone: Entity<WorkspaceState>, err: String) -> gpui::A
             div()
                 .text_xs()
                 .text_color(t.status_5xx)
-                .child(format!("⚠️ Git: {}", err)),
+                .child(div().flex().items_center().gap(px(4.)).child(Icon::new(IconName::TriangleAlert).size(px(14.))).child(format!("Git: {}", err))),
         )
         .child(
             div()
@@ -862,7 +864,7 @@ fn render_not_a_repo_view(ws_clone: Entity<WorkspaceState>) -> gpui::AnyElement 
                         let _ = ws.git_init_repo(cx);
                     });
                 })
-                .child("✨ Initialize Git Repository"),
+                .child(div().flex().items_center().gap(px(6.)).child(Icon::new(IconName::GitBranch).size(px(14.))).child("Initialize Git Repository")),
         )
         .into_any_element()
 }

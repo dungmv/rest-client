@@ -1,4 +1,4 @@
-use crate::components::status_badge::MethodBadge;
+﻿use crate::components::status_badge::MethodBadge;
 use crate::state::{EditorState, GitTab, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
@@ -7,6 +7,8 @@ use gpui::{
     RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::Icon;
+use gpui_kit::assets::IconName;
 use gpui_component::scroll::ScrollableElement as _;
 
 #[derive(IntoElement)]
@@ -132,7 +134,7 @@ impl RenderOnce for CommandPalette {
                             .flex()
                             .items_center()
                             .gap(px(8.))
-                            .child("🔍")
+                            .child(Icon::new(IconName::Search).size(px(14.)))
                             .child(
                                 div()
                                     .flex_1()
@@ -206,7 +208,7 @@ impl RenderOnce for CommandPalette {
                                             .flex()
                                             .items_center()
                                             .gap(px(8.))
-                                            .child("✈")
+                                            .child(Icon::new(IconName::Send).size(px(14.)))
                                             .child(
                                                 div()
                                                     .text_xs()
@@ -242,7 +244,7 @@ impl RenderOnce for CommandPalette {
                                                 .flex()
                                                 .items_center()
                                                 .gap(px(8.))
-                                                .child("⚙")
+                                                .child(Icon::new(IconName::Settings).size(px(14.)))
                                                 .child(
                                                     div()
                                                         .text_xs()
@@ -282,7 +284,7 @@ impl RenderOnce for CommandPalette {
                                                 .flex()
                                                 .items_center()
                                                 .gap(px(8.))
-                                                .child("⎇")
+                                                .child(Icon::new(IconName::GitBranch).size(px(14.)))
                                                 .child(
                                                     div()
                                                         .text_xs()
@@ -322,7 +324,7 @@ impl RenderOnce for CommandPalette {
                                                 .flex()
                                                 .items_center()
                                                 .gap(px(8.))
-                                                .child("⎇")
+                                                .child(Icon::new(IconName::GitBranch).size(px(14.)))
                                                 .child(
                                                     div()
                                                         .text_xs()
@@ -359,7 +361,7 @@ impl RenderOnce for CommandPalette {
                                                 .flex()
                                                 .items_center()
                                                 .gap(px(8.))
-                                                .child("📥")
+                                                .child(Icon::new(IconName::Download).size(px(14.)))
                                                 .child(
                                                     div()
                                                         .text_xs()

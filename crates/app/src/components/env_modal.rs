@@ -1,4 +1,4 @@
-use crate::state::WorkspaceState;
+﻿use crate::state::WorkspaceState;
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -8,6 +8,8 @@ use gpui::{
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::{ContextMenuExt as _, PopupMenuItem};
 use gpui_component::scroll::ScrollableElement as _;
+use gpui_component::Icon;
+use gpui_kit::assets::IconName;
 use restclient_core::models::{Environment, EnvironmentVariable};
 
 #[derive(IntoElement)]
@@ -269,7 +271,7 @@ impl RenderOnce for EnvironmentModal {
                                                             .flex()
                                                             .items_center()
                                                             .gap(px(8.))
-                                                            .child(div().text_xs().child("🌐"))
+                                                            .child(Icon::new(IconName::Globe).size(px(12.)))
                                                             .child(
                                                                 div()
                                                                     .text_xs()
@@ -559,7 +561,7 @@ impl RenderOnce for EnvironmentModal {
                                                                         .text_sm()
                                                                         .font_weight(gpui::FontWeight::BOLD)
                                                                         .text_color(t.text_primary)
-                                                                        .child("🌐 Global Variables"),
+                                                                        .child(div().flex().items_center().gap(px(4.)).child(Icon::new(IconName::Globe).size(px(14.))).child("Global Variables")),
                                                                 )
                                                                 .child(
                                                                     div()
@@ -975,7 +977,7 @@ impl RenderOnce for EnvironmentModal {
                                                                             }
                                                                         });
                                                                     })
-                                                                    .child(if secret { "🔒 Secret" } else { "🔓 Visible" })
+                                                                    .child(if secret { div().flex().items_center().gap(px(4.)).child(Icon::new(IconName::Lock).size(px(14.))).child(" Secret").into_any_element() } else { div().flex().items_center().gap(px(4.)).child(Icon::new(IconName::LockOpen).size(px(14.))).child(" Visible").into_any_element() })
                                                             })
                                                             // Delete row button
                                                             .child({
