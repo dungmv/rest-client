@@ -1,5 +1,5 @@
 use super::common::{render_error_banner, render_not_a_repo_view};
-use crate::state::WorkspaceState;
+use crate::state::GitState;
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -11,17 +11,17 @@ use gpui_component::scroll::ScrollableElement as _;
 
 #[derive(IntoElement)]
 pub struct GitRemotesModal {
-    workspace_state: Entity<WorkspaceState>,
+    git_state: Entity<GitState>,
 }
 
 impl GitRemotesModal {
-    pub fn new(workspace_state: Entity<WorkspaceState>) -> Self {
-        Self { workspace_state }
+    pub fn new(git_state: Entity<GitState>) -> Self {
+        Self { git_state }
     }
 }
 
 pub fn render_remotes_view(
-    ws_clone: Entity<WorkspaceState>,
+    git_clone: Entity<GitState>,
     remotes: Vec<restclient_core::git::GitRemote>,
     remote_name_input: Entity<InputState>,
     remote_url_input: Entity<InputState>,
@@ -52,7 +52,7 @@ pub fn render_remotes_view(
                     )
                 })
                 .children(remotes.into_iter().map(|r| {
-                    let ws_del = ws_clone.clone();
+                    let git_del = git_clone.clone();
                     let r_name = r.name.clone();
 
                     div()
@@ -102,8 +102,8 @@ pub fn render_remotes_view(
                                 .text_color(t.text_muted)
                                 .hover(|s| s.bg(t.bg_card).text_color(t.status_5xx))
                                 .on_click(move |_, _, cx| {
-                                    ws_del.update(cx, |ws, cx| {
-                                        let _ = ws.git_remove_remote(&r_name, cx);
+                                    git_del.update(cx, |git, cx| {
+                                        let _ = git.remove_remote(&r_name, cx);
                                     });
                                 })
                                 .child("Remove"),
@@ -141,7 +141,7 @@ pub fn render_remotes_view(
                         .child(Input::new(&remote_url_input)),
                 )
                 .child({
-                    let ws_add = ws_clone.clone();
+                    let git_add = git_clone.clone();
                     let inp_n = remote_name_input.clone();
                     let inp_u = remote_url_input.clone();
                     div()
@@ -164,10 +164,10 @@ pub fn render_remotes_view(
                             if name.is_empty() || url.is_empty() {
                                 return;
                             }
-                            let ws_s = ws_add.clone();
+                            let git_s = git_add.clone();
                             let inp_u_clear = inp_u.clone();
-                            ws_s.update(cx, |ws, cx| {
-                                if ws.git_add_remote(&name, &url, cx).is_ok() {
+                            git_s.update(cx, |git, cx| {
+                                if git.add_remote(&name, &url, cx).is_ok() {
                                     inp_u_clear.update(cx, |inp_st, cx| {
                                         inp_st.set_value("", window, cx);
                                     });
@@ -183,12 +183,12 @@ pub fn render_remotes_view(
 impl RenderOnce for GitRemotesModal {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
-        let ws = self.workspace_state.read(cx);
-        let ws_clone = self.workspace_state.clone();
+        let git = self.git_state.read(cx);
+        let git_clone = self.git_state.clone();
 
-        let is_repo = ws.git_status.as_ref().map(|s| s.is_repo).unwrap_or(false);
-        let remotes = ws.git_remotes.clone();
-        let git_error = ws.git_error.clone();
+        let is_repo = git.status.as_ref().map(|s| s.is_repo).unwrap_or(false);
+        let remotes = git.remotes.clone();
+        let git_error = git.error.clone();
 
         let remote_name_holder = window.use_keyed_state(
             gpui::SharedString::from("git-remote-name-input"),
@@ -225,19 +225,19 @@ impl RenderOnce for GitRemotesModal {
             .items_center()
             .justify_center()
             .on_click({
-                let ws_s = ws_clone.clone();
+                let git_s = git_clone.clone();
                 move |_, _, cx| {
-                    ws_s.update(cx, |state, cx| {
-                        state.close_git_modal(cx);
+                    git_s.update(cx, |state, cx| {
+                        state.close_modal(cx);
                     });
                 }
             })
             .on_key_down({
-                let ws_s = ws_clone.clone();
+                let git_s = git_clone.clone();
                 move |event, _, cx| {
                     if event.keystroke.key.as_str() == "escape" {
-                        ws_s.update(cx, |state, cx| {
-                            state.close_git_modal(cx);
+                        git_s.update(cx, |state, cx| {
+                            state.close_modal(cx);
                         });
                     }
                 }
@@ -257,11 +257,11 @@ impl RenderOnce for GitRemotesModal {
                     .flex_col()
                     .overflow_hidden()
                     .on_key_down({
-                        let ws_s = ws_clone.clone();
+                        let git_s = git_clone.clone();
                         move |event, _, cx| {
                             if event.keystroke.key.as_str() == "escape" {
-                                ws_s.update(cx, |state, cx| {
-                                    state.close_git_modal(cx);
+                                git_s.update(cx, |state, cx| {
+                                    state.close_modal(cx);
                                 });
                             }
                         }
@@ -307,10 +307,10 @@ impl RenderOnce for GitRemotesModal {
                                     .text_color(t.text_muted)
                                     .hover(|s| s.text_color(t.text_primary))
                                     .on_click({
-                                        let ws_s = ws_clone.clone();
+                                        let git_s = git_clone.clone();
                                         move |_, _, cx| {
-                                            ws_s.update(cx, |state, cx| {
-                                                state.close_git_modal(cx);
+                                            git_s.update(cx, |state, cx| {
+                                                state.close_modal(cx);
                                             });
                                         }
                                     })
@@ -319,7 +319,7 @@ impl RenderOnce for GitRemotesModal {
                     )
                     // Error banner
                     .when_some(git_error, |this, err| {
-                        this.child(render_error_banner(ws_clone.clone(), err))
+                        this.child(render_error_banner(git_clone.clone(), err))
                     })
                     // Body
                     .child(
@@ -327,10 +327,10 @@ impl RenderOnce for GitRemotesModal {
                             .flex_1()
                             .overflow_hidden()
                             .child(if !is_repo {
-                                render_not_a_repo_view(ws_clone.clone())
+                                render_not_a_repo_view(git_clone.clone())
                             } else {
                                 render_remotes_view(
-                                    ws_clone.clone(),
+                                    git_clone.clone(),
                                     remotes,
                                     remote_name_input,
                                     remote_url_input,

@@ -1,5 +1,5 @@
 use super::common::{render_error_banner, render_not_a_repo_view};
-use crate::state::WorkspaceState;
+use crate::state::GitState;
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -10,23 +10,23 @@ use gpui_component::input::{Input, InputState};
 
 #[derive(IntoElement)]
 pub struct GitBranchModal {
-    workspace_state: Entity<WorkspaceState>,
+    git_state: Entity<GitState>,
 }
 
 impl GitBranchModal {
-    pub fn new(workspace_state: Entity<WorkspaceState>) -> Self {
-        Self { workspace_state }
+    pub fn new(git_state: Entity<GitState>) -> Self {
+        Self { git_state }
     }
 }
 
 pub fn render_new_branch_view(
-    ws_clone: Entity<WorkspaceState>,
+    git_clone: Entity<GitState>,
     current_branch: String,
     branch_input: Entity<InputState>,
 ) -> gpui::AnyElement {
     let t = theme();
-    let ws_create = ws_clone.clone();
-    let ws_cancel = ws_clone.clone();
+    let git_create = git_clone.clone();
+    let git_cancel = git_clone.clone();
     let inp = branch_input.clone();
     let inp_val = branch_input.clone();
 
@@ -34,7 +34,7 @@ pub fn render_new_branch_view(
         .p(px(20.))
         .flex()
         .flex_col()
-        .gap(px(14.))
+        .gap(px(16.))
         .child(
             div()
                 .flex()
@@ -42,50 +42,36 @@ pub fn render_new_branch_view(
                 .gap(px(6.))
                 .child(
                     div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .child(
-                            div()
-                                .text_xs()
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .text_color(t.text_primary)
-                                .child("Branch name"),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(t.text_muted)
-                                .child(format!("Based on: {}", current_branch)),
-                        ),
+                        .text_xs()
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(t.text_primary)
+                        .child("Branch Name"),
                 )
                 .child(
                     div()
-                        .bg(t.bg_sidebar)
+                        .bg(t.bg_input)
                         .border_1()
                         .border_color(t.border)
                         .rounded(px(6.))
-                        .p(px(4.))
+                        .p(px(6.))
                         .child(Input::new(&branch_input)),
                 )
                 .child(
                     div()
                         .text_xs()
                         .text_color(t.text_muted)
-                        .child("The new branch will be created and checked out automatically."),
+                        .child(format!("Branch will be created based on \"{}\"", current_branch)),
                 ),
         )
-        // Buttons
         .child(
             div()
                 .flex()
                 .items_center()
                 .justify_end()
                 .gap(px(8.))
-                .pt(px(6.))
                 .child(
                     div()
-                        .id("btn-cancel-branch")
+                        .id("btn-cancel-create-branch")
                         .px(px(14.))
                         .py(px(6.))
                         .rounded(px(6.))
@@ -93,26 +79,24 @@ pub fn render_new_branch_view(
                         .border_color(t.border)
                         .cursor_pointer()
                         .text_xs()
-                        .text_color(t.text_secondary)
-                        .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(t.text_primary)
+                        .hover(|s| s.bg(t.bg_hover))
                         .on_click(move |_, _, cx| {
-                            ws_cancel.update(cx, |ws, cx| {
-                                ws.close_git_modal(cx);
+                            git_cancel.update(cx, |git, cx| {
+                                git.close_modal(cx);
                             });
                         })
                         .child("Cancel"),
                 )
                 .child(
                     div()
-                        .id("btn-create-branch-action")
+                        .id("btn-confirm-create-branch")
                         .px(px(14.))
                         .py(px(6.))
                         .rounded(px(6.))
                         .bg(t.primary)
                         .cursor_pointer()
-                        .flex()
-                        .items_center()
-                        .justify_center()
                         .text_xs()
                         .font_weight(gpui::FontWeight::BOLD)
                         .text_color(gpui::rgb(0xffffff))
@@ -122,14 +106,14 @@ pub fn render_new_branch_view(
                             if name.is_empty() {
                                 return;
                             }
-                            let ws_s = ws_create.clone();
+                            let git_s = git_create.clone();
                             let inp_clear = inp.clone();
-                            ws_s.update(cx, |ws, cx| {
-                                if ws.git_create_branch(&name, cx).is_ok() {
+                            git_s.update(cx, |git, cx| {
+                                if git.create_branch(&name, cx).is_ok() {
                                     inp_clear.update(cx, |inp_st, cx| {
                                         inp_st.set_value("", window, cx);
                                     });
-                                    ws.close_git_modal(cx);
+                                    git.close_modal(cx);
                                 }
                             });
                         })
@@ -142,12 +126,12 @@ pub fn render_new_branch_view(
 impl RenderOnce for GitBranchModal {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
-        let ws = self.workspace_state.read(cx);
-        let ws_clone = self.workspace_state.clone();
+        let git = self.git_state.read(cx);
+        let git_clone = self.git_state.clone();
 
-        let is_repo = ws.git_status.as_ref().map(|s| s.is_repo).unwrap_or(false);
-        let current_branch = ws.git_branch.clone().unwrap_or_else(|| "main".to_string());
-        let git_error = ws.git_error.clone();
+        let is_repo = git.status.as_ref().map(|s| s.is_repo).unwrap_or(false);
+        let current_branch = git.branch.clone().unwrap_or_else(|| "main".to_string());
+        let git_error = git.error.clone();
 
         let branch_input_holder = window.use_keyed_state(
             gpui::SharedString::from("git-new-branch-input"),
@@ -170,19 +154,19 @@ impl RenderOnce for GitBranchModal {
             .items_center()
             .justify_center()
             .on_click({
-                let ws_s = ws_clone.clone();
+                let git_s = git_clone.clone();
                 move |_, _, cx| {
-                    ws_s.update(cx, |state, cx| {
-                        state.close_git_modal(cx);
+                    git_s.update(cx, |state, cx| {
+                        state.close_modal(cx);
                     });
                 }
             })
             .on_key_down({
-                let ws_s = ws_clone.clone();
+                let git_s = git_clone.clone();
                 move |event, _, cx| {
                     if event.keystroke.key.as_str() == "escape" {
-                        ws_s.update(cx, |state, cx| {
-                            state.close_git_modal(cx);
+                        git_s.update(cx, |state, cx| {
+                            state.close_modal(cx);
                         });
                     }
                 }
@@ -201,11 +185,11 @@ impl RenderOnce for GitBranchModal {
                     .flex_col()
                     .overflow_hidden()
                     .on_key_down({
-                        let ws_s = ws_clone.clone();
+                        let git_s = git_clone.clone();
                         move |event, _, cx| {
                             if event.keystroke.key.as_str() == "escape" {
-                                ws_s.update(cx, |state, cx| {
-                                    state.close_git_modal(cx);
+                                git_s.update(cx, |state, cx| {
+                                    state.close_modal(cx);
                                 });
                             }
                         }
@@ -230,14 +214,14 @@ impl RenderOnce for GitBranchModal {
                                         div()
                                             .text_base()
                                             .text_color(t.primary)
-                                            .child("⎇"),
+                                            .child("🌱"),
                                     )
                                     .child(
                                         div()
                                             .text_sm()
                                             .font_weight(gpui::FontWeight::BOLD)
                                             .text_color(t.text_primary)
-                                            .child("New Branch"),
+                                            .child("Create New Branch"),
                                     ),
                             )
                             .child(
@@ -251,10 +235,10 @@ impl RenderOnce for GitBranchModal {
                                     .text_color(t.text_muted)
                                     .hover(|s| s.text_color(t.text_primary))
                                     .on_click({
-                                        let ws_s = ws_clone.clone();
+                                        let git_s = git_clone.clone();
                                         move |_, _, cx| {
-                                            ws_s.update(cx, |state, cx| {
-                                                state.close_git_modal(cx);
+                                            git_s.update(cx, |state, cx| {
+                                                state.close_modal(cx);
                                             });
                                         }
                                     })
@@ -263,16 +247,14 @@ impl RenderOnce for GitBranchModal {
                     )
                     // Error banner
                     .when_some(git_error, |this, err| {
-                        this.child(render_error_banner(ws_clone.clone(), err))
+                        this.child(render_error_banner(git_clone.clone(), err))
                     })
                     // Body
-                    .child(
-                        if !is_repo {
-                            render_not_a_repo_view(ws_clone.clone())
-                        } else {
-                            render_new_branch_view(ws_clone.clone(), current_branch, branch_input)
-                        },
-                    ),
+                    .child(if !is_repo {
+                        render_not_a_repo_view(git_clone.clone())
+                    } else {
+                        render_new_branch_view(git_clone.clone(), current_branch, branch_input)
+                    }),
             )
             .into_any_element()
     }

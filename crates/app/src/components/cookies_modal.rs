@@ -1,4 +1,4 @@
-use crate::state::WorkspaceState;
+use crate::state::{ModalState, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::{
     div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
@@ -8,12 +8,19 @@ use gpui_component::scroll::ScrollableElement as _;
 
 #[derive(IntoElement)]
 pub struct CookiesModal {
-    workspace_state: Entity<WorkspaceState>,
+    workspace_state: Entity<WorkspaceDataState>,
+    modal_state: Entity<ModalState>,
 }
 
 impl CookiesModal {
-    pub fn new(workspace_state: Entity<WorkspaceState>) -> Self {
-        Self { workspace_state }
+    pub fn new(
+        workspace_state: Entity<WorkspaceDataState>,
+        modal_state: Entity<ModalState>,
+    ) -> Self {
+        Self {
+            workspace_state,
+            modal_state,
+        }
     }
 }
 
@@ -21,6 +28,7 @@ impl RenderOnce for CookiesModal {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let t = theme();
         let ws_clone = self.workspace_state.clone();
+        let modal_clone = self.modal_state.clone();
 
         div()
             .id("cookies-modal-overlay")
@@ -31,21 +39,19 @@ impl RenderOnce for CookiesModal {
             .items_center()
             .justify_center()
             .on_click({
-                let ws_s = ws_clone.clone();
+                let modal_s = modal_clone.clone();
                 move |_, _, cx| {
-                    ws_s.update(cx, |state, cx| {
-                        state.show_cookies_modal = false;
-                        cx.notify();
+                    modal_s.update(cx, |state, cx| {
+                        state.toggle_cookies_modal(cx);
                     });
                 }
             })
             .on_key_down({
-                let ws_s = ws_clone.clone();
+                let modal_s = modal_clone.clone();
                 move |event, _, cx| {
                     if event.keystroke.key.as_str() == "escape" {
-                        ws_s.update(cx, |state, cx| {
-                            state.show_cookies_modal = false;
-                            cx.notify();
+                        modal_s.update(cx, |state, cx| {
+                            state.toggle_cookies_modal(cx);
                         });
                     }
                 }
@@ -64,12 +70,11 @@ impl RenderOnce for CookiesModal {
                     .flex()
                     .flex_col()
                     .on_key_down({
-                        let ws_s = ws_clone.clone();
+                        let modal_s = modal_clone.clone();
                         move |event, _, cx| {
                             if event.keystroke.key.as_str() == "escape" {
-                                ws_s.update(cx, |state, cx| {
-                                    state.show_cookies_modal = false;
-                                    cx.notify();
+                                modal_s.update(cx, |state, cx| {
+                                    state.toggle_cookies_modal(cx);
                                 });
                             }
                         }
@@ -99,14 +104,14 @@ impl RenderOnce for CookiesModal {
                                     ),
                             )
                             .child({
-                                let ws_s = ws_clone.clone();
+                                let modal_s = modal_clone.clone();
                                 div()
                                     .id("close-cookies-modal")
                                     .cursor_pointer()
                                     .text_color(t.text_muted)
                                     .hover(|s| s.text_color(t.text_primary))
                                     .on_click(move |_, _, cx| {
-                                        ws_s.update(cx, |state, cx| {
+                                        modal_s.update(cx, |state, cx| {
                                             state.toggle_cookies_modal(cx);
                                         });
                                     })
@@ -163,7 +168,7 @@ impl RenderOnce for CookiesModal {
                                     .child("Clear Cookies")
                             })
                             .child({
-                                let ws_s = ws_clone.clone();
+                                let modal_s = modal_clone.clone();
                                 div()
                                     .id("btn-cookies-modal-done")
                                     .px(px(12.))
@@ -176,7 +181,7 @@ impl RenderOnce for CookiesModal {
                                     .text_xs()
                                     .font_weight(gpui::FontWeight::SEMIBOLD)
                                     .on_click(move |_, _, cx| {
-                                        ws_s.update(cx, |state, cx| {
+                                        modal_s.update(cx, |state, cx| {
                                             state.toggle_cookies_modal(cx);
                                         });
                                     })

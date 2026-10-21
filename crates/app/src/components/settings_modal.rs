@@ -1,5 +1,5 @@
-﻿use crate::components::status_badge::MethodBadge;
-use crate::state::{EditorState, WorkspaceState};
+use crate::components::status_badge::MethodBadge;
+use crate::state::{EditorState, ModalState, WorkspaceDataState};
 use crate::theme::{theme, ThemePreference};
 use gpui::{
     div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
@@ -11,17 +11,20 @@ use gpui_kit::assets::IconName;
 
 #[derive(IntoElement)]
 pub struct SettingsModal {
-    workspace_state: Entity<WorkspaceState>,
+    workspace_state: Entity<WorkspaceDataState>,
+    modal_state: Entity<ModalState>,
     editor_state: Entity<EditorState>,
 }
 
 impl SettingsModal {
     pub fn new(
-        workspace_state: Entity<WorkspaceState>,
+        workspace_state: Entity<WorkspaceDataState>,
+        modal_state: Entity<ModalState>,
         editor_state: Entity<EditorState>,
     ) -> Self {
         Self {
             workspace_state,
+            modal_state,
             editor_state,
         }
     }
@@ -31,9 +34,10 @@ impl RenderOnce for SettingsModal {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
         let ws_clone = self.workspace_state.clone();
+        let modal_clone = self.modal_state.clone();
         let ed_clone = self.editor_state.clone();
 
-        let cur_pref = ws_clone.read(cx).theme_preference;
+        let cur_pref = modal_clone.read(cx).theme_preference;
 
         let active_req = ed_clone.read(cx).active_request.clone();
         let settings = active_req
@@ -57,20 +61,19 @@ impl RenderOnce for SettingsModal {
             .items_center()
             .justify_center()
             .on_click({
-                let ws_s = ws_clone.clone();
+                let modal_s = modal_clone.clone();
                 move |_, _, cx| {
-                    ws_s.update(cx, |state, cx| {
+                    modal_s.update(cx, |state, cx| {
                         state.toggle_settings_modal(cx);
                     });
                 }
             })
             .on_key_down({
-                let ws_s = ws_clone.clone();
+                let modal_s = modal_clone.clone();
                 move |event, _, cx| {
                     if event.keystroke.key.as_str() == "escape" {
-                        ws_s.update(cx, |state, cx| {
-                            state.show_settings_modal = false;
-                            cx.notify();
+                        modal_s.update(cx, |state, cx| {
+                            state.close_settings_modal(cx);
                         });
                     }
                 }
@@ -90,12 +93,11 @@ impl RenderOnce for SettingsModal {
                     .flex_col()
                     .overflow_hidden()
                     .on_key_down({
-                        let ws_s = ws_clone.clone();
+                        let modal_s = modal_clone.clone();
                         move |event, _, cx| {
                             if event.keystroke.key.as_str() == "escape" {
-                                ws_s.update(cx, |state, cx| {
-                                    state.show_settings_modal = false;
-                                    cx.notify();
+                                modal_s.update(cx, |state, cx| {
+                                    state.close_settings_modal(cx);
                                 });
                             }
                         }
@@ -126,7 +128,7 @@ impl RenderOnce for SettingsModal {
                                     ),
                             )
                             .child({
-                                let ws_s = ws_clone.clone();
+                                let modal_s = modal_clone.clone();
                                 div()
                                     .id("close-settings-modal")
                                     .cursor_pointer()
@@ -136,7 +138,7 @@ impl RenderOnce for SettingsModal {
                                     .text_color(t.text_muted)
                                     .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
                                     .on_click(move |_, _, cx| {
-                                        ws_s.update(cx, |state, cx| {
+                                        modal_s.update(cx, |state, cx| {
                                             state.toggle_settings_modal(cx);
                                         });
                                     })
@@ -245,7 +247,7 @@ impl RenderOnce for SettingsModal {
                                                 (ThemePreference::Light, "☀️ Light", "Clean White"),
                                             ].into_iter().map(|(pref, label, sublabel)| {
                                                 let is_cur = cur_pref == pref;
-                                                let ws_set = ws_clone.clone();
+                                                let modal_set = modal_clone.clone();
                                                 div()
                                                     .id(format!("theme-pref-btn-{:?}", pref))
                                                     .flex_1()
@@ -266,7 +268,7 @@ impl RenderOnce for SettingsModal {
                                                         }
                                                     })
                                                     .on_click(move |_, _, cx| {
-                                                        ws_set.update(cx, |st, cx| {
+                                                        modal_set.update(cx, |st, cx| {
                                                             st.set_theme_preference(pref, cx);
                                                         });
                                                     })
@@ -622,7 +624,7 @@ impl RenderOnce for SettingsModal {
                                                     .child("Clear")
                                             })
                                             .child({
-                                                let ws_s = ws_clone.clone();
+                                                let modal_s = modal_clone.clone();
                                                 div()
                                                     .id("btn-settings-open-cookies")
                                                     .px(px(10.))
@@ -635,10 +637,9 @@ impl RenderOnce for SettingsModal {
                                                     .text_xs()
                                                     .font_weight(gpui::FontWeight::MEDIUM)
                                                     .on_click(move |_, _, cx| {
-                                                        ws_s.update(cx, |state, cx| {
-                                                            state.show_settings_modal = false;
-                                                            state.show_cookies_modal = true;
-                                                            cx.notify();
+                                                        modal_s.update(cx, |state, cx| {
+                                                            state.close_settings_modal(cx);
+                                                            state.open_cookies_modal(cx);
                                                         });
                                                     })
                                                     .child("🍪 Manage Cookies...")
@@ -774,7 +775,7 @@ impl RenderOnce for SettingsModal {
                             .items_center()
                             .justify_end()
                             .child({
-                                let ws_s = ws_clone.clone();
+                                let modal_s = modal_clone.clone();
                                 div()
                                     .id("btn-done-settings")
                                     .px(px(14.))
@@ -787,8 +788,8 @@ impl RenderOnce for SettingsModal {
                                     .text_xs()
                                     .font_weight(gpui::FontWeight::SEMIBOLD)
                                     .on_click(move |_, _, cx| {
-                                        ws_s.update(cx, |state, cx| {
-                                            state.toggle_settings_modal(cx);
+                                        modal_s.update(cx, |state, cx| {
+                                            state.close_settings_modal(cx);
                                         });
                                     })
                                     .child("Done")

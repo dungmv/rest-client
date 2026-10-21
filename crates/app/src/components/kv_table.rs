@@ -2,7 +2,7 @@ use crate::components::env_autocomplete::{
     build_tokenized_content, detect_unclosed_env_var, get_env_completions, get_variable_details,
     get_variable_kind_and_color, EnvVarCandidate,
 };
-use crate::state::WorkspaceState;
+use crate::state::{ModalState, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -36,7 +36,8 @@ pub struct KvTable {
     on_update: Rc<dyn Fn(usize, String, String, bool, &mut Window, &mut App)>,
     on_add: Rc<dyn Fn(&mut Window, &mut App)>,
     on_remove: Rc<dyn Fn(usize, &mut Window, &mut App)>,
-    workspace_state: Option<Entity<WorkspaceState>>,
+    workspace_state: Option<Entity<WorkspaceDataState>>,
+    modal_state: Option<Entity<ModalState>>,
 }
 
 impl KvTable {
@@ -54,16 +55,27 @@ impl KvTable {
             on_add: Rc::new(on_add),
             on_remove: Rc::new(on_remove),
             workspace_state: None,
+            modal_state: None,
         }
     }
 
-    pub fn workspace_state(mut self, ws: Entity<WorkspaceState>) -> Self {
+    pub fn workspace_state(mut self, ws: Entity<WorkspaceDataState>) -> Self {
         self.workspace_state = Some(ws);
         self
     }
 
-    pub fn optional_workspace_state(mut self, ws: Option<Entity<WorkspaceState>>) -> Self {
+    pub fn optional_workspace_state(mut self, ws: Option<Entity<WorkspaceDataState>>) -> Self {
         self.workspace_state = ws;
+        self
+    }
+
+    pub fn modal_state(mut self, modal: Entity<ModalState>) -> Self {
+        self.modal_state = Some(modal);
+        self
+    }
+
+    pub fn optional_modal_state(mut self, modal: Option<Entity<ModalState>>) -> Self {
+        self.modal_state = modal;
         self
     }
 }
@@ -74,6 +86,7 @@ impl RenderOnce for KvTable {
         let on_add_cb = self.on_add.clone();
         let id_prefix = self.id_prefix.clone();
         let ws_clone = self.workspace_state.clone();
+        let modal_clone = self.modal_state.clone();
 
         // Precompute variable information for all rows before running use_keyed_state
         let row_env_info: Vec<RowEnvData> = if let Some(ws_entity) = &self.workspace_state {
@@ -303,7 +316,7 @@ impl RenderOnce for KvTable {
                                     .flex_1()
                                     .child({
                                         let ws_k = ws_clone.clone();
-                                        let ws_modal_k = ws_clone.clone();
+                                        let modal_k = modal_clone.clone();
                                         let h_k = hover_k_state.clone();
                                         Input::new(&key_input)
                                             .id(gpui::SharedString::from(format!("{}-key", row_prefix)))
@@ -343,9 +356,9 @@ impl RenderOnce for KvTable {
                                                     cx.notify();
                                                 });
                                             })
-                                            .when_some(ws_modal_k, |el, ws| {
+                                            .when_some(modal_k, |el, modal| {
                                                 el.on_token_click(move |_, _window, cx| {
-                                                    ws.update(cx, |state, cx| {
+                                                    modal.update(cx, |state, cx| {
                                                         state.toggle_env_modal(cx);
                                                     });
                                                 })
@@ -548,7 +561,7 @@ impl RenderOnce for KvTable {
                                     .flex_1()
                                     .child({
                                         let ws_v = ws_clone.clone();
-                                        let ws_modal_v = ws_clone.clone();
+                                        let modal_v = modal_clone.clone();
                                         let h_v = hover_v_state.clone();
                                         Input::new(&val_input)
                                             .id(gpui::SharedString::from(format!("{}-val", row_prefix)))
@@ -588,9 +601,9 @@ impl RenderOnce for KvTable {
                                                     cx.notify();
                                                 });
                                             })
-                                            .when_some(ws_modal_v, |el, ws| {
+                                            .when_some(modal_v, |el, modal| {
                                                 el.on_token_click(move |_, _window, cx| {
-                                                    ws.update(cx, |state, cx| {
+                                                    modal.update(cx, |state, cx| {
                                                         state.toggle_env_modal(cx);
                                                     });
                                                 })

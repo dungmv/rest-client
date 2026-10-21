@@ -1,5 +1,7 @@
-﻿use crate::components::status_badge::MethodBadge;
-use crate::state::{EditorState, GitTab, WorkspaceState};
+use crate::components::status_badge::MethodBadge;
+use crate::state::{
+    EditorState, GitActiveModal, GitState, GitTab, ModalState, SidebarState, WorkspaceDataState,
+};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -7,25 +9,34 @@ use gpui::{
     RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
-use gpui_component::scroll::ScrollableElement as _;
 
 #[derive(IntoElement)]
 pub struct CommandPalette {
-    workspace_state: Entity<WorkspaceState>,
+    workspace_state: Entity<WorkspaceDataState>,
+    modal_state: Entity<ModalState>,
+    sidebar_state: Entity<SidebarState>,
+    git_state: Entity<GitState>,
     editor_state: Entity<EditorState>,
     on_send: std::rc::Rc<dyn Fn(&mut Window, &mut App)>,
 }
 
 impl CommandPalette {
     pub fn new(
-        workspace_state: Entity<WorkspaceState>,
+        workspace_state: Entity<WorkspaceDataState>,
+        modal_state: Entity<ModalState>,
+        sidebar_state: Entity<SidebarState>,
+        git_state: Entity<GitState>,
         editor_state: Entity<EditorState>,
         on_send: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         Self {
             workspace_state,
+            modal_state,
+            sidebar_state,
+            git_state,
             editor_state,
             on_send: std::rc::Rc::new(on_send),
         }
@@ -48,6 +59,9 @@ impl RenderOnce for CommandPalette {
         let envs = ws.environments.clone();
 
         let ws_clone = self.workspace_state.clone();
+        let modal_clone = self.modal_state.clone();
+        let sb_clone = self.sidebar_state.clone();
+        let git_clone = self.git_state.clone();
         let ed_clone = self.editor_state.clone();
         let on_send = self.on_send.clone();
 
@@ -81,21 +95,19 @@ impl RenderOnce for CommandPalette {
             .justify_center()
             .pt(px(100.))
             .on_click({
-                let ws_s = ws_clone.clone();
+                let modal_s = modal_clone.clone();
                 move |_, _, cx| {
-                    ws_s.update(cx, |state, cx| {
-                        state.show_command_palette = false;
-                        cx.notify();
+                    modal_s.update(cx, |state, cx| {
+                        state.close_command_palette(cx);
                     });
                 }
             })
             .on_key_down({
-                let ws_s = ws_clone.clone();
+                let modal_s = modal_clone.clone();
                 move |event, _, cx| {
                     if event.keystroke.key.as_str() == "escape" {
-                        ws_s.update(cx, |state, cx| {
-                            state.show_command_palette = false;
-                            cx.notify();
+                        modal_s.update(cx, |state, cx| {
+                            state.close_command_palette(cx);
                         });
                     }
                 }
@@ -114,12 +126,11 @@ impl RenderOnce for CommandPalette {
                     .flex()
                     .flex_col()
                     .on_key_down({
-                        let ws_s = ws_clone.clone();
+                        let modal_s = modal_clone.clone();
                         move |event, _, cx| {
                             if event.keystroke.key.as_str() == "escape" {
-                                ws_s.update(cx, |state, cx| {
-                                    state.show_command_palette = false;
-                                    cx.notify();
+                                modal_s.update(cx, |state, cx| {
+                                    state.close_command_palette(cx);
                                 });
                             }
                         }
@@ -139,12 +150,11 @@ impl RenderOnce for CommandPalette {
                                 div()
                                     .flex_1()
                                     .on_key_down({
-                                        let ws_s = ws_clone.clone();
+                                        let modal_s = modal_clone.clone();
                                         move |event, _, cx| {
                                             if event.keystroke.key.as_str() == "escape" {
-                                                ws_s.update(cx, |state, cx| {
-                                                    state.show_command_palette = false;
-                                                    cx.notify();
+                                                modal_s.update(cx, |state, cx| {
+                                                    state.close_command_palette(cx);
                                                 });
                                             }
                                         }
@@ -159,7 +169,7 @@ impl RenderOnce for CommandPalette {
                                     ),
                             )
                             .child({
-                                let ws_s = ws_clone.clone();
+                                let modal_s = modal_clone.clone();
                                 div()
                                     .id("close-cmd-pal")
                                     .cursor_pointer()
@@ -167,8 +177,8 @@ impl RenderOnce for CommandPalette {
                                     .text_color(t.text_muted)
                                     .hover(|s| s.text_color(t.text_primary))
                                     .on_click(move |_, _, cx| {
-                                        ws_s.update(cx, |state, cx| {
-                                            state.toggle_command_palette(cx);
+                                        modal_s.update(cx, |state, cx| {
+                                            state.close_command_palette(cx);
                                         });
                                     })
                                     .child("ESC")
@@ -185,7 +195,7 @@ impl RenderOnce for CommandPalette {
                             .gap(px(4.))
                             // Action: Send active request
                             .child({
-                                let ws_s = ws_clone.clone();
+                                let modal_s = modal_clone.clone();
                                 let on_send_cb = on_send.clone();
                                 div()
                                     .id("cmd-send-req")
@@ -198,8 +208,8 @@ impl RenderOnce for CommandPalette {
                                     .items_center()
                                     .justify_between()
                                     .on_click(move |_, window, cx| {
-                                        ws_s.update(cx, |state, cx| {
-                                            state.toggle_command_palette(cx);
+                                        modal_s.update(cx, |state, cx| {
+                                            state.close_command_palette(cx);
                                         });
                                         on_send_cb(window, cx);
                                     })
@@ -221,7 +231,7 @@ impl RenderOnce for CommandPalette {
                             })
                             // Action: Open Settings
                             .when(q.is_empty() || "settings".contains(&q) || "preferences".contains(&q), |this| {
-                                let ws_s = ws_clone.clone();
+                                let modal_s = modal_clone.clone();
                                 this.child(
                                     div()
                                         .id("cmd-open-settings")
@@ -234,9 +244,9 @@ impl RenderOnce for CommandPalette {
                                         .items_center()
                                         .justify_between()
                                         .on_click(move |_, _, cx| {
-                                            ws_s.update(cx, |state, cx| {
-                                                state.toggle_command_palette(cx);
-                                                state.toggle_settings_modal(cx);
+                                            modal_s.update(cx, |state, cx| {
+                                                state.close_command_palette(cx);
+                                                state.open_settings_modal(cx);
                                             });
                                         })
                                         .child(
@@ -258,7 +268,8 @@ impl RenderOnce for CommandPalette {
                             })
                             // Action: Git Source Control
                             .when(q.is_empty() || "git".contains(&q) || "source control".contains(&q) || "commit".contains(&q) || "diff".contains(&q), |this| {
-                                let ws_s = ws_clone.clone();
+                                let modal_s = modal_clone.clone();
+                                let git_s = git_clone.clone();
                                 this.child(
                                     div()
                                         .id("cmd-open-git")
@@ -271,12 +282,12 @@ impl RenderOnce for CommandPalette {
                                         .items_center()
                                         .justify_between()
                                         .on_click(move |_, _, cx| {
-                                            ws_s.update(cx, |state, cx| {
-                                                state.toggle_command_palette(cx);
-                                                state.set_git_tab(GitTab::Changes, cx);
-                                                if !state.show_git_modal {
-                                                    state.toggle_git_modal(cx);
-                                                }
+                                            modal_s.update(cx, |state, cx| {
+                                                state.close_command_palette(cx);
+                                            });
+                                            git_s.update(cx, |state, cx| {
+                                                state.set_tab(GitTab::Changes, cx);
+                                                state.open_modal(GitActiveModal::Commit, cx);
                                             });
                                         })
                                         .child(
@@ -298,7 +309,8 @@ impl RenderOnce for CommandPalette {
                             })
                             // Action: Git Switch Branch / Checkout
                             .when(q.is_empty() || "git".contains(&q) || "branch".contains(&q) || "checkout".contains(&q), |this| {
-                                let ws_s = ws_clone.clone();
+                                let modal_s = modal_clone.clone();
+                                let git_s = git_clone.clone();
                                 this.child(
                                     div()
                                         .id("cmd-git-checkout")
@@ -311,12 +323,12 @@ impl RenderOnce for CommandPalette {
                                         .items_center()
                                         .justify_between()
                                         .on_click(move |_, _, cx| {
-                                            ws_s.update(cx, |state, cx| {
-                                                state.toggle_command_palette(cx);
-                                                state.set_git_tab(GitTab::Branches, cx);
-                                                if !state.show_git_modal {
-                                                    state.toggle_git_modal(cx);
-                                                }
+                                            modal_s.update(cx, |state, cx| {
+                                                state.close_command_palette(cx);
+                                            });
+                                            git_s.update(cx, |state, cx| {
+                                                state.set_tab(GitTab::Branches, cx);
+                                                state.open_modal(GitActiveModal::NewBranch, cx);
                                             });
                                         })
                                         .child(
@@ -338,7 +350,7 @@ impl RenderOnce for CommandPalette {
                             })
                             // Action: Import OpenAPI or Postman
                             .when(q.is_empty() || "import".contains(&q) || "openapi".contains(&q) || "postman".contains(&q) || "swagger".contains(&q), |this| {
-                                let ws_s = ws_clone.clone();
+                                let modal_s = modal_clone.clone();
                                 this.child(
                                     div()
                                         .id("cmd-import-spec")
@@ -351,8 +363,8 @@ impl RenderOnce for CommandPalette {
                                         .items_center()
                                         .justify_between()
                                         .on_click(move |_, _, cx| {
-                                            ws_s.update(cx, |state, cx| {
-                                                state.toggle_command_palette(cx);
+                                            modal_s.update(cx, |state, cx| {
+                                                state.close_command_palette(cx);
                                                 state.open_import_modal(None, cx);
                                             });
                                         })
@@ -375,7 +387,8 @@ impl RenderOnce for CommandPalette {
                             })
                             // Action: Git Commit History
                             .when(q.is_empty() || "git".contains(&q) || "history".contains(&q) || "log".contains(&q), |this| {
-                                let ws_s = ws_clone.clone();
+                                let modal_s = modal_clone.clone();
+                                let git_s = git_clone.clone();
                                 this.child(
                                     div()
                                         .id("cmd-git-history")
@@ -388,12 +401,12 @@ impl RenderOnce for CommandPalette {
                                         .items_center()
                                         .justify_between()
                                         .on_click(move |_, _, cx| {
-                                            ws_s.update(cx, |state, cx| {
-                                                state.toggle_command_palette(cx);
-                                                state.set_git_tab(GitTab::History, cx);
-                                                if !state.show_git_modal {
-                                                    state.toggle_git_modal(cx);
-                                                }
+                                            modal_s.update(cx, |state, cx| {
+                                                state.close_command_palette(cx);
+                                            });
+                                            git_s.update(cx, |state, cx| {
+                                                state.set_tab(GitTab::History, cx);
+                                                state.open_modal(GitActiveModal::History, cx);
                                             });
                                         })
                                         .child(
@@ -432,7 +445,8 @@ impl RenderOnce for CommandPalette {
                                             || r.url.to_lowercase().contains(&q)
                                     })
                                     .map(|req| {
-                                        let ws_s = ws_clone.clone();
+                                        let modal_s = modal_clone.clone();
+                                        let sb_s = sb_clone.clone();
                                         let ed_s = ed_clone.clone();
                                         let r = req.clone();
 
@@ -448,9 +462,11 @@ impl RenderOnce for CommandPalette {
                                             .gap(px(8.))
                                             .on_click(move |_, _, cx| {
                                                 let r_id = r.id.clone();
-                                                ws_s.update(cx, |state, cx| {
-                                                    state.record_navigation(&r_id, cx);
-                                                    state.toggle_command_palette(cx);
+                                                sb_s.update(cx, |state, _cx| {
+                                                    state.record_navigation(&r_id);
+                                                });
+                                                modal_s.update(cx, |state, cx| {
+                                                    state.close_command_palette(cx);
                                                 });
                                                 ed_s.update(cx, |state, cx| {
                                                     state.set_active_request(r.clone(), true, cx);
@@ -481,6 +497,7 @@ impl RenderOnce for CommandPalette {
                                     .filter(|e| q.is_empty() || e.name.to_lowercase().contains(&q))
                                     .map(|env| {
                                         let ws_s = ws_clone.clone();
+                                        let modal_s = modal_clone.clone();
                                         let env_id = env.id.clone();
 
                                         div()
@@ -499,7 +516,9 @@ impl RenderOnce for CommandPalette {
                                                         Some(env_id.clone()),
                                                         cx,
                                                     );
-                                                    state.toggle_command_palette(cx);
+                                                });
+                                                modal_s.update(cx, |state, cx| {
+                                                    state.close_command_palette(cx);
                                                 });
                                             })
                                             .child("●")
@@ -508,7 +527,7 @@ impl RenderOnce for CommandPalette {
                                                     .text_xs()
                                                     .text_color(t.text_primary)
                                                     .child(format!("Switch to: {}", env.name)),
-                                            )
+                                             )
                                     }),
                             ),
                     ),

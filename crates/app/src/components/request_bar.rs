@@ -3,7 +3,7 @@ use crate::components::env_autocomplete::{
     get_variable_kind_and_color,
 };
 use crate::components::status_badge::MethodBadge;
-use crate::state::{EditorState, WorkspaceState};
+use crate::state::{EditorState, ModalState, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -18,7 +18,8 @@ use restclient_core::models::HttpMethod;
 
 #[derive(IntoElement)]
 pub struct RequestBar {
-    workspace_state: Entity<WorkspaceState>,
+    workspace_state: Entity<WorkspaceDataState>,
+    modal_state: Entity<ModalState>,
     editor_state: Entity<EditorState>,
     url_input: Entity<InputState>,
     on_send: std::rc::Rc<dyn Fn(&mut Window, &mut App)>,
@@ -26,13 +27,15 @@ pub struct RequestBar {
 
 impl RequestBar {
     pub fn new(
-        workspace_state: Entity<WorkspaceState>,
+        workspace_state: Entity<WorkspaceDataState>,
+        modal_state: Entity<ModalState>,
         editor_state: Entity<EditorState>,
         url_input: Entity<InputState>,
         on_send: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         Self {
             workspace_state,
+            modal_state,
             editor_state,
             url_input,
             on_send: std::rc::Rc::new(on_send),
@@ -53,6 +56,7 @@ impl RenderOnce for RequestBar {
         let url = self.url_input.read(cx).value().to_string();
 
         let ws_clone = self.workspace_state.clone();
+        let modal_clone = self.modal_state.clone();
         let ed_clone = self.editor_state.clone();
         let url_input_clone = self.url_input.clone();
         let on_send = self.on_send.clone();
@@ -165,7 +169,7 @@ impl RenderOnce for RequestBar {
                             .pl(px(2.))
                             .child({
                                 let ws_env = ws_clone.clone();
-                                let ws_modal = ws_clone.clone();
+                                let modal_click = modal_clone.clone();
                                 let h_token = hover_token_state.clone();
 
                                 Input::new(&self.url_input)
@@ -211,7 +215,7 @@ impl RenderOnce for RequestBar {
                                         });
                                     })
                                     .on_token_click(move |_, _window, cx| {
-                                        ws_modal.update(cx, |state, cx| {
+                                        modal_click.update(cx, |state, cx| {
                                             state.toggle_env_modal(cx);
                                         });
                                     })

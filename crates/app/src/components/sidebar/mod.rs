@@ -14,7 +14,9 @@ pub use git_status::*;
 pub use item_actions::*;
 pub use request_node::*;
 
-use crate::state::{EditorState, ResponseState, ToastState, WorkspaceState};
+use crate::state::{
+    EditorState, GitState, ModalState, ResponseState, SidebarState, ToastState, WorkspaceDataState,
+};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -50,7 +52,10 @@ pub struct SidebarRenderContext<'a> {
     pub unsaved_requests: &'a HashSet<String>,
     pub running_request_id: Option<&'a str>,
     pub git_status: Option<&'a GitStatusResult>,
-    pub ws: &'a Entity<WorkspaceState>,
+    pub ws: &'a Entity<WorkspaceDataState>,
+    pub sidebar: &'a Entity<SidebarState>,
+    pub modal: &'a Entity<ModalState>,
+    pub git: &'a Entity<GitState>,
     pub ed: &'a Entity<EditorState>,
     pub resp: &'a Entity<ResponseState>,
     pub toast: &'a Entity<ToastState>,
@@ -58,7 +63,10 @@ pub struct SidebarRenderContext<'a> {
 
 #[derive(IntoElement)]
 pub struct SidebarTree {
-    workspace_state: Entity<WorkspaceState>,
+    workspace_state: Entity<WorkspaceDataState>,
+    sidebar_state: Entity<SidebarState>,
+    modal_state: Entity<ModalState>,
+    git_state: Entity<GitState>,
     editor_state: Entity<EditorState>,
     response_state: Entity<ResponseState>,
     toast_state: Entity<ToastState>,
@@ -66,13 +74,19 @@ pub struct SidebarTree {
 
 impl SidebarTree {
     pub fn new(
-        workspace_state: Entity<WorkspaceState>,
+        workspace_state: Entity<WorkspaceDataState>,
+        sidebar_state: Entity<SidebarState>,
+        modal_state: Entity<ModalState>,
+        git_state: Entity<GitState>,
         editor_state: Entity<EditorState>,
         response_state: Entity<ResponseState>,
         toast_state: Entity<ToastState>,
     ) -> Self {
         Self {
             workspace_state,
+            sidebar_state,
+            modal_state,
+            git_state,
             editor_state,
             response_state,
             toast_state,
@@ -105,6 +119,8 @@ impl RenderOnce for SidebarTree {
             running_request_id,
         ) = {
             let ws = self.workspace_state.read(cx);
+            let sb = self.sidebar_state.read(cx);
+            let git = self.git_state.read(cx);
             let req_items: Vec<SidebarReqItem> = ws
                 .requests
                 .iter()
@@ -143,21 +159,21 @@ impl RenderOnce for SidebarTree {
                 .collect();
 
             (
-                ws.git_branch.clone().unwrap_or_else(|| "main".to_string()),
-                ws.git_status.clone(),
-                ws.git_is_syncing,
-                ws.filter_query.to_lowercase(),
-                ws.filter_query.clone(),
+                git.branch.clone().unwrap_or_else(|| "main".to_string()),
+                git.status.clone(),
+                git.is_syncing,
+                sb.filter_query.to_lowercase(),
+                sb.filter_query.clone(),
                 ws.folders.clone(),
                 req_items,
-                ws.renaming_request_id.clone(),
-                ws.rename_input.clone(),
-                ws.renaming_folder_id.clone(),
-                ws.rename_folder_input.clone(),
-                ws.renaming_example.clone(),
-                ws.rename_example_input.clone(),
-                ws.collapsed_folders.clone(),
-                ws.collapsed_requests.clone(),
+                sb.renaming_request_id.clone(),
+                sb.rename_input.clone(),
+                sb.renaming_folder_id.clone(),
+                sb.rename_folder_input.clone(),
+                sb.renaming_example.clone(),
+                sb.rename_example_input.clone(),
+                sb.collapsed_folders.clone(),
+                sb.collapsed_requests.clone(),
                 ws.pins.clone(),
                 ws.parse_errors.clone(),
                 ws.unsaved_requests.clone(),
@@ -176,11 +192,14 @@ impl RenderOnce for SidebarTree {
         let has_nothing = folders.is_empty() && requests.is_empty();
 
         let ws_clone = self.workspace_state.clone();
+        let sb_clone = self.sidebar_state.clone();
+        let modal_clone = self.modal_state.clone();
+        let git_clone = self.git_state.clone();
         let ed_clone = self.editor_state.clone();
         let resp_clone = self.response_state.clone();
         let toast_clone = self.toast_state.clone();
 
-        let ws_search = ws_clone.clone();
+        let sb_search = sb_clone.clone();
         let search_holder = window.use_keyed_state(
             gpui::SharedString::from("sidebar-search-input-holder"),
             cx,
@@ -192,7 +211,7 @@ impl RenderOnce for SidebarTree {
                 let sub = cx.subscribe_in(&search_input, window, move |_, _, event, _, cx| {
                     if let gpui_component::input::InputEvent::Change = event {
                         let q = s_in.read(cx).value().to_string();
-                        ws_search.update(cx, |state, cx| {
+                        sb_search.update(cx, |state, cx| {
                             state.set_filter_query(q, cx);
                         });
                     }
@@ -228,6 +247,9 @@ impl RenderOnce for SidebarTree {
             running_request_id: running_request_id.as_deref(),
             git_status: git_status.as_ref(),
             ws: &ws_clone,
+            sidebar: &sb_clone,
+            modal: &modal_clone,
+            git: &git_clone,
             ed: &ed_clone,
             resp: &resp_clone,
             toast: &toast_clone,
@@ -274,6 +296,7 @@ impl RenderOnce for SidebarTree {
                     // Overflow menu (+) - create request or folder
                     .child({
                         let ws_menu = ws_clone.clone();
+                        let sb_menu = sb_clone.clone();
                         let ed_menu = ed_clone.clone();
                         Button::new("btn-sidebar-new")
                             .ghost()
@@ -291,6 +314,7 @@ impl RenderOnce for SidebarTree {
                                     let ws_req = ws_menu.clone();
                                     let ed_req = ed_menu.clone();
                                     let ws_folder = ws_menu.clone();
+                                    let sb_folder = sb_menu.clone();
 
                                     menu.item(
                                         PopupMenuItem::new("New Request")
@@ -308,6 +332,7 @@ impl RenderOnce for SidebarTree {
                                         PopupMenuItem::new("New Folder")
                                             .icon(Icon::new(IconName::Folder))
                                             .on_click(move |_, window, cx| {
+                                                let ws_c = ws_folder.clone();
                                                 let created = ws_folder.update(cx, |state, cx| {
                                                     state.create_folder(
                                                         None,
@@ -316,10 +341,11 @@ impl RenderOnce for SidebarTree {
                                                     )
                                                 });
                                                 if let Some(new_id) = created {
-                                                    ws_folder.update(cx, |state, cx| {
+                                                    sb_folder.update(cx, |state, cx| {
                                                         state.start_renaming_folder(
                                                             new_id,
                                                             "new-folder".to_string(),
+                                                            ws_c,
                                                             window,
                                                             cx,
                                                         );
@@ -504,7 +530,7 @@ impl RenderOnce for SidebarTree {
                 &git_branch,
                 git_status.as_ref(),
                 is_syncing,
-                &ws_clone,
+                &git_clone,
                 &toast_clone,
             ))
     }

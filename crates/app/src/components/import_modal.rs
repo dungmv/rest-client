@@ -1,4 +1,4 @@
-﻿use crate::state::{ToastState, WorkspaceState};
+use crate::state::{ModalState, ToastState, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -105,17 +105,20 @@ impl ImportModalState {
 
 #[derive(IntoElement)]
 pub struct ImportModal {
-    workspace_state: Entity<WorkspaceState>,
+    workspace_state: Entity<WorkspaceDataState>,
+    modal_state: Entity<ModalState>,
     toast_state: Entity<ToastState>,
 }
 
 impl ImportModal {
     pub fn new(
-        workspace_state: Entity<WorkspaceState>,
+        workspace_state: Entity<WorkspaceDataState>,
+        modal_state: Entity<ModalState>,
         toast_state: Entity<ToastState>,
     ) -> Self {
         Self {
             workspace_state,
+            modal_state,
             toast_state,
         }
     }
@@ -125,6 +128,7 @@ impl RenderOnce for ImportModal {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
         let ws_entity = self.workspace_state.clone();
+        let modal_entity_ref = self.modal_state.clone();
         let toast_entity = self.toast_state.clone();
 
         let modal_entity = window.use_keyed_state(
@@ -146,7 +150,7 @@ impl RenderOnce for ImportModal {
             )
         };
 
-        let target_folder_rel = ws_entity.read(cx).import_target_folder_rel.clone();
+        let target_folder_rel = modal_entity_ref.read(cx).import_target_folder_rel.clone();
 
         div()
             .id("import-modal-overlay")
@@ -157,16 +161,16 @@ impl RenderOnce for ImportModal {
             .items_center()
             .justify_center()
             .on_click({
-                let ws_c = ws_entity.clone();
+                let modal_c = modal_entity_ref.clone();
                 move |_, _, cx| {
-                    ws_c.update(cx, |ws, cx| ws.close_import_modal(cx));
+                    modal_c.update(cx, |m, cx| m.close_import_modal(cx));
                 }
             })
             .on_key_down({
-                let ws_c = ws_entity.clone();
+                let modal_c = modal_entity_ref.clone();
                 move |event, _, cx| {
                     if event.keystroke.key.as_str() == "escape" {
-                        ws_c.update(cx, |ws, cx| ws.close_import_modal(cx));
+                        modal_c.update(cx, |m, cx| m.close_import_modal(cx));
                     }
                 }
             })
@@ -218,9 +222,9 @@ impl RenderOnce for ImportModal {
                                     .text_color(t.text_muted)
                                     .child("✕")
                                     .on_click({
-                                        let ws_c = ws_entity.clone();
+                                        let modal_c = modal_entity_ref.clone();
                                         move |_, _, cx| {
-                                            ws_c.update(cx, |ws, cx| ws.close_import_modal(cx));
+                                            modal_c.update(cx, |m, cx| m.close_import_modal(cx));
                                         }
                                     }),
                             ),
@@ -264,7 +268,7 @@ impl RenderOnce for ImportModal {
                                                             });
                                                         }
                                                     },
-                                                    &t,
+                                                    t,
                                                 ),
                                             )
                                             .child(
@@ -280,7 +284,7 @@ impl RenderOnce for ImportModal {
                                                             });
                                                         }
                                                     },
-                                                    &t,
+                                                    t,
                                                 ),
                                             ),
                                     ),
@@ -303,7 +307,7 @@ impl RenderOnce for ImportModal {
                                                     st.update(cx, |s, cx| s.set_source_tab(ImportSourceTab::File, cx));
                                                 }
                                             },
-                                            &t,
+                                            t,
                                         ),
                                     )
                                     .child(
@@ -317,7 +321,7 @@ impl RenderOnce for ImportModal {
                                                     st.update(cx, |s, cx| s.set_source_tab(ImportSourceTab::Paste, cx));
                                                 }
                                             },
-                                            &t,
+                                            t,
                                         ),
                                     ),
                             )
@@ -327,19 +331,19 @@ impl RenderOnce for ImportModal {
                                     ImportSourceTab::File => render_file_picker_view(
                                         selected_file.as_ref(),
                                         modal_entity.clone(),
-                                        &t,
+                                        t,
                                     ).into_any_element(),
                                     ImportSourceTab::Paste => render_paste_view(
                                         paste_inp.clone(),
                                         modal_entity.clone(),
-                                        &t,
+                                        t,
                                     ).into_any_element(),
                                 }
                             )
                             // Parse & Preview Section
                             .when_some(parse_result.clone(), |this, res| {
                                 match res {
-                                    Ok(spec) => this.child(render_preview_card(&spec, &t)),
+                                    Ok(spec) => this.child(render_preview_card(&spec, t)),
                                     Err(err) => this.child(
                                         div()
                                             .p(px(10.))
@@ -387,7 +391,7 @@ impl RenderOnce for ImportModal {
                                                     });
                                                 }
                                             },
-                                            &t,
+                                            t,
                                         ),
                                     )
                                     .child(
@@ -404,7 +408,7 @@ impl RenderOnce for ImportModal {
                                                     });
                                                 }
                                             },
-                                            &t,
+                                            t,
                                         ),
                                     ),
                             ),
@@ -447,15 +451,16 @@ impl RenderOnce for ImportModal {
                                             .text_color(t.text_secondary)
                                             .child("Cancel")
                                             .on_click({
-                                                let ws_c = ws_entity.clone();
+                                                let modal_c = modal_entity_ref.clone();
                                                 move |_, _, cx| {
-                                                    ws_c.update(cx, |ws, cx| ws.close_import_modal(cx));
+                                                    modal_c.update(cx, |m, cx| m.close_import_modal(cx));
                                                 }
                                             }),
                                     )
                                     .child({
                                         let is_valid = matches!(&parse_result, Some(Ok(r)) if !r.requests.is_empty());
                                         let ws_exec = ws_entity.clone();
+                                        let modal_exec = modal_entity_ref.clone();
                                         let toast_exec = toast_entity.clone();
                                         let st_exec = modal_entity.clone();
 
@@ -500,6 +505,9 @@ impl RenderOnce for ImportModal {
 
                                                 match res {
                                                     Ok(summary) => {
+                                                        modal_exec.update(cx, |m, cx| {
+                                                            m.close_import_modal(cx);
+                                                        });
                                                         toast_exec.update(cx, |ts, cx| {
                                                             ts.push_success(
                                                                 "Import Complete",

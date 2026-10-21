@@ -54,6 +54,7 @@ pub fn render_request_node(
     let ed_s = ctx.ed.clone();
     let ed_right = ctx.ed.clone();
     let ws_click = ctx.ws.clone();
+    let sb_click = ctx.sidebar.clone();
     let ws_right = ctx.ws.clone();
     let resp_click = ctx.resp.clone();
 
@@ -134,16 +135,17 @@ pub fn render_request_node(
                 if ev.click_count() > 1 {
                     let r_id = r_id_click.clone();
                     let init_name = initial_name_click.clone();
-                    ws_click.update(cx, |state, cx| {
-                        state.start_renaming_request(r_id, init_name, window, cx);
+                    let ws_c = ws_click.clone();
+                    sb_click.update(cx, |state, cx| {
+                        state.start_renaming_request(r_id, init_name, ws_c, window, cx);
                     });
                     ed_s.update(cx, |state, cx| {
                         state.set_active_request(req_item, false, cx);
                     });
                 } else {
                     let r_id = r_id_click.clone();
-                    ws_click.update(cx, |state, cx| {
-                        state.record_navigation(&r_id, cx);
+                    sb_click.update(cx, |state, _cx| {
+                        state.record_navigation(&r_id);
                     });
                     ed_s.update(cx, |state, cx| {
                         state.set_active_request(req_item, false, cx);
@@ -157,6 +159,8 @@ pub fn render_request_node(
         })
         .context_menu({
             let ws_menu = ctx.ws.clone();
+            let sb_menu = ctx.sidebar.clone();
+            let git_menu = ctx.git.clone();
             let r_id_menu = r_id_menu.clone();
             let init_name_menu = initial_name_menu.clone();
             let ed_menu = ctx.ed.clone();
@@ -166,6 +170,7 @@ pub fn render_request_node(
 
             move |menu, _window, _cx| {
                 let ws_r = ws_menu.clone();
+                let sb_r = sb_menu.clone();
                 let r_id_r = r_id_menu.clone();
                 let init_r = init_name_menu.clone();
 
@@ -222,8 +227,9 @@ pub fn render_request_node(
                     .item(
                         PopupMenuItem::new("Rename")
                             .on_click(move |_, window, cx| {
-                                ws_r.update(cx, |state, cx| {
-                                    state.start_renaming_request(r_id_r.clone(), init_r.clone(), window, cx);
+                                let ws_c = ws_r.clone();
+                                sb_r.update(cx, |state, cx| {
+                                    state.start_renaming_request(r_id_r.clone(), init_r.clone(), ws_c, window, cx);
                                 });
                             }),
                     )
@@ -241,6 +247,7 @@ pub fn render_request_node(
                     );
 
                 if is_dirty_git {
+                    let git_disc = git_menu.clone();
                     let ws_disc = ws_menu.clone();
                     let ed_disc = ed_menu.clone();
                     let r_id_disc = r_id_menu.clone();
@@ -251,8 +258,47 @@ pub fn render_request_node(
                         PopupMenuItem::new("Discard Changes")
                             .on_click(move |_, _, cx| {
                                 let req_name = r_name_disc.clone();
+                                let norm_req = r_id_disc.replace('\\', "/");
+                                let coll_rel = format!("collections/{}", norm_req);
+                                let path_to_discard = {
+                                    let g = git_disc.read(cx);
+                                    if let Some(git_st) = &g.status {
+                                        let matches = |p: &str| -> bool {
+                                            let p = p.replace('\\', "/");
+                                            p == norm_req
+                                                || p == coll_rel
+                                                || p.ends_with(&format!("/{}", norm_req))
+                                                || p.ends_with(&format!("/{}", coll_rel))
+                                        };
+                                        git_st.untracked_files.iter().find(|i| matches(&i.path))
+                                            .or_else(|| git_st.unstaged_files.iter().find(|i| matches(&i.path)))
+                                            .or_else(|| git_st.staged_files.iter().find(|i| matches(&i.path)))
+                                            .map(|i| i.path.clone())
+                                            .unwrap_or(coll_rel)
+                                    } else {
+                                        coll_rel
+                                    }
+                                };
+
+                                git_disc.update(cx, |git, cx| {
+                                    git.discard_file(&path_to_discard, cx);
+                                });
                                 ws_disc.update(cx, |ws, cx| {
-                                    ws.discard_request_changes(&r_id_disc, &ed_disc, cx);
+                                    ws.unsaved_requests.remove(&r_id_disc);
+                                    ws.reload_all();
+                                    let active_id = ed_disc.read(cx).active_request.as_ref().map(|r| r.id.clone());
+                                    if active_id.as_deref() == Some(&r_id_disc) {
+                                        if let Some(reloaded_req) = ws.find_request(&r_id_disc) {
+                                            ed_disc.update(cx, |ed, cx| {
+                                                ed.set_active_request(reloaded_req.clone(), false, cx);
+                                            });
+                                        } else {
+                                            ed_disc.update(cx, |ed, cx| {
+                                                ed.close_tab(&r_id_disc, cx);
+                                            });
+                                        }
+                                    }
+                                    cx.notify();
                                 });
                                 toast_disc.update(cx, |ts, cx| {
                                     ts.push_info("Git Discard", format!("Discarded changes in '{}'", req_name), cx);
@@ -278,7 +324,7 @@ pub fn render_request_node(
                 .gap(px(6.))
                 .overflow_hidden()
                 .child(if has_examples {
-                    let ws_toggle = ctx.ws.clone();
+                    let sb_toggle = ctx.sidebar.clone();
                     let r_id = req.id.clone();
                     div()
                         .id(format!("req-toggle-{}", r_id))
@@ -301,8 +347,8 @@ pub fn render_request_node(
                         )
                         .on_click(move |_, _, cx| {
                             cx.stop_propagation();
-                            ws_toggle.update(cx, |ws, cx| {
-                                ws.toggle_request_collapsed(&r_id, cx);
+                            sb_toggle.update(cx, |sb, cx| {
+                                sb.toggle_request_collapsed(&r_id, cx);
                             });
                         })
                         .into_any_element()
@@ -311,7 +357,7 @@ pub fn render_request_node(
                 })
                 .child(MethodBadge::new(req.method))
                 .child(if let (true, Some(inp)) = (is_renaming, ctx.rename_input) {
-                    let ws_esc = ctx.ws.clone();
+                    let sb_esc = ctx.sidebar.clone();
                     div()
                         .flex_1()
                         .min_w(px(0.))
@@ -328,7 +374,7 @@ pub fn render_request_node(
                         })
                         .on_key_down(move |event, _, cx| {
                             if event.keystroke.key.as_str() == "escape" {
-                                ws_esc.update(cx, |state, cx| {
+                                sb_esc.update(cx, |state, cx| {
                                     state.cancel_renaming(cx);
                                 });
                             }

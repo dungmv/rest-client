@@ -1,4 +1,4 @@
-use crate::state::WorkspaceState;
+use crate::state::GitState;
 use crate::theme::theme;
 use gpui::{
     div, px, App, AppContext as _, Entity, InteractiveElement as _, IntoElement, ParentElement,
@@ -71,9 +71,9 @@ pub fn render_checkbox(
         .into_any_element()
 }
 
-pub fn render_error_banner(ws_clone: Entity<WorkspaceState>, err: String) -> gpui::AnyElement {
+pub fn render_error_banner(git_state: Entity<GitState>, err: String) -> gpui::AnyElement {
     let t = theme();
-    let ws_err = ws_clone.clone();
+    let git_err = git_state.clone();
 
     div()
         .px(px(16.))
@@ -98,8 +98,8 @@ pub fn render_error_banner(ws_clone: Entity<WorkspaceState>, err: String) -> gpu
                 .text_color(t.text_muted)
                 .hover(|s| s.text_color(t.text_primary))
                 .on_click(move |_, _, cx| {
-                    ws_err.update(cx, |ws, cx| {
-                        ws.git_error = None;
+                    git_err.update(cx, |git, cx| {
+                        git.error = None;
                         cx.notify();
                     });
                 })
@@ -108,9 +108,9 @@ pub fn render_error_banner(ws_clone: Entity<WorkspaceState>, err: String) -> gpu
         .into_any_element()
 }
 
-pub fn render_not_a_repo_view(ws_clone: Entity<WorkspaceState>) -> gpui::AnyElement {
+pub fn render_not_a_repo_view(git_state: Entity<GitState>) -> gpui::AnyElement {
     let t = theme();
-    let ws_init = ws_clone.clone();
+    let git_init = git_state.clone();
 
     div()
         .size_full()
@@ -154,8 +154,8 @@ pub fn render_not_a_repo_view(ws_clone: Entity<WorkspaceState>) -> gpui::AnyElem
                 .text_color(gpui::rgb(0xffffff))
                 .hover(|s| s.opacity(0.9))
                 .on_click(move |_, _, cx| {
-                    ws_init.update(cx, |ws, cx| {
-                        let _ = ws.git_init_repo(cx);
+                    git_init.update(cx, |git, cx| {
+                        let _ = git.init_repo(cx);
                     });
                 })
                 .child(div().flex().items_center().gap(px(6.)).child(Icon::new(IconName::GitBranch).size(px(14.))).child("Initialize Git Repository")),

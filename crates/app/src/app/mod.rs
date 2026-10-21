@@ -21,7 +21,10 @@ use restclient_core::models::{Auth, RequestBody};
 use std::sync::Arc;
 
 pub struct AppView {
-    pub(crate) workspace_state: Entity<WorkspaceState>,
+    pub(crate) workspace_state: Entity<WorkspaceDataState>,
+    pub(crate) sidebar_state: Entity<SidebarState>,
+    pub(crate) modal_state: Entity<ModalState>,
+    pub(crate) git_state: Entity<GitState>,
     pub(crate) editor_state: Entity<EditorState>,
     pub(crate) response_state: Entity<ResponseState>,
     pub(crate) toast_state: Entity<ToastState>,
@@ -53,10 +56,14 @@ pub struct AppView {
 impl AppView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let workspace_state = cx.new(|cx| {
-            let mut s = WorkspaceState::new();
+            let mut s = WorkspaceDataState::new();
             s.start_watcher(cx);
             s
         });
+        let ws_dir = workspace_state.read(cx).workspace_path.clone();
+        let sidebar_state = cx.new(|_| SidebarState::new());
+        let modal_state = cx.new(|_| ModalState::new());
+        let git_state = cx.new(|_| GitState::new(ws_dir));
         let editor_state = cx.new(|_| EditorState::new());
         let response_state = cx.new(|_| ResponseState::new());
         let toast_state = cx.new(|_| ToastState::new());
@@ -289,6 +296,9 @@ impl AppView {
         let _subscriptions = setup_app_subscriptions(
             SubscriptionTargets {
                 workspace_state: &workspace_state,
+                modal_state: &modal_state,
+                sidebar_state: &sidebar_state,
+                git_state: &git_state,
                 editor_state: &editor_state,
                 response_state: &response_state,
                 toast_state: &toast_state,
@@ -312,7 +322,7 @@ impl AppView {
         let last_synced_request_id = initial_req.as_ref().map(|r| r.id.clone());
         let last_synced_body_version = editor_state.read(cx).body_version;
 
-        if workspace_state.read(cx).git_tracked_warning {
+        if git_state.read(cx).tracked_warning {
             toast_state.update(cx, |t, cx| {
                 t.push_error(
                     "Security Warning",
@@ -324,6 +334,9 @@ impl AppView {
 
         Self {
             workspace_state,
+            sidebar_state,
+            modal_state,
+            git_state,
             editor_state,
             response_state,
             toast_state,
@@ -358,9 +371,9 @@ impl Render for AppView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme();
 
-        let sidebar_collapsed = self.workspace_state.read(cx).sidebar_collapsed;
-        let sidebar_width = self.workspace_state.read(cx).sidebar_width;
-        let is_vertical_split = self.workspace_state.read(cx).split_layout_vertical;
+        let sidebar_collapsed = self.sidebar_state.read(cx).sidebar_collapsed;
+        let sidebar_width = self.sidebar_state.read(cx).sidebar_width;
+        let is_vertical_split = self.modal_state.read(cx).split_layout_vertical;
 
         // Synchronize active request fields into InputState / TextareaState when switched or body version changed
         self.sync_active_request_editors(window, cx);
@@ -372,6 +385,9 @@ impl Render for AppView {
         self.sync_sent_request_preview(window, cx);
 
         let ws_entity = self.workspace_state.clone();
+        let sidebar_entity = self.sidebar_state.clone();
+        let modal_entity = self.modal_state.clone();
+        let git_entity = self.git_state.clone();
         let ed_entity = self.editor_state.clone();
         let resp_entity = self.response_state.clone();
         let toast_entity = self.toast_state.clone();
@@ -414,6 +430,9 @@ impl Render for AppView {
                         .size_range(px(200.)..px(480.))
                         .child(SidebarTree::new(
                             ws_entity.clone(),
+                            sidebar_entity.clone(),
+                            modal_entity.clone(),
+                            git_entity.clone(),
                             ed_entity.clone(),
                             resp_entity.clone(),
                             toast_entity.clone(),
@@ -421,12 +440,12 @@ impl Render for AppView {
                 )
                 .child(resizable_panel().child(main_content))
                 .on_resize({
-                    let ws_entity = ws_entity.clone();
+                    let sb_entity = sidebar_entity.clone();
                     move |state, _window, cx| {
                         let new_size = state.read(cx).sizes().first().copied();
                         if let Some(size) = new_size {
-                            ws_entity.update(cx, |ws, cx| {
-                                ws.set_sidebar_width(size, cx);
+                            sb_entity.update(cx, |sb, cx| {
+                                sb.set_sidebar_width(size, cx);
                             });
                         }
                     }
@@ -450,88 +469,110 @@ impl Render for AppView {
                 }
             })
             .on_action({
-                let ws_c = ws_entity.clone();
+                let modal_c = modal_entity.clone();
                 move |_: &ToggleCommandPalette, _, cx| {
-                    ws_c.update(cx, |state, cx| {
+                    modal_c.update(cx, |state, cx| {
                         state.toggle_command_palette(cx);
                     });
                 }
             })
             .on_action({
-                let ws_c = ws_entity.clone();
+                let sb_c = sidebar_entity.clone();
                 move |_: &ToggleSidebar, _, cx| {
-                    ws_c.update(cx, |state, cx| {
+                    sb_c.update(cx, |state, cx| {
                         state.toggle_sidebar(cx);
                     });
                 }
             })
             .on_action({
-                let ws_c = ws_entity.clone();
+                let modal_c = modal_entity.clone();
                 move |_: &ToggleSettings, _, cx| {
-                    ws_c.update(cx, |state, cx| {
+                    modal_c.update(cx, |state, cx| {
                         state.toggle_settings_modal(cx);
                     });
                 }
             })
             .on_action({
-                let ws_c = ws_entity.clone();
+                let git_c = git_entity.clone();
                 move |_: &ToggleGitModal, _, cx| {
-                    ws_c.update(cx, |state, cx| {
-                        state.toggle_git_modal(cx);
+                    git_c.update(cx, |state, cx| {
+                        state.toggle_modal(cx);
                     });
                 }
             })
             .on_action({
-                let ws_c = ws_entity.clone();
+                let modal_c = modal_entity.clone();
                 move |_: &OpenImportModal, _, cx| {
-                    ws_c.update(cx, |state, cx| {
+                    modal_c.update(cx, |state, cx| {
                         state.open_import_modal(None, cx);
                     });
                 }
             })
             .on_action({
+                let sb_c = sidebar_entity.clone();
                 let ws_c = ws_entity.clone();
                 let ed_c = ed_entity.clone();
                 move |_: &NavigateBack, _, cx| {
-                    if let Some(req) = ws_c.update(cx, |ws, cx| ws.navigate_back(cx)) {
-                        ed_c.update(cx, |ed, cx| {
-                            ed.set_active_request(req, false, cx);
-                        });
+                    if let Some(req_id) = sb_c.update(cx, |sb, _| sb.navigate_back()) {
+                        let maybe_req = ws_c.read(cx).find_request(&req_id).cloned();
+                        if let Some(req) = maybe_req {
+                            ed_c.update(cx, |ed, cx| {
+                                ed.set_active_request(req, false, cx);
+                            });
+                        }
                     }
                 }
             })
             .on_action({
+                let sb_c = sidebar_entity.clone();
                 let ws_c = ws_entity.clone();
                 let ed_c = ed_entity.clone();
                 move |_: &NavigateForward, _, cx| {
-                    if let Some(req) = ws_c.update(cx, |ws, cx| ws.navigate_forward(cx)) {
-                        ed_c.update(cx, |ed, cx| {
-                            ed.set_active_request(req, false, cx);
-                        });
+                    if let Some(req_id) = sb_c.update(cx, |sb, _| sb.navigate_forward()) {
+                        let maybe_req = ws_c.read(cx).find_request(&req_id).cloned();
+                        if let Some(req) = maybe_req {
+                            ed_c.update(cx, |ed, cx| {
+                                ed.set_active_request(req, false, cx);
+                            });
+                        }
                     }
                 }
             })
             .on_action({
-                let ws_c = ws_entity.clone();
+                let modal_c = modal_entity.clone();
+                let git_c = git_entity.clone();
                 move |_: &DismissModal, _, cx| {
-                    ws_c.update(cx, |state, cx| {
-                        state.dismiss_top_modal(cx);
-                    });
+                    let git_open = git_c.read(cx).show_modal;
+                    if git_open {
+                        git_c.update(cx, |g, cx| g.close_modal(cx));
+                    } else {
+                        modal_c.update(cx, |m, cx| {
+                            m.dismiss_top_modal(cx);
+                        });
+                    }
                 }
             })
             .on_key_down({
-                let ws_c = ws_entity.clone();
+                let modal_c = modal_entity.clone();
+                let git_c = git_entity.clone();
                 move |event, _, cx| {
                     if event.keystroke.key.as_str() == "escape" {
-                        ws_c.update(cx, |state, cx| {
-                            state.dismiss_top_modal(cx);
-                        });
+                        let git_open = git_c.read(cx).show_modal;
+                        if git_open {
+                            git_c.update(cx, |g, cx| g.close_modal(cx));
+                        } else {
+                            modal_c.update(cx, |m, cx| {
+                                m.dismiss_top_modal(cx);
+                            });
+                        }
                     }
                 }
             })
             // Custom Title Bar
             .child(AppTitleBar::new(
                 ws_entity.clone(),
+                modal_entity.clone(),
+                sidebar_entity.clone(),
                 ed_entity.clone(),
                 resp_entity.clone(),
             ))
@@ -548,9 +589,12 @@ impl Render for AppView {
         attach_modal_overlays(
             root,
             &ws_entity,
+            &modal_entity,
+            &sidebar_entity,
+            &git_entity,
             &ed_entity,
             &toast_entity,
-            move |cx| {
+            move |_, cx| {
                 send_view.update(cx, |view, cx| {
                     view.send_current_request(cx);
                 });

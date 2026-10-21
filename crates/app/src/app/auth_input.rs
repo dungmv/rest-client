@@ -2,7 +2,7 @@ use crate::components::env_autocomplete::{
     build_tokenized_content, detect_unclosed_env_var, get_env_completions, get_variable_details,
     get_variable_kind_and_color,
 };
-use crate::state::WorkspaceState;
+use crate::state::{ModalState, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -15,7 +15,8 @@ use gpui_component::scroll::ScrollableElement as _;
 pub fn render_auth_input<F>(
     input_id: &'static str,
     input_state: &Entity<InputState>,
-    workspace_state: &Entity<WorkspaceState>,
+    workspace_state: &Entity<WorkspaceDataState>,
+    modal_state: &Entity<ModalState>,
     window: &mut Window,
     cx: &mut App,
     on_update: F,
@@ -47,7 +48,7 @@ where
     let hovered_token = hover_token_state.read(cx).clone();
 
     let ws_for_token = workspace_state.clone();
-    let ws_for_click = workspace_state.clone();
+    let modal_for_click = modal_state.clone();
     let ws_for_hover = workspace_state.clone();
     let h_token = hover_token_state.clone();
 
@@ -112,7 +113,7 @@ where
                             });
                         })
                         .on_token_click(move |_, _window, cx| {
-                            ws_for_click.update(cx, |st, cx| {
+                            modal_for_click.update(cx, |st, cx| {
                                 st.toggle_env_modal(cx);
                             });
                         }),

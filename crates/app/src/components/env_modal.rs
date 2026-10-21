@@ -1,4 +1,4 @@
-﻿use crate::state::WorkspaceState;
+use crate::state::{ModalState, SidebarState, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -14,12 +14,22 @@ use restclient_core::models::{Environment, EnvironmentVariable};
 
 #[derive(IntoElement)]
 pub struct EnvironmentModal {
-    workspace_state: Entity<WorkspaceState>,
+    workspace_state: Entity<WorkspaceDataState>,
+    modal_state: Entity<ModalState>,
+    sidebar_state: Entity<SidebarState>,
 }
 
 impl EnvironmentModal {
-    pub fn new(workspace_state: Entity<WorkspaceState>) -> Self {
-        Self { workspace_state }
+    pub fn new(
+        workspace_state: Entity<WorkspaceDataState>,
+        modal_state: Entity<ModalState>,
+        sidebar_state: Entity<SidebarState>,
+    ) -> Self {
+        Self {
+            workspace_state,
+            modal_state,
+            sidebar_state,
+        }
     }
 }
 
@@ -27,17 +37,22 @@ impl RenderOnce for EnvironmentModal {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
         let ws = self.workspace_state.read(cx);
+        let modal = self.modal_state.read(cx);
+        let sidebar = self.sidebar_state.read(cx);
+
         let envs = ws.environments.clone();
         let global_env = ws.global_environment.clone();
         let active_env_id = ws.active_environment_id.clone();
-        let selected_id = ws
+        let selected_id = modal
             .selected_env_modal_id
             .clone()
             .unwrap_or_else(|| "globals".to_string());
-        let var_query = ws.var_filter_query.to_lowercase();
+        let var_query = modal.var_filter_query.to_lowercase();
         let ws_clone = self.workspace_state.clone();
-        let renaming_env_id = ws.renaming_env_id.clone();
-        let rename_env_input = ws.rename_env_input.clone();
+        let modal_clone = self.modal_state.clone();
+        let sidebar_clone = self.sidebar_state.clone();
+        let renaming_env_id = sidebar.renaming_env_id.clone();
+        let rename_env_input = sidebar.rename_env_input.clone();
 
         let is_global_selected = selected_id == "globals";
         let active_custom_env = envs.iter().find(|e| e.id == selected_id).cloned();
@@ -49,11 +64,11 @@ impl RenderOnce for EnvironmentModal {
             |window, cx| {
                 let input = cx.new(|cx| InputState::new(window, cx).placeholder("Filter variables..."));
                 let inp = input.clone();
-                let ws_s = ws_clone.clone();
+                let modal_s = modal_clone.clone();
                 let sub = cx.subscribe_in(&input, window, move |_, _, ev, _, cx| {
                     if let InputEvent::Change = ev {
                         let val = inp.read(cx).value().to_string();
-                        ws_s.update(cx, |state, cx| {
+                        modal_s.update(cx, |state, cx| {
                             state.set_var_filter_query(val, cx);
                         });
                     }
@@ -126,21 +141,19 @@ impl RenderOnce for EnvironmentModal {
             .items_center()
             .justify_center()
             .on_click({
-                let ws_s = ws_clone.clone();
+                let modal_s = modal_clone.clone();
                 move |_, _, cx| {
-                    ws_s.update(cx, |state, cx| {
-                        state.show_env_modal = false;
-                        cx.notify();
+                    modal_s.update(cx, |state, cx| {
+                        state.close_env_modal(cx);
                     });
                 }
             })
             .on_key_down({
-                let ws_s = ws_clone.clone();
+                let modal_s = modal_clone.clone();
                 move |event, _, cx| {
                     if event.keystroke.key.as_str() == "escape" {
-                        ws_s.update(cx, |state, cx| {
-                            state.show_env_modal = false;
-                            cx.notify();
+                        modal_s.update(cx, |state, cx| {
+                            state.close_env_modal(cx);
                         });
                     }
                 }
@@ -160,12 +173,11 @@ impl RenderOnce for EnvironmentModal {
                     .flex_col()
                     .overflow_hidden()
                     .on_key_down({
-                        let ws_s = ws_clone.clone();
+                        let modal_s = modal_clone.clone();
                         move |event, _, cx| {
                             if event.keystroke.key.as_str() == "escape" {
-                                ws_s.update(cx, |state, cx| {
-                                    state.show_env_modal = false;
-                                    cx.notify();
+                                modal_s.update(cx, |state, cx| {
+                                    state.close_env_modal(cx);
                                 });
                             }
                         }
@@ -195,7 +207,7 @@ impl RenderOnce for EnvironmentModal {
                                     ),
                             )
                             .child({
-                                let ws_s = ws_clone.clone();
+                                let modal_s = modal_clone.clone();
                                 div()
                                     .id("close-env-modal")
                                     .cursor_pointer()
@@ -205,7 +217,7 @@ impl RenderOnce for EnvironmentModal {
                                     .text_color(t.text_muted)
                                     .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
                                     .on_click(move |_, _, cx| {
-                                        ws_s.update(cx, |state, cx| {
+                                        modal_s.update(cx, |state, cx| {
                                             state.toggle_env_modal(cx);
                                         });
                                     })
@@ -247,7 +259,7 @@ impl RenderOnce for EnvironmentModal {
                                                     .child("GLOBAL"),
                                             )
                                             .child({
-                                                let ws_s = ws_clone.clone();
+                                                let modal_s = modal_clone.clone();
                                                 let is_sel = is_global_selected;
                                                 let count = global_env.variables.len();
                                                 div()
@@ -262,7 +274,7 @@ impl RenderOnce for EnvironmentModal {
                                                     .items_center()
                                                     .justify_between()
                                                     .on_click(move |_, _, cx| {
-                                                        ws_s.update(cx, |state, cx| {
+                                                        modal_s.update(cx, |state, cx| {
                                                             state.select_modal_environment(Some("globals".to_string()), cx);
                                                         });
                                                     })
@@ -362,6 +374,8 @@ impl RenderOnce for EnvironmentModal {
                                                 let env_name_click = env.name.clone();
                                                 let count = env.variables.len();
 
+                                                let modal_sel = modal_clone.clone();
+                                                let sidebar_sel = sidebar_clone.clone();
                                                 let ws_sel = ws_clone.clone();
 
                                                 div()
@@ -382,17 +396,19 @@ impl RenderOnce for EnvironmentModal {
                                                         if ev.click_count() > 1 {
                                                             let cid = env_id_click.clone();
                                                             let cname = env_name_click.clone();
-                                                            ws_sel.update(cx, |state, cx| {
-                                                                state.start_renaming_environment(cid, cname, window, cx);
+                                                            let ws_c = ws_sel.clone();
+                                                            sidebar_sel.update(cx, |state, cx| {
+                                                                state.start_renaming_environment(cid, cname, ws_c, window, cx);
                                                             });
                                                         } else {
-                                                            ws_sel.update(cx, |state, cx| {
+                                                            modal_sel.update(cx, |state, cx| {
                                                                 state.select_modal_environment(Some(env_id_click.clone()), cx);
                                                             });
                                                         }
                                                     })
                                                     .context_menu({
-                                                        let ws_ren = ws_clone.clone();
+                                                        let sb_ren = sidebar_clone.clone();
+                                                        let ws_r_ws = ws_clone.clone();
                                                         let ren_id = env.id.clone();
                                                         let ren_name = env.name.clone();
                                                         let ws_du = ws_clone.clone();
@@ -401,7 +417,8 @@ impl RenderOnce for EnvironmentModal {
                                                         let del_id = env.id.clone();
 
                                                         move |menu, _window, _cx| {
-                                                            let ws_r = ws_ren.clone();
+                                                            let sb_r = sb_ren.clone();
+                                                            let ws_r = ws_r_ws.clone();
                                                             let r_id = ren_id.clone();
                                                             let r_name = ren_name.clone();
                                                             let ws_d = ws_du.clone();
@@ -413,8 +430,9 @@ impl RenderOnce for EnvironmentModal {
                                                                 .item(
                                                                     PopupMenuItem::new("Rename")
                                                                         .on_click(move |_, window, cx| {
-                                                                            ws_r.update(cx, |state, cx| {
-                                                                                state.start_renaming_environment(r_id.clone(), r_name.clone(), window, cx);
+                                                                            let ws_c = ws_r.clone();
+                                                                            sb_r.update(cx, |state, cx| {
+                                                                                state.start_renaming_environment(r_id.clone(), r_name.clone(), ws_c, window, cx);
                                                                             });
                                                                         }),
                                                                 )
@@ -452,7 +470,7 @@ impl RenderOnce for EnvironmentModal {
                                                                     .child(if is_act { "●" } else { "○" }),
                                                             )
                                                             .child(if let (true, Some(inp)) = (is_renaming, rename_env_input.as_ref()) {
-                                                                let ws_esc = ws_clone.clone();
+                                                                let sb_esc = sidebar_clone.clone();
                                                                 div()
                                                                     .flex_1()
                                                                     .min_w(px(0.))
@@ -469,7 +487,7 @@ impl RenderOnce for EnvironmentModal {
                                                                     })
                                                                     .on_key_down(move |event, _, cx| {
                                                                         if event.keystroke.key.as_str() == "escape" {
-                                                                            ws_esc.update(cx, |state, cx| {
+                                                                            sb_esc.update(cx, |state, cx| {
                                                                                 state.cancel_renaming_environment(cx);
                                                                             });
                                                                         }

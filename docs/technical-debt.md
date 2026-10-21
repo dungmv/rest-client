@@ -36,11 +36,11 @@
 
 ---
 
-### TD-02: God Object Anti-Pattern tại `WorkspaceState` (Critical)
+### TD-02: God Object Anti-Pattern tại `WorkspaceState` (Critical) - 🟢 Đã giải quyết (2026-10-21)
 
-- **Mô tả:**
-  - [`WorkspaceState`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/state/workspace_state.rs#L39-L100) phình to lên tới **3.337 dòng code** với hơn **70 fields**.
-  - Struct này đang đảm nhiệm quá nhiều mối quan tâm (vi phạm Single Responsibility Principle):
+- **Mô tả ban đầu:**
+  - `WorkspaceState` phình to lên tới **3.337 dòng code** với hơn **70 fields**.
+  - Struct này đảm nhiệm quá nhiều mối quan tâm (vi phạm Single Responsibility Principle):
     1. Dữ liệu nghiệp vụ cốt lõi: collections, requests, folders, environments, pins.
     2. Toàn bộ Git VCS Client UI State: commit message, staging files, diff content, branches, remotes, commit history, syncing status.
     3. Quản lý trạng thái hiển thị của 8 loại modals khác nhau (`show_env_modal`, `show_cookies_modal`, `show_git_modal`,...).
@@ -49,21 +49,16 @@
 - **Rủi ro:**
   - Mọi thao tác nhỏ (như gõ phím vào ô commit message hay toggle modal) đều trigger notify redraw trên `Entity<WorkspaceState>`, gây ra re-render không cần thiết cho các component quan sát nó.
   - Cực kỳ khó viết unit test độc lập cho từng module.
-- **Giải pháp:**
-  - Tách thành 4 sub-states độc lập:
-    ```rust
-    // 1. Core data state
-    pub struct WorkspaceDataState { ... }
-
-    // 2. Git dedicated UI state
-    pub struct GitUiState { ... }
-
-    // 3. Modals orchestration state
-    pub struct ModalState { ... }
-
-    // 4. Sidebar interactive state (renaming, search query)
-    pub struct SidebarTreeState { ... }
-    ```
+- **Kết quả giải quyết (Triệt để - Multi-Entity Architecture):**
+  - Xóa bỏ hoàn toàn God Object `WorkspaceState` cũ và không sử dụng bất kỳ monolithic facade/proxy ủy quyền nào.
+  - Phân rã thành 4 GPUI Entity States độc lập với ngữ nghĩa tường minh:
+    1. **`WorkspaceDataState`** (`crates/app/src/state/workspace_data_state.rs` ~381 LOC): Quản lý dữ liệu lưu trữ disk, requests, folders, environments, pins, local settings. Tách logic nghiệp vụ thành các submodules chuyên biệt: `workspace_crud.rs` (~284 LOC), `workspace_env.rs` (~206 LOC), `workspace_watcher.rs` (~273 LOC).
+    2. **`GitState`** (`crates/app/src/state/git_state.rs` ~424 LOC & `git_ops.rs` ~274 LOC): Đảm nhiệm toàn bộ VCS operations, staging, commit, diff view, branch switcher, remotes, history.
+    3. **`ModalState`** (`crates/app/src/state/modal_state.rs` ~220 LOC): Quản lý cờ hiển thị của tất cả modals (`env`, `git`, `settings`, `import`, `cookies`, `scope_settings`, `rename_workspace`), theme preference, split layout vertical.
+    4. **`SidebarState`** (`crates/app/src/state/sidebar_state.rs` ~396 LOC): Quản lý sidebar width, folder/request collapsed sets, inline renaming controls/subscriptions cho request/folder/env/example/workspace, navigation history (`record_navigation`, `navigate_back`, `navigate_forward`).
+  - Toàn bộ UI components và AppView chuyển thẳng sang cú pháp ngữ nghĩa tường minh (ví dụ: `modal_state.open_env_modal(...)`, `git_state.commit(...)`, `sidebar_state.start_renaming(...)`), triệt tiêu hoàn toàn re-render chéo giữa Git/Modals/Sidebar và Data core.
+  - Mọi file đều tuân thủ nghiêm ngặt giới hạn độ dài `< 450 LOC` (chuẩn dưới 650 LOC).
+  - Toàn bộ 112 unit tests passed 100%, 0 clippy warnings với `-D warnings`.
 
 ---
 

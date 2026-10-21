@@ -1,5 +1,5 @@
 use super::auth_input::render_auth_input;
-use crate::state::{EditorState, WorkspaceState};
+use crate::state::{EditorState, ModalState, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::{
     div, px, App, Div, Entity, ParentElement, Styled, Window,
@@ -19,10 +19,12 @@ pub struct AuthTabInputs<'a> {
     pub apikey_val_input: &'a Entity<InputState>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_auth_tab(
     auth: &Auth,
     folder_id: Option<&str>,
-    workspace_state: &Entity<WorkspaceState>,
+    workspace_state: &Entity<WorkspaceDataState>,
+    modal_state: &Entity<ModalState>,
     editor_state: &Entity<EditorState>,
     inputs: AuthTabInputs,
     window: &mut Window,
@@ -229,6 +231,7 @@ pub fn render_auth_tab(
                                     "auth-bearer-token-input",
                                     inputs.bearer_token_input,
                                     workspace_state,
+                                    modal_state,
                                     window,
                                     cx,
                                     move |new_token, _window, cx| {
@@ -269,6 +272,7 @@ pub fn render_auth_tab(
                                             "auth-basic-user-input",
                                             inputs.basic_user_input,
                                             workspace_state,
+                                            modal_state,
                                             window,
                                             cx,
                                             move |new_user, _window, cx| {
@@ -301,6 +305,7 @@ pub fn render_auth_tab(
                                             "auth-basic-pass-input",
                                             inputs.basic_pass_input,
                                             workspace_state,
+                                            modal_state,
                                             window,
                                             cx,
                                             move |new_pass, _window, cx| {
@@ -351,6 +356,7 @@ pub fn render_auth_tab(
                                             "auth-apikey-key-input",
                                             inputs.apikey_key_input,
                                             workspace_state,
+                                            modal_state,
                                             window,
                                             cx,
                                             move |new_key, _window, cx| {
@@ -388,6 +394,7 @@ pub fn render_auth_tab(
                                             "auth-apikey-val-input",
                                             inputs.apikey_val_input,
                                             workspace_state,
+                                            modal_state,
                                             window,
                                             cx,
                                             move |new_val, _window, cx| {

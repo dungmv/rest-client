@@ -185,6 +185,7 @@ impl AppView {
                 let view_handle = app_view_entity.clone();
                 RequestBar::new(
                     ws_entity.clone(),
+                    self.modal_state.clone(),
                     ed_entity.clone(),
                     self.url_input.clone(),
                     move |_, cx| {
@@ -318,7 +319,8 @@ impl AppView {
                                     });
                                 },
                             )
-                            .workspace_state(ws_entity.clone()),
+                            .workspace_state(ws_entity.clone())
+                            .modal_state(self.modal_state.clone()),
                         )
                     }
                     RequestTabKind::Headers => {
@@ -399,7 +401,8 @@ impl AppView {
                                             });
                                         },
                                     )
-                                    .workspace_state(ws_entity.clone()),
+                                    .workspace_state(ws_entity.clone())
+                                    .modal_state(self.modal_state.clone()),
                                 ),
                             )
                     }
@@ -420,6 +423,7 @@ impl AppView {
                             &auth,
                             folder_id.as_deref(),
                             &self.workspace_state,
+                            &self.modal_state,
                             &self.editor_state,
                             AuthTabInputs {
                                 bearer_token_input: &self.bearer_token_input,

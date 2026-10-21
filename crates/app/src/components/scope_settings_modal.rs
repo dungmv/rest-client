@@ -1,5 +1,5 @@
 use crate::components::kv_table::KvTable;
-use crate::state::{ScopeSettingsTarget, WorkspaceState};
+use crate::state::{ModalState, ScopeSettingsTarget, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -23,12 +23,19 @@ pub enum ScopeSettingsTab {
 
 #[derive(IntoElement)]
 pub struct ScopeSettingsModal {
-    workspace_state: Entity<WorkspaceState>,
+    workspace_state: Entity<WorkspaceDataState>,
+    modal_state: Entity<ModalState>,
 }
 
 impl ScopeSettingsModal {
-    pub fn new(workspace_state: Entity<WorkspaceState>) -> Self {
-        Self { workspace_state }
+    pub fn new(
+        workspace_state: Entity<WorkspaceDataState>,
+        modal_state: Entity<ModalState>,
+    ) -> Self {
+        Self {
+            workspace_state,
+            modal_state,
+        }
     }
 }
 
@@ -36,7 +43,8 @@ impl RenderOnce for ScopeSettingsModal {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
         let ws_clone = self.workspace_state.clone();
-        let target = match &ws_clone.read(cx).scope_settings_target {
+        let modal_clone = self.modal_state.clone();
+        let target = match &modal_clone.read(cx).scope_settings_target {
             Some(target) => target.clone(),
             None => return div().into_any_element(),
         };
@@ -321,9 +329,9 @@ impl RenderOnce for ScopeSettingsModal {
             .justify_center()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click({
-                let ws_s = ws_clone.clone();
+                let modal_s = modal_clone.clone();
                 move |_, _, cx| {
-                    ws_s.update(cx, |state, cx| state.close_scope_settings(cx));
+                    modal_s.update(cx, |state, cx| state.close_scope_settings(cx));
                 }
             })
             .child(
@@ -368,7 +376,7 @@ impl RenderOnce for ScopeSettingsModal {
                                     ),
                             )
                             .child({
-                                let ws_s = ws_clone.clone();
+                                let modal_s = modal_clone.clone();
                                 div()
                                     .id("close-scope-settings-modal")
                                     .cursor_pointer()
@@ -378,7 +386,7 @@ impl RenderOnce for ScopeSettingsModal {
                                     .text_color(t.text_muted)
                                     .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
                                     .on_click(move |_, _, cx| {
-                                        ws_s.update(cx, |state, cx| state.close_scope_settings(cx));
+                                        modal_s.update(cx, |state, cx| state.close_scope_settings(cx));
                                     })
                                     .child("✕")
                             }),
@@ -542,7 +550,8 @@ impl RenderOnce for ScopeSettingsModal {
                                         )
                                         .child(
                                             KvTable::new("scope-headers-table", pairs, on_update, on_add, on_remove)
-                                                .workspace_state(ws_clone.clone()),
+                                                .workspace_state(ws_clone.clone())
+                                                .modal_state(modal_clone.clone()),
                                         )
                                         .into_any_element()
                                 }

@@ -1,4 +1,6 @@
-use crate::state::{EditorState, ResponseState, WorkspaceState};
+use crate::state::{
+    EditorState, ModalState, ResponseState, ScopeSettingsTarget, SidebarState, WorkspaceDataState,
+};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -36,19 +38,25 @@ fn app_icon_image() -> Arc<Image> {
 
 #[derive(IntoElement)]
 pub struct AppTitleBar {
-    workspace_state: Entity<WorkspaceState>,
+    workspace_state: Entity<WorkspaceDataState>,
+    modal_state: Entity<ModalState>,
+    sidebar_state: Entity<SidebarState>,
     editor_state: Entity<EditorState>,
     response_state: Entity<ResponseState>,
 }
 
 impl AppTitleBar {
     pub fn new(
-        workspace_state: Entity<WorkspaceState>,
+        workspace_state: Entity<WorkspaceDataState>,
+        modal_state: Entity<ModalState>,
+        sidebar_state: Entity<SidebarState>,
         editor_state: Entity<EditorState>,
         response_state: Entity<ResponseState>,
     ) -> Self {
         Self {
             workspace_state,
+            modal_state,
+            sidebar_state,
             editor_state,
             response_state,
         }
@@ -62,8 +70,10 @@ impl RenderOnce for AppTitleBar {
         let is_linux = cfg!(target_os = "linux");
         let t = theme();
         let ws = self.workspace_state.read(cx);
+        let modal = self.modal_state.read(cx);
         let ed = self.editor_state.read(cx);
         let resp = self.response_state.read(cx);
+        let sidebar_collapsed = self.sidebar_state.read(cx).sidebar_collapsed;
 
         let folder_name = ws
             .workspace_path
@@ -106,6 +116,8 @@ impl RenderOnce for AppTitleBar {
         };
 
         let ws_clone = self.workspace_state.clone();
+        let modal_clone = self.modal_state.clone();
+        let sb_clone = self.sidebar_state.clone();
 
         #[cfg(target_os = "macos")]
         let left_padding = px(78.);
@@ -160,8 +172,7 @@ impl RenderOnce for AppTitleBar {
             .gap(px(8.))
             // Sidebar toggle button
             .child({
-                let ws_s = ws_clone.clone();
-                let sidebar_collapsed = ws_clone.read(cx).sidebar_collapsed;
+                let sb_s = sb_clone.clone();
                 div()
                     .id("btn-toggle-sidebar")
                     .occlude()
@@ -177,7 +188,7 @@ impl RenderOnce for AppTitleBar {
                     .text_color(if !sidebar_collapsed { t.text_primary } else { t.text_secondary })
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(move |_, _, cx| {
-                        ws_s.update(cx, |state, cx| {
+                        sb_s.update(cx, |state, cx| {
                             state.toggle_sidebar(cx);
                         });
                     })
@@ -186,6 +197,8 @@ impl RenderOnce for AppTitleBar {
             // Workspace switcher pill dropdown: [icon + ws_name ▾]
             .child({
                 let ws_s = ws_clone.clone();
+                let modal_s = modal_clone.clone();
+                let sb_s = sb_clone.clone();
                 let recent = ws.recent_workspaces.clone();
                 let ws_path = ws.workspace_path.clone();
 
@@ -210,7 +223,7 @@ impl RenderOnce for AppTitleBar {
                             .text_xs()
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(t.text_primary)
-                            .child(ws_name)
+                            .child(ws_name.clone())
                     )
                     .child(
                         Icon::new(IconName::ChevronDown)
@@ -220,26 +233,28 @@ impl RenderOnce for AppTitleBar {
                     .dropdown_menu(move |menu, _window, _cx| {
                         let ws_new = ws_s.clone();
                         let ws_open = ws_s.clone();
+                        let sb_rename = sb_s.clone();
                         let ws_rename = ws_s.clone();
-                        let ws_settings = ws_s.clone();
+                        let curr_ws_name = ws_name.clone();
+                        let modal_settings = modal_s.clone();
                         let ws_folder = ws_s.clone();
                         let ws_clean = ws_s.clone();
-                        let ws_import = ws_s.clone();
+                        let modal_import = modal_s.clone();
 
                         let mut m = menu
                             .item(
                                 PopupMenuItem::new("Workspace Settings...").icon(IconName::Settings)
                                     .on_click(move |_, _, cx| {
-                                        ws_settings.update(cx, |state, cx| {
-                                            state.open_workspace_settings(cx);
+                                        modal_settings.update(cx, |state, cx| {
+                                            state.open_scope_settings(ScopeSettingsTarget::Workspace, cx);
                                         });
                                     })
                             )
                             .item(
                                 PopupMenuItem::new("Rename Workspace...").icon(IconName::Pencil)
                                     .on_click(move |_, window, cx| {
-                                        ws_rename.update(cx, |state, cx| {
-                                            state.start_renaming_workspace(window, cx);
+                                        sb_rename.update(cx, |state, cx| {
+                                            state.start_renaming_workspace(curr_ws_name.clone(), ws_rename.clone(), window, cx);
                                         });
                                     })
                             )
@@ -262,7 +277,7 @@ impl RenderOnce for AppTitleBar {
                             .item(
                                 PopupMenuItem::new("Import...").icon(IconName::Download)
                                     .on_click(move |_, _, cx| {
-                                        ws_import.update(cx, |state, cx| {
+                                        modal_import.update(cx, |state, cx| {
                                             state.open_import_modal(None, cx);
                                         });
                                     })
@@ -325,6 +340,7 @@ impl RenderOnce for AppTitleBar {
             // Environment pill dropdown: [● local ▾]
             .child({
                 let ws_s = ws_clone.clone();
+                let modal_settings_clone = modal_clone.clone();
                 let envs = ws.environments.clone();
                 let active_env_id = ws.active_environment_id.clone();
                 let has_active = ws.active_environment().is_some();
@@ -391,13 +407,12 @@ impl RenderOnce for AppTitleBar {
                         }
 
                         // 3. Separator and "Environment Settings..."
-                        let ws_settings = ws_s.clone();
+                        let modal_settings = modal_settings_clone.clone();
                         m = m.separator().item(
                             PopupMenuItem::new("Environment Settings...").icon(IconName::Settings)
                                 .on_click(move |_, _, cx| {
-                                    ws_settings.update(cx, |state, cx| {
-                                        state.show_env_modal = true;
-                                        cx.notify();
+                                    modal_settings.update(cx, |state, cx| {
+                                        state.open_env_modal(cx);
                                     });
                                 }),
                         );
@@ -407,6 +422,7 @@ impl RenderOnce for AppTitleBar {
             });
 
         // Center section: search button + current request name
+        let modal_center_clone = modal_clone.clone();
         let center_section = div()
             .flex_1()
             .min_w(px(0.))
@@ -417,7 +433,7 @@ impl RenderOnce for AppTitleBar {
             .items_center()
             .justify_center()
             .child({
-                let ws_s = ws_clone.clone();
+                let _ws_s = ws_clone.clone();
                 let has_title = !current_title.trim().is_empty();
                 let label = if has_title {
                     current_title.clone()
@@ -444,7 +460,8 @@ impl RenderOnce for AppTitleBar {
                     .hover(|s| s.bg(t.bg_hover).border_color(t.border_focus))
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(move |_, _, cx| {
-                        ws_s.update(cx, |state, cx| {
+                        let modal_cp = modal_center_clone.clone();
+                        modal_cp.update(cx, |state, cx| {
                             state.toggle_command_palette(cx);
                         });
                     })
@@ -489,8 +506,8 @@ impl RenderOnce for AppTitleBar {
             .pr(px(8.))
             // Split layout toggle button
             .child({
-                let ws_s = ws_clone.clone();
-                let is_vert = ws.split_layout_vertical;
+                let modal_s = modal_clone.clone();
+                let is_vert = modal.split_layout_vertical;
                 div()
                     .id("btn-split-toggle")
                     .occlude()
@@ -505,7 +522,7 @@ impl RenderOnce for AppTitleBar {
                     .text_color(t.text_secondary)
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(move |_, _, cx| {
-                        ws_s.update(cx, |state, cx| {
+                        modal_s.update(cx, |state, cx| {
                             state.toggle_split_layout(cx);
                         });
                     })
@@ -517,7 +534,7 @@ impl RenderOnce for AppTitleBar {
             })
             // Settings button
             .child({
-                let ws_s = ws_clone.clone();
+                let modal_s = modal_clone.clone();
                 div()
                     .id("btn-settings")
                     .occlude()
@@ -532,7 +549,7 @@ impl RenderOnce for AppTitleBar {
                     .text_color(t.text_secondary)
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(move |_, _, cx| {
-                        ws_s.update(cx, |state, cx| {
+                        modal_s.update(cx, |state, cx| {
                             state.toggle_settings_modal(cx);
                         });
                     })

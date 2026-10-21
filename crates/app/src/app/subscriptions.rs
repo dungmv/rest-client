@@ -1,6 +1,8 @@
 use super::sync::save_active_request_without_redraw;
 use super::AppView;
-use crate::state::{EditorState, ResponseState, ToastState, WorkspaceState};
+use crate::state::{
+    EditorState, GitState, ModalState, ResponseState, SidebarState, ToastState, WorkspaceDataState,
+};
 use gpui::*;
 use gpui_component::input::{
     EditorState as CodeEditorState, InputEvent, InputState, TextareaState,
@@ -8,7 +10,10 @@ use gpui_component::input::{
 use restclient_core::models::{Auth, HttpRequestItem, RequestBody};
 
 pub struct SubscriptionTargets<'a> {
-    pub workspace_state: &'a Entity<WorkspaceState>,
+    pub workspace_state: &'a Entity<WorkspaceDataState>,
+    pub modal_state: &'a Entity<ModalState>,
+    pub sidebar_state: &'a Entity<SidebarState>,
+    pub git_state: &'a Entity<GitState>,
     pub editor_state: &'a Entity<EditorState>,
     pub response_state: &'a Entity<ResponseState>,
     pub toast_state: &'a Entity<ToastState>,
@@ -406,12 +411,23 @@ pub fn setup_app_subscriptions(
         cx.notify();
     }));
 
-    // 7. Observe OS appearance changes for System theme preference
-    let ws_theme = workspace_state.clone();
+    // 7. Observe sidebar_state, modal_state, git_state: re-render AppView on UI changes
+    subscriptions.push(cx.observe(targets.sidebar_state, |_, _, cx| {
+        cx.notify();
+    }));
+    subscriptions.push(cx.observe(targets.modal_state, |_, _, cx| {
+        cx.notify();
+    }));
+    subscriptions.push(cx.observe(targets.git_state, |_, _, cx| {
+        cx.notify();
+    }));
+
+    // 8. Observe OS appearance changes for System theme preference
+    let modal_theme = targets.modal_state.clone();
     subscriptions.push(window.observe_window_appearance(move |window, cx| {
         let app_appearance = window.appearance();
-        ws_theme.update(cx, |ws, cx| {
-            if ws.theme_preference == crate::theme::ThemePreference::System {
+        modal_theme.update(cx, |modal, cx| {
+            if modal.theme_preference == crate::theme::ThemePreference::System {
                 let mode = crate::theme::resolve_theme_mode(
                     crate::theme::ThemePreference::System,
                     app_appearance,

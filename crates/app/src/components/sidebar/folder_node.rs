@@ -3,6 +3,7 @@ use super::git_status::{calculate_folder_git_status, SidebarGitStatus};
 use super::item_actions::folder_has_matches;
 use super::request_node::render_request_node;
 use super::SidebarRenderContext;
+use crate::state::ScopeSettingsTarget;
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -110,6 +111,7 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                     });
                 })
                 .on_click({
+                    let sb_f_click = ctx.sidebar.clone();
                     let ws_f_click = ctx.ws.clone();
                     let f_id_click = f_id.clone();
                     let f_name_click = folder_name.clone();
@@ -118,16 +120,18 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                             return;
                         }
                         if ev.click_count() > 1 {
-                            ws_f_click.update(cx, |state, cx| {
+                            let ws_c = ws_f_click.clone();
+                            sb_f_click.update(cx, |state, cx| {
                                 state.start_renaming_folder(
                                     f_id_click.clone(),
                                     f_name_click.clone(),
+                                    ws_c,
                                     window,
                                     cx,
                                 );
                             });
                         } else {
-                            ws_f_click.update(cx, |state, cx| {
+                            sb_f_click.update(cx, |state, cx| {
                                 state.toggle_folder_collapsed(&f_id_click, cx);
                             });
                         }
@@ -139,16 +143,18 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                     let f_id_new = f_id.clone();
 
                     let ws_new_sub = ctx.ws.clone();
+                    let sb_new_sub = ctx.sidebar.clone();
                     let f_id_new_sub = f_id.clone();
 
                     let ws_ren = ctx.ws.clone();
+                    let sb_ren = ctx.sidebar.clone();
                     let f_id_ren = f_id.clone();
                     let f_name_ren = folder_name.clone();
 
                     let ws_del = ctx.ws.clone();
                     let f_id_del = f_id.clone();
 
-                    let ws_settings = ctx.ws.clone();
+                    let modal_settings = ctx.modal.clone();
                     let f_id_settings = f_id.clone();
 
                     move |menu, _window, _cx| {
@@ -157,13 +163,15 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                         let f_id_n = f_id_new.clone();
 
                         let ws_ns = ws_new_sub.clone();
+                        let sb_ns = sb_new_sub.clone();
                         let f_id_ns = f_id_new_sub.clone();
 
                         let ws_r = ws_ren.clone();
+                        let sb_r = sb_ren.clone();
                         let f_id_r = f_id_ren.clone();
                         let f_name_r = f_name_ren.clone();
 
-                        let ws_set = ws_settings.clone();
+                        let modal_set = modal_settings.clone();
                         let f_id_set = f_id_settings.clone();
 
                         let ws_d = ws_del.clone();
@@ -184,6 +192,7 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                         .item(
                             gpui_component::menu::PopupMenuItem::new("New Folder").on_click(
                                 move |_, window, cx| {
+                                    let ws_c = ws_ns.clone();
                                     let created = ws_ns.update(cx, |state, cx| {
                                         state.create_folder(
                                             Some(f_id_ns.clone()),
@@ -192,10 +201,11 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                                         )
                                     });
                                     if let Some(new_id) = created {
-                                        ws_ns.update(cx, |state, cx| {
+                                        sb_ns.update(cx, |state, cx| {
                                             state.start_renaming_folder(
                                                 new_id,
                                                 "new-folder".to_string(),
+                                                ws_c,
                                                 window,
                                                 cx,
                                             );
@@ -207,10 +217,12 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                         .item(
                             gpui_component::menu::PopupMenuItem::new("Rename").on_click(
                                 move |_, window, cx| {
-                                    ws_r.update(cx, |state, cx| {
+                                    let ws_c = ws_r.clone();
+                                    sb_r.update(cx, |state, cx| {
                                         state.start_renaming_folder(
                                             f_id_r.clone(),
                                             f_name_r.clone(),
+                                            ws_c,
                                             window,
                                             cx,
                                         );
@@ -222,8 +234,11 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                             gpui_component::menu::PopupMenuItem::new("Folder Settings...")
                                 .icon(IconName::Settings)
                                 .on_click(move |_, _, cx| {
-                                    ws_set.update(cx, |state, cx| {
-                                        state.open_folder_settings(f_id_set.clone(), cx);
+                                    modal_set.update(cx, |state, cx| {
+                                        state.open_scope_settings(
+                                            ScopeSettingsTarget::Folder(f_id_set.clone()),
+                                            cx,
+                                        );
                                     });
                                 }),
                         )
@@ -277,7 +292,7 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                             if let (true, Some(inp)) =
                                 (is_renaming_folder, ctx.rename_folder_input)
                             {
-                                let ws_esc = ctx.ws.clone();
+                                let sb_esc = ctx.sidebar.clone();
                                 div()
                                     .flex_1()
                                     .min_w(px(0.))
@@ -294,7 +309,7 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                                     })
                                     .on_key_down(move |event, _, cx| {
                                         if event.keystroke.key.as_str() == "escape" {
-                                            ws_esc.update(cx, |state, cx| {
+                                            sb_esc.update(cx, |state, cx| {
                                                 state.cancel_renaming_folder(cx);
                                             });
                                         }

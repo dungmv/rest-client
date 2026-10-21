@@ -1,6 +1,6 @@
 use super::common::{render_checkbox, render_error_banner, render_not_a_repo_view, render_status_badge};
 use super::diff_view::{render_diff_content, render_diff_view_toggle, DiffViewMode};
-use crate::state::WorkspaceState;
+use crate::state::{GitState, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -13,17 +13,19 @@ use std::collections::HashSet;
 
 #[derive(IntoElement)]
 pub struct GitCommitModal {
-    workspace_state: Entity<WorkspaceState>,
+    git_state: Entity<GitState>,
+    workspace_state: Entity<WorkspaceDataState>,
 }
 
 impl GitCommitModal {
-    pub fn new(workspace_state: Entity<WorkspaceState>) -> Self {
-        Self { workspace_state }
+    pub fn new(git_state: Entity<GitState>, workspace_state: Entity<WorkspaceDataState>) -> Self {
+        Self { git_state, workspace_state }
     }
 }
 
 pub struct ChangesViewProps {
-    pub ws_clone: Entity<WorkspaceState>,
+    pub git_clone: Entity<GitState>,
+    pub ws_clone: Entity<WorkspaceDataState>,
     pub status_opt: Option<restclient_core::git::GitStatusResult>,
     pub selected_file: Option<(String, bool)>,
     pub diff_content: Option<String>,
@@ -36,6 +38,7 @@ pub struct ChangesViewProps {
 
 pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
     let t = theme();
+    let git_clone = props.git_clone;
     let ws_clone = props.ws_clone;
     let selected_file = props.selected_file;
     let diff_content = props.diff_content;
@@ -81,7 +84,7 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                             let staged_selected_count = staged_files.iter().filter(|f| selected_staged.contains(&f.path)).count();
                             let all_staged_selected = total_staged > 0 && staged_selected_count == total_staged;
                             let partial_staged_selected = staged_selected_count > 0 && !all_staged_selected;
-                            let ws_toggle_all_staged = ws_clone.clone();
+                            let git_toggle_all_staged = git_clone.clone();
 
                             div()
                                 .flex()
@@ -105,8 +108,8 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                                         partial_staged_selected,
                                                         move |_, _, cx| {
                                                             let select = !all_staged_selected;
-                                                            ws_toggle_all_staged.update(cx, |ws, cx| {
-                                                                ws.toggle_all_staged_selection(select, cx);
+                                                            git_toggle_all_staged.update(cx, |git, cx| {
+                                                                git.toggle_all_staged_selection(select, cx);
                                                             });
                                                         },
                                                     ))
@@ -120,7 +123,7 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                                 ),
                                         )
                                         .when(total_staged > 0, |this| {
-                                            let ws_unstage = ws_clone.clone();
+                                            let git_unstage = git_clone.clone();
                                             let has_sel = staged_selected_count > 0;
                                             let btn_label = if has_sel {
                                                 format!("Unstage Selected ({})", staged_selected_count)
@@ -136,8 +139,8 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                                             .text_color(t.primary)
                                                             .hover(|h| h.underline())
                                                             .on_click(move |_, _, cx| {
-                                                                ws_unstage.update(cx, |ws, cx| {
-                                                                    ws.git_unstage_selected(cx);
+                                                                git_unstage.update(cx, |git, cx| {
+                                                                    git.unstage_selected(cx);
                                                                 });
                                                             })
                                                     })
@@ -149,8 +152,8 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                         }),
                                 )
                                 .children(staged_files.into_iter().map(|item| {
-                                    let ws_sel = ws_clone.clone();
-                                    let ws_chk = ws_clone.clone();
+                                    let git_sel = git_clone.clone();
+                                    let git_chk = git_clone.clone();
                                     let p_chk = item.path.clone();
                                     let p_sel = item.path.clone();
                                     let is_checked = selected_staged.contains(&item.path);
@@ -168,8 +171,8 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                         .when(is_selected, |s| s.bg(t.bg_hover))
                                         .hover(|s| s.bg(t.bg_hover))
                                         .on_click(move |_, _, cx| {
-                                            ws_sel.update(cx, |ws, cx| {
-                                                ws.select_git_file(p_sel.clone(), true, cx);
+                                            git_sel.update(cx, |git, cx| {
+                                                git.select_file(p_sel.clone(), true, cx);
                                             });
                                         })
                                         .child(
@@ -183,8 +186,8 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                                     is_checked,
                                                     false,
                                                     move |_, _, cx| {
-                                                        ws_chk.update(cx, |ws, cx| {
-                                                            ws.toggle_git_staged_selection(&p_chk, cx);
+                                                        git_chk.update(cx, |git, cx| {
+                                                            git.toggle_staged_selection(&p_chk, cx);
                                                         });
                                                     },
                                                 ))
@@ -207,7 +210,7 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                             let changes_selected_count = all_changes.iter().filter(|f| selected_unstaged.contains(&f.path)).count();
                             let all_changes_selected = total_changes > 0 && changes_selected_count == total_changes;
                             let partial_changes_selected = changes_selected_count > 0 && !all_changes_selected;
-                            let ws_toggle_all_unstaged = ws_clone.clone();
+                            let git_toggle_all_unstaged = git_clone.clone();
 
                             div()
                                 .flex()
@@ -231,8 +234,8 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                                         partial_changes_selected,
                                                         move |_, _, cx| {
                                                             let select = !all_changes_selected;
-                                                            ws_toggle_all_unstaged.update(cx, |ws, cx| {
-                                                                ws.toggle_all_unstaged_selection(select, cx);
+                                                            git_toggle_all_unstaged.update(cx, |git, cx| {
+                                                                git.toggle_all_unstaged_selection(select, cx);
                                                             });
                                                         },
                                                     ))
@@ -246,7 +249,7 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                                 ),
                                         )
                                         .when(total_changes > 0, |this| {
-                                            let ws_stage = ws_clone.clone();
+                                            let git_stage = git_clone.clone();
                                             let has_sel = changes_selected_count > 0;
                                             let btn_label = if has_sel {
                                                 format!("Stage Selected ({})", changes_selected_count)
@@ -262,8 +265,8 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                                             .text_color(t.primary)
                                                             .hover(|h| h.underline())
                                                             .on_click(move |_, _, cx| {
-                                                                ws_stage.update(cx, |ws, cx| {
-                                                                    ws.git_stage_selected(cx);
+                                                                git_stage.update(cx, |git, cx| {
+                                                                    git.stage_selected(cx);
                                                                 });
                                                             })
                                                     })
@@ -275,8 +278,9 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                         }),
                                 )
                                 .children(all_changes.into_iter().map(|item| {
-                                    let ws_sel = ws_clone.clone();
-                                    let ws_chk = ws_clone.clone();
+                                    let git_sel = git_clone.clone();
+                                    let git_chk = git_clone.clone();
+                                    let git_disc = git_clone.clone();
                                     let ws_disc = ws_clone.clone();
                                     let p_chk = item.path.clone();
                                     let p_disc = item.path.clone();
@@ -296,8 +300,8 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                         .when(is_selected, |s| s.bg(t.bg_hover))
                                         .hover(|s| s.bg(t.bg_hover))
                                         .on_click(move |_, _, cx| {
-                                            ws_sel.update(cx, |ws, cx| {
-                                                ws.select_git_file(p_sel.clone(), false, cx);
+                                            git_sel.update(cx, |git, cx| {
+                                                git.select_file(p_sel.clone(), false, cx);
                                             });
                                         })
                                         .child(
@@ -311,8 +315,8 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                                     is_checked,
                                                     false,
                                                     move |_, _, cx| {
-                                                        ws_chk.update(cx, |ws, cx| {
-                                                            ws.toggle_git_unstaged_selection(&p_chk, cx);
+                                                        git_chk.update(cx, |git, cx| {
+                                                            git.toggle_unstaged_selection(&p_chk, cx);
                                                         });
                                                     },
                                                 ))
@@ -338,8 +342,12 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                                 .hover(|s| s.bg(t.bg_card).text_color(t.status_5xx))
                                                 .on_click(move |_, _, cx| {
                                                     cx.stop_propagation();
+                                                    git_disc.update(cx, |git, cx| {
+                                                        git.discard_file(&p_disc, cx);
+                                                    });
                                                     ws_disc.update(cx, |ws, cx| {
-                                                        ws.git_discard_file(&p_disc, cx);
+                                                        ws.reload_all();
+                                                        cx.notify();
                                                     });
                                                 })
                                                 .child("↺"),
@@ -374,7 +382,7 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                 ),
                         )
                         .child({
-                            let ws_commit = ws_clone.clone();
+                            let git_commit = git_clone.clone();
                             let inp = commit_input.clone();
                             let can_commit = total_staged > 0;
 
@@ -405,14 +413,14 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                     if msg.trim().is_empty() {
                                         return;
                                     }
-                                    let ws_s = ws_commit.clone();
+                                    let git_s = git_commit.clone();
                                     let inp_clear = inp.clone();
-                                    ws_s.update(cx, |ws, cx| {
-                                        if ws.git_commit(&msg, cx).is_ok() {
+                                    git_s.update(cx, |git, cx| {
+                                        if git.commit(&msg, cx).is_ok() {
                                             inp_clear.update(cx, |inp_st, cx| {
                                                 inp_st.set_value("", window, cx);
                                             });
-                                            ws.close_git_modal(cx);
+                                            git.close_modal(cx);
                                         }
                                     });
                                 })
@@ -492,18 +500,19 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
 impl RenderOnce for GitCommitModal {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
-        let ws = self.workspace_state.read(cx);
+        let git = self.git_state.read(cx);
+        let git_clone = self.git_state.clone();
         let ws_clone = self.workspace_state.clone();
 
-        let is_repo = ws.git_status.as_ref().map(|s| s.is_repo).unwrap_or(false);
-        let branch_name = ws.git_branch.clone().unwrap_or_else(|| "main".to_string());
-        let status_opt = ws.git_status.clone();
-        let selected_file = ws.git_selected_file.clone();
-        let diff_content = ws.git_diff_content.clone();
-        let git_error = ws.git_error.clone();
+        let is_repo = git.status.as_ref().map(|s| s.is_repo).unwrap_or(false);
+        let branch_name = git.branch.clone().unwrap_or_else(|| "main".to_string());
+        let status_opt = git.status.clone();
+        let selected_file = git.selected_file.clone();
+        let diff_content = git.diff_content.clone();
+        let git_error = git.error.clone();
 
-        let selected_unstaged = ws.git_selected_unstaged_files.clone();
-        let selected_staged = ws.git_selected_staged_files.clone();
+        let selected_unstaged = git.selected_unstaged_files.clone();
+        let selected_staged = git.selected_staged_files.clone();
 
         let staged_count = status_opt.as_ref().map(|s| s.staged_files.len()).unwrap_or(0);
         let unstaged_count = status_opt.as_ref().map(|s| s.unstaged_files.len()).unwrap_or(0);
@@ -542,19 +551,19 @@ impl RenderOnce for GitCommitModal {
             .items_center()
             .justify_center()
             .on_click({
-                let ws_s = ws_clone.clone();
+                let git_s = git_clone.clone();
                 move |_, _, cx| {
-                    ws_s.update(cx, |state, cx| {
-                        state.close_git_modal(cx);
+                    git_s.update(cx, |state, cx| {
+                        state.close_modal(cx);
                     });
                 }
             })
             .on_key_down({
-                let ws_s = ws_clone.clone();
+                let git_s = git_clone.clone();
                 move |event, _, cx| {
                     if event.keystroke.key.as_str() == "escape" {
-                        ws_s.update(cx, |state, cx| {
-                            state.close_git_modal(cx);
+                        git_s.update(cx, |state, cx| {
+                            state.close_modal(cx);
                         });
                     }
                 }
@@ -574,11 +583,11 @@ impl RenderOnce for GitCommitModal {
                     .flex_col()
                     .overflow_hidden()
                     .on_key_down({
-                        let ws_s = ws_clone.clone();
+                        let git_s = git_clone.clone();
                         move |event, _, cx| {
                             if event.keystroke.key.as_str() == "escape" {
-                                ws_s.update(cx, |state, cx| {
-                                    state.close_git_modal(cx);
+                                git_s.update(cx, |state, cx| {
+                                    state.close_modal(cx);
                                 });
                             }
                         }
@@ -650,10 +659,10 @@ impl RenderOnce for GitCommitModal {
                                             .text_color(t.text_muted)
                                             .hover(|s| s.text_color(t.text_primary))
                                             .on_click({
-                                                let ws_s = ws_clone.clone();
+                                                let git_s = git_clone.clone();
                                                 move |_, _, cx| {
-                                                    ws_s.update(cx, |state, cx| {
-                                                        state.close_git_modal(cx);
+                                                    git_s.update(cx, |state, cx| {
+                                                        state.close_modal(cx);
                                                     });
                                                 }
                                             })
@@ -663,7 +672,7 @@ impl RenderOnce for GitCommitModal {
                     )
                     // Error banner
                     .when_some(git_error, |this, err| {
-                        this.child(render_error_banner(ws_clone.clone(), err))
+                        this.child(render_error_banner(git_clone.clone(), err))
                     })
                     // Body
                     .child(
@@ -671,9 +680,10 @@ impl RenderOnce for GitCommitModal {
                             .flex_1()
                             .overflow_hidden()
                             .child(if !is_repo {
-                                render_not_a_repo_view(ws_clone.clone())
+                                render_not_a_repo_view(git_clone.clone())
                             } else {
                                 render_changes_view(ChangesViewProps {
+                                    git_clone: git_clone.clone(),
                                     ws_clone: ws_clone.clone(),
                                     status_opt,
                                     selected_file,

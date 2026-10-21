@@ -1,4 +1,4 @@
-use crate::state::{GitActiveModal, ToastState, WorkspaceState};
+use crate::state::{GitActiveModal, GitState, ToastState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -15,7 +15,7 @@ pub fn render_sidebar_footer(
     git_branch: &str,
     git_status: Option<&GitStatusResult>,
     is_syncing: bool,
-    ws: &Entity<WorkspaceState>,
+    git: &Entity<GitState>,
     toast: &Entity<ToastState>,
 ) -> AnyElement {
     let t = theme();
@@ -23,7 +23,7 @@ pub fn render_sidebar_footer(
     let behind = git_status.map(|s| s.behind).unwrap_or(0);
     let ahead = git_status.map(|s| s.ahead).unwrap_or(0);
 
-    let ws_footer = ws.clone();
+    let git_footer = git.clone();
     let toast_footer = toast.clone();
     let current_branch_name = git_branch.to_string();
 
@@ -41,7 +41,7 @@ pub fn render_sidebar_footer(
         .text_xs()
         // Branch chip & dropdown menu
         .child(if is_repo {
-            let ws_menu = ws_footer.clone();
+            let git_menu = git_footer.clone();
             let toast_menu = toast_footer.clone();
             let active_b = current_branch_name.clone();
 
@@ -137,29 +137,23 @@ pub fn render_sidebar_footer(
                         ),
                 )
                 .dropdown_menu(move |menu, window, cx| {
-                    let ws_commit = ws_menu.clone();
-                    let ws_history = ws_menu.clone();
-                    let ws_new_branch = ws_menu.clone();
-                    let ws_remotes = ws_menu.clone();
-                    let ws_fetch = ws_menu.clone();
-                    let ws_pull = ws_menu.clone();
-                    let ws_push = ws_menu.clone();
+                    let git_commit = git_menu.clone();
+                    let git_history = git_menu.clone();
+                    let git_new_branch = git_menu.clone();
+                    let git_remotes = git_menu.clone();
+                    let git_fetch = git_menu.clone();
+                    let git_pull = git_menu.clone();
+                    let git_push = git_menu.clone();
                     let toast_fetch = toast_menu.clone();
                     let toast_pull = toast_menu.clone();
                     let toast_push = toast_menu.clone();
 
-                    let ws_checkout_parent = ws_menu.clone();
+                    let git_checkout_parent = git_menu.clone();
                     let toast_checkout_parent = toast_menu.clone();
                     let (branches_list, current_b) = {
-                        let ws = ws_menu.read(cx);
-                        let branches = if !ws.git_branches.is_empty() {
-                            ws.git_branches.clone()
-                        } else {
-                            restclient_core::git::git_branches(&ws.workspace_path)
-                                .unwrap_or_default()
-                        };
-                        let current =
-                            ws.git_branch.clone().unwrap_or_else(|| active_b.clone());
+                        let g = git_menu.read(cx);
+                        let branches = g.branches.clone();
+                        let current = g.branch.clone().unwrap_or_else(|| active_b.clone());
                         (branches, current)
                     };
 
@@ -170,8 +164,8 @@ pub fn render_sidebar_footer(
                         PopupMenuItem::new("Commit...")
                             .icon(IconName::GitCommitHorizontal)
                             .on_click(move |_, _, cx| {
-                                ws_commit.update(cx, |ws, cx| {
-                                    ws.open_git_modal(GitActiveModal::Commit, cx);
+                                git_commit.update(cx, |git, cx| {
+                                    git.open_modal(GitActiveModal::Commit, cx);
                                 });
                             }),
                     );
@@ -181,8 +175,8 @@ pub fn render_sidebar_footer(
                         PopupMenuItem::new("History")
                             .icon(IconName::Clock)
                             .on_click(move |_, _, cx| {
-                                ws_history.update(cx, |ws, cx| {
-                                    ws.open_git_modal(GitActiveModal::History, cx);
+                                git_history.update(cx, |git, cx| {
+                                    git.open_modal(GitActiveModal::History, cx);
                                 });
                             }),
                     );
@@ -207,7 +201,7 @@ pub fn render_sidebar_footer(
                                 for b in &branches_list {
                                     let b_name = b.name.clone();
                                     let is_curr = b.is_current || b.name == current_b;
-                                    let ws_b = ws_checkout_parent.clone();
+                                    let git_b = git_checkout_parent.clone();
                                     let toast_b = toast_checkout_parent.clone();
                                     let b_target = b_name.clone();
 
@@ -216,8 +210,8 @@ pub fn render_sidebar_footer(
                                             .checked(is_curr)
                                             .on_click(move |_, _, cx| {
                                                 if !is_curr {
-                                                    ws_b.update(cx, |ws, cx| {
-                                                        match ws.git_checkout(&b_target, cx) {
+                                                    git_b.update(cx, |git, cx| {
+                                                        match git.checkout(&b_target, cx) {
                                                             Ok(_) => {
                                                                 toast_b.update(cx, |ts, cx| {
                                                                     ts.push_success("Git Checkout", format!("Switched to branch '{}'", b_target), cx);
@@ -244,8 +238,8 @@ pub fn render_sidebar_footer(
                         PopupMenuItem::new("New Branch...")
                             .icon(IconName::GitBranchPlus)
                             .on_click(move |_, _, cx| {
-                                ws_new_branch.update(cx, |ws, cx| {
-                                    ws.open_git_modal(GitActiveModal::NewBranch, cx);
+                                git_new_branch.update(cx, |git, cx| {
+                                    git.open_modal(GitActiveModal::NewBranch, cx);
                                 });
                             }),
                     );
@@ -257,10 +251,10 @@ pub fn render_sidebar_footer(
                         PopupMenuItem::new("Fetch")
                             .icon(IconName::CloudDownload)
                             .on_click(move |_, _, cx| {
-                                let ws_s = ws_fetch.clone();
+                                let git_s = git_fetch.clone();
                                 let toast_s = toast_fetch.clone();
-                                ws_s.update(cx, |ws, cx| {
-                                    match ws.git_fetch(cx) {
+                                git_s.update(cx, |git, cx| {
+                                    match git.fetch(cx) {
                                         Ok(msg) => {
                                             let trimmed = msg.trim();
                                             toast_s.update(cx, |ts, cx| {
@@ -295,10 +289,10 @@ pub fn render_sidebar_footer(
                         PopupMenuItem::new("Pull")
                             .icon(IconName::ArrowDown)
                             .on_click(move |_, _, cx| {
-                                let ws_s = ws_pull.clone();
+                                let git_s = git_pull.clone();
                                 let toast_s = toast_pull.clone();
-                                ws_s.update(cx, |ws, cx| {
-                                    match ws.git_pull(cx) {
+                                git_s.update(cx, |git, cx| {
+                                    match git.pull(cx) {
                                         Ok(msg) => {
                                             let trimmed = msg.trim();
                                             if trimmed.contains("Already up to date") {
@@ -341,10 +335,10 @@ pub fn render_sidebar_footer(
                         PopupMenuItem::new("Push")
                             .icon(IconName::ArrowUp)
                             .on_click(move |_, _, cx| {
-                                let ws_s = ws_push.clone();
+                                let git_s = git_push.clone();
                                 let toast_s = toast_push.clone();
-                                ws_s.update(cx, |ws, cx| {
-                                    match ws.git_push(cx) {
+                                git_s.update(cx, |git, cx| {
+                                    match git.push(cx) {
                                         Ok(msg) => {
                                             let trimmed = msg.trim();
                                             toast_s.update(cx, |ts, cx| {
@@ -381,8 +375,8 @@ pub fn render_sidebar_footer(
                         PopupMenuItem::new("Manage Remotes...")
                             .icon(IconName::Globe)
                             .on_click(move |_, _, cx| {
-                                ws_remotes.update(cx, |ws, cx| {
-                                    ws.open_git_modal(GitActiveModal::Remotes, cx);
+                                git_remotes.update(cx, |git, cx| {
+                                    git.open_modal(GitActiveModal::Remotes, cx);
                                 });
                             }),
                     );
@@ -391,7 +385,7 @@ pub fn render_sidebar_footer(
                 })
                 .into_any_element()
         } else {
-            let ws_init = ws_footer.clone();
+            let git_init = git_footer.clone();
             div()
                 .id("sidebar-footer-no-git")
                 .flex_1()
@@ -404,8 +398,8 @@ pub fn render_sidebar_footer(
                 .items_center()
                 .gap(px(4.))
                 .on_click(move |_, _, cx| {
-                    ws_init.update(cx, |ws, cx| {
-                        ws.open_git_modal(GitActiveModal::Commit, cx);
+                    git_init.update(cx, |git, cx| {
+                        git.open_modal(GitActiveModal::Commit, cx);
                     });
                 })
                 .child(div().text_color(t.text_muted).child("No Git"))

@@ -1,6 +1,6 @@
 use super::common::{render_error_banner, render_not_a_repo_view};
 use super::diff_view::{render_diff_content, render_diff_view_toggle, split_diff_into_files, DiffViewMode};
-use crate::state::WorkspaceState;
+use crate::state::GitState;
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -12,17 +12,17 @@ use std::collections::HashSet;
 
 #[derive(IntoElement)]
 pub struct GitHistoryModal {
-    workspace_state: Entity<WorkspaceState>,
+    git_state: Entity<GitState>,
 }
 
 impl GitHistoryModal {
-    pub fn new(workspace_state: Entity<WorkspaceState>) -> Self {
-        Self { workspace_state }
+    pub fn new(git_state: Entity<GitState>) -> Self {
+        Self { git_state }
     }
 }
 
 pub fn render_history_view(
-    ws_clone: Entity<WorkspaceState>,
+    git_clone: Entity<GitState>,
     history: Vec<restclient_core::git::GitCommitInfo>,
     selected_commit: Option<restclient_core::git::GitCommitDetail>,
     view_mode: DiffViewMode,
@@ -52,7 +52,7 @@ pub fn render_history_view(
                         .flex_1()
                         .overflow_y_scrollbar()
                         .children(history.into_iter().map(|item| {
-                            let ws_sel = ws_clone.clone();
+                            let git_sel = git_clone.clone();
                             let h = item.hash.clone();
                             let is_selected = selected_commit.as_ref().map(|c| c.commit.hash == item.hash).unwrap_or(false);
 
@@ -66,8 +66,8 @@ pub fn render_history_view(
                                 .when(is_selected, |s| s.bg(t.bg_hover))
                                 .hover(|s| s.bg(t.bg_hover))
                                 .on_click(move |_, _, cx| {
-                                    ws_sel.update(cx, |ws, cx| {
-                                        ws.select_git_commit(&h, cx);
+                                    git_sel.update(cx, |git, cx| {
+                                        git.select_commit(&h, cx);
                                     });
                                 })
                                 .flex()
@@ -205,7 +205,7 @@ pub fn render_history_view(
                             })
                             .children(file_entries.into_iter().map(|(file_path, file_diff)| {
                                 let is_expanded = expanded_files.contains(&file_path);
-                                let ws_toggle = ws_clone.clone();
+                                let git_toggle = git_clone.clone();
                                 let p = file_path.clone();
 
                                 div()
@@ -227,8 +227,8 @@ pub fn render_history_view(
                                             .items_center()
                                             .justify_between()
                                             .on_click(move |_, _, cx| {
-                                                ws_toggle.update(cx, |ws, cx| {
-                                                    ws.toggle_git_history_file_expansion(&p, cx);
+                                                git_toggle.update(cx, |git, cx| {
+                                                    git.toggle_history_file_expansion(&p, cx);
                                                 });
                                             })
                                             .child(
@@ -295,15 +295,15 @@ pub fn render_history_view(
 impl RenderOnce for GitHistoryModal {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
-        let ws = self.workspace_state.read(cx);
-        let ws_clone = self.workspace_state.clone();
+        let git = self.git_state.read(cx);
+        let git_clone = self.git_state.clone();
 
-        let is_repo = ws.git_status.as_ref().map(|s| s.is_repo).unwrap_or(false);
-        let branch_name = ws.git_branch.clone().unwrap_or_else(|| "main".to_string());
-        let history = ws.git_history.clone();
-        let selected_commit = ws.git_selected_commit.clone();
-        let git_error = ws.git_error.clone();
-        let expanded_files = ws.git_expanded_history_files.clone();
+        let is_repo = git.status.as_ref().map(|s| s.is_repo).unwrap_or(false);
+        let branch_name = git.branch.clone().unwrap_or_else(|| "main".to_string());
+        let history = git.history.clone();
+        let selected_commit = git.selected_commit.clone();
+        let git_error = git.error.clone();
+        let expanded_files = git.expanded_history_files.clone();
 
         let view_mode_holder = window.use_keyed_state(
             gpui::SharedString::from("git-diff-view-mode"),
@@ -325,19 +325,19 @@ impl RenderOnce for GitHistoryModal {
             .items_center()
             .justify_center()
             .on_click({
-                let ws_s = ws_clone.clone();
+                let git_s = git_clone.clone();
                 move |_, _, cx| {
-                    ws_s.update(cx, |state, cx| {
-                        state.close_git_modal(cx);
+                    git_s.update(cx, |state, cx| {
+                        state.close_modal(cx);
                     });
                 }
             })
             .on_key_down({
-                let ws_s = ws_clone.clone();
+                let git_s = git_clone.clone();
                 move |event, _, cx| {
                     if event.keystroke.key.as_str() == "escape" {
-                        ws_s.update(cx, |state, cx| {
-                            state.close_git_modal(cx);
+                        git_s.update(cx, |state, cx| {
+                            state.close_modal(cx);
                         });
                     }
                 }
@@ -357,11 +357,11 @@ impl RenderOnce for GitHistoryModal {
                     .flex_col()
                     .overflow_hidden()
                     .on_key_down({
-                        let ws_s = ws_clone.clone();
+                        let git_s = git_clone.clone();
                         move |event, _, cx| {
                             if event.keystroke.key.as_str() == "escape" {
-                                ws_s.update(cx, |state, cx| {
-                                    state.close_git_modal(cx);
+                                git_s.update(cx, |state, cx| {
+                                    state.close_modal(cx);
                                 });
                             }
                         }
@@ -433,10 +433,10 @@ impl RenderOnce for GitHistoryModal {
                                             .text_color(t.text_muted)
                                             .hover(|s| s.text_color(t.text_primary))
                                             .on_click({
-                                                let ws_s = ws_clone.clone();
+                                                let git_s = git_clone.clone();
                                                 move |_, _, cx| {
-                                                    ws_s.update(cx, |state, cx| {
-                                                        state.close_git_modal(cx);
+                                                    git_s.update(cx, |state, cx| {
+                                                        state.close_modal(cx);
                                                     });
                                                 }
                                             })
@@ -446,7 +446,7 @@ impl RenderOnce for GitHistoryModal {
                     )
                     // Error banner
                     .when_some(git_error, |this, err| {
-                        this.child(render_error_banner(ws_clone.clone(), err))
+                        this.child(render_error_banner(git_clone.clone(), err))
                     })
                     // Body
                     .child(
@@ -454,9 +454,9 @@ impl RenderOnce for GitHistoryModal {
                             .flex_1()
                             .overflow_hidden()
                             .child(if !is_repo {
-                                render_not_a_repo_view(ws_clone.clone())
+                                render_not_a_repo_view(git_clone.clone())
                             } else {
-                                render_history_view(ws_clone.clone(), history, selected_commit, view_mode, view_mode_entity, expanded_files)
+                                render_history_view(git_clone.clone(), history, selected_commit, view_mode, view_mode_entity, expanded_files)
                             }),
                     ),
             )

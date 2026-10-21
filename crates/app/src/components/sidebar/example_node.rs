@@ -27,6 +27,7 @@ pub fn render_example_node(
     let ed_ex_click = ctx.ed.clone();
     let resp_ex_click = ctx.resp.clone();
     let ws_ex_click = ctx.ws.clone();
+    let sb_ex_click = ctx.sidebar.clone();
     let r_id_for_click = parent_id.to_string();
     let ex_name_for_click = ex.name.clone();
 
@@ -62,8 +63,9 @@ pub fn render_example_node(
             let r_id = r_id_for_click.clone();
             let ex_name = ex_name_for_click.clone();
             if ev.click_count() > 1 {
-                ws_ex_click.update(cx, |state, cx| {
-                    state.start_renaming_example(r_id.clone(), ex_name.clone(), window, cx);
+                let ws_c = ws_ex_click.clone();
+                sb_ex_click.update(cx, |state, cx| {
+                    state.start_renaming_example(r_id.clone(), ex_name.clone(), ws_c, window, cx);
                 });
                 if let Some(r) = ws_ex_click.read(cx).find_request(&r_id).cloned() {
                     ed_ex_click.update(cx, |state, cx| {
@@ -78,8 +80,8 @@ pub fn render_example_node(
                     }
                 }
             } else {
-                ws_ex_click.update(cx, |state, cx| {
-                    state.record_navigation(&r_id, cx);
+                sb_ex_click.update(cx, |state, _cx| {
+                    state.record_navigation(&r_id);
                 });
                 if let Some(r) = ws_ex_click.read(cx).find_request(&r_id).cloned() {
                     ed_ex_click.update(cx, |state, cx| {
@@ -97,12 +99,14 @@ pub fn render_example_node(
         })
         .context_menu({
             let ws_ctx = ctx.ws.clone();
+            let sb_ctx = ctx.sidebar.clone();
             let resp_ctx = ctx.resp.clone();
             let r_id_ctx = parent_id.to_string();
             let ex_name_ctx = ex.name.clone();
 
             move |menu, _window, _cx| {
                 let ws_ren = ws_ctx.clone();
+                let sb_ren = sb_ctx.clone();
                 let r_id_ren = r_id_ctx.clone();
                 let ex_ren_name = ex_name_ctx.clone();
 
@@ -119,10 +123,12 @@ pub fn render_example_node(
                     .item(
                         gpui_component::menu::PopupMenuItem::new("Rename").on_click(
                             move |_, window, cx| {
-                                ws_ren.update(cx, |state, cx| {
+                                let ws_c = ws_ren.clone();
+                                sb_ren.update(cx, |state, cx| {
                                     state.start_renaming_example(
                                         r_id_ren.clone(),
                                         ex_ren_name.clone(),
+                                        ws_c,
                                         window,
                                         cx,
                                     );
@@ -228,7 +234,7 @@ pub fn render_example_node(
                 )
                 .child(
                     if let (true, Some(inp)) = (is_renaming_this_ex, ctx.rename_example_input) {
-                        let ws_esc = ctx.ws.clone();
+                        let sb_esc = ctx.sidebar.clone();
                         div()
                             .flex_1()
                             .min_w(px(0.))
@@ -245,7 +251,7 @@ pub fn render_example_node(
                             })
                             .on_key_down(move |event, _, cx| {
                                 if event.keystroke.key.as_str() == "escape" {
-                                    ws_esc.update(cx, |state, cx| {
+                                    sb_esc.update(cx, |state, cx| {
                                         state.cancel_renaming_example(cx);
                                     });
                                 }
