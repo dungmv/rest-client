@@ -1,4 +1,4 @@
-﻿use crate::state::{EditorState, WorkspaceState};
+use crate::state::{EditorState, ResponseState, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -38,16 +38,19 @@ fn app_icon_image() -> Arc<Image> {
 pub struct AppTitleBar {
     workspace_state: Entity<WorkspaceState>,
     editor_state: Entity<EditorState>,
+    response_state: Entity<ResponseState>,
 }
 
 impl AppTitleBar {
     pub fn new(
         workspace_state: Entity<WorkspaceState>,
         editor_state: Entity<EditorState>,
+        response_state: Entity<ResponseState>,
     ) -> Self {
         Self {
             workspace_state,
             editor_state,
+            response_state,
         }
     }
 }
@@ -60,6 +63,7 @@ impl RenderOnce for AppTitleBar {
         let t = theme();
         let ws = self.workspace_state.read(cx);
         let ed = self.editor_state.read(cx);
+        let resp = self.response_state.read(cx);
 
         let folder_name = ws
             .workspace_path
@@ -85,11 +89,21 @@ impl RenderOnce for AppTitleBar {
             .map(|e| e.name.clone())
             .unwrap_or_else(|| "No Environment".to_string());
 
-        let current_title = ed
+        let req_title = ed
             .active_request
             .as_ref()
             .map(crate::state::effective_request_name)
             .unwrap_or_default();
+
+        let current_title = if let Some(ex_name) = &resp.active_example_name {
+            if !req_title.trim().is_empty() {
+                format!("{}: {}", req_title, ex_name)
+            } else {
+                ex_name.clone()
+            }
+        } else {
+            req_title
+        };
 
         let ws_clone = self.workspace_state.clone();
 

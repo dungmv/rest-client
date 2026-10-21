@@ -1,4 +1,4 @@
-﻿use crate::components::tabs_with_badge::TabItem;
+use crate::components::tabs_with_badge::TabItem;
 use crate::state::{EditorState, ResponseState, ResponseTabKind, ResponseViewMode, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
@@ -54,7 +54,6 @@ impl RenderOnce for ResponseViewer {
 
         let active_id = ws.local_state.active_request.clone();
         let is_viewing_example = resp_s.active_example_name.is_some();
-        let active_example_name = resp_s.active_example_name.clone();
 
         let current_resp = resp_s.current_response.clone();
         let active_tab = resp_s.active_tab;
@@ -165,44 +164,25 @@ impl RenderOnce for ResponseViewer {
                             .when(is_viewing_example, |this| {
                                 let rs = resp_state_clone.clone();
                                 let req_id = active_id.clone().unwrap_or_default();
-                                let ex_name = active_example_name.clone().unwrap_or_default();
                                 this.child(
                                     div()
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(4.))
-                                        .child(
-                                            div()
-                                                .px(px(6.))
-                                                .py(px(2.))
-                                                .rounded(px(4.))
-                                                .bg(gpui::Hsla { a: 0.15, ..t.primary })
-                                                .border_1()
-                                                .border_color(gpui::Hsla { a: 0.3, ..t.primary })
-                                                .text_xs()
-                                                .text_color(t.primary)
-                                                .child(format!("Example: {}", ex_name)),
-                                        )
-                                        .child(
-                                            div()
-                                                .id("btn-return-live")
-                                                .cursor_pointer()
-                                                .px(px(6.))
-                                                .py(px(2.))
-                                                .rounded(px(4.))
-                                                .bg(t.bg_card)
-                                                .border_1()
-                                                .border_color(t.border)
-                                                .text_xs()
-                                                .text_color(t.primary)
-                                                .hover(|s| s.bg(t.bg_hover))
-                                                .on_click(move |_, _, cx| {
-                                                    rs.update(cx, |state, cx| {
-                                                        state.restore_live_response(&req_id, cx);
-                                                    });
-                                                })
-                                                .child(div().flex().items_center().gap(px(4.)).child(Icon::new(IconName::ArrowLeft).size(px(14.))).child("Live")),
-                                        ),
+                                        .id("btn-return-live")
+                                        .cursor_pointer()
+                                        .px(px(6.))
+                                        .py(px(2.))
+                                        .rounded(px(4.))
+                                        .bg(t.bg_card)
+                                        .border_1()
+                                        .border_color(t.border)
+                                        .text_xs()
+                                        .text_color(t.primary)
+                                        .hover(|s| s.bg(t.bg_hover))
+                                        .on_click(move |_, _, cx| {
+                                            rs.update(cx, |state, cx| {
+                                                state.restore_live_response(&req_id, cx);
+                                            });
+                                        })
+                                        .child(div().flex().items_center().gap(px(4.)).child(Icon::new(IconName::ArrowLeft).size(px(14.))).child("Live")),
                                 )
                             }),
                     ),
@@ -559,6 +539,55 @@ impl RenderOnce for ResponseViewer {
                                                     .flex()
                                                     .items_center()
                                                     .gap(px(6.))
+                                                    // Save as Example Button
+                                                    .when(!is_viewing_example && req_id_opt.is_some(), |this| {
+                                                        let ws_s = ws_s.clone();
+                                                        let c_resp = c_resp.clone();
+                                                        let req_id = req_id_opt.unwrap();
+                                                        this.child(
+                                                            div()
+                                                                .id("btn-save-example")
+                                                                .tooltip(move |window, cx| {
+                                                                    gpui_component::tooltip::Tooltip::new("Save as Example").build(window, cx)
+                                                                })
+                                                                .cursor_pointer()
+                                                                .px(px(6.))
+                                                                .py(px(2.))
+                                                                .rounded(px(4.))
+                                                                .bg(t.bg_card)
+                                                                .border_1()
+                                                                .border_color(t.border)
+                                                                .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
+                                                                .text_xs()
+                                                                .text_color(t.text_secondary)
+                                                                .flex()
+                                                                .items_center()
+                                                                .justify_center()
+                                                                .on_click(move |_, _, cx| {
+                                                                    ws_s.update(cx, |ws, cx| {
+                                                                        if let Some(mut req) = ws.get_request_file(&req_id) {
+                                                                            let base_name = format!("{} {}", c_resp.status_code, c_resp.status_text);
+                                                                            let mut name = base_name.clone();
+                                                                            let mut idx = 2;
+                                                                            while req.examples.iter().any(|e| e.name == name) {
+                                                                                name = format!("{}-{}", base_name, idx);
+                                                                                idx += 1;
+                                                                            }
+                                                                            let ex = RequestExampleFile {
+                                                                                name,
+                                                                                status: c_resp.status_code,
+                                                                                headers: c_resp.headers.iter().map(|(k, v)| RequestKvItem::new(k, v)).collect(),
+                                                                                body: Some(String::from_utf8_lossy(&c_resp.body).to_string()),
+                                                                                extra: std::collections::BTreeMap::new(),
+                                                                            };
+                                                                            req.examples.push(ex);
+                                                                            ws.save_request_file(&req_id, &req, cx);
+                                                                        }
+                                                                    });
+                                                                })
+                                                                .child(Icon::new(IconName::Save).size(px(14.))),
+                                                        )
+                                                    })
                                                     // Toggle Wrap Line Button
                                                     .child({
                                                         let rs_w = rs_wrap.clone();
@@ -566,7 +595,7 @@ impl RenderOnce for ResponseViewer {
                                                         div()
                                                             .id("btn-toggle-wrap")
                                                             .tooltip(move |window, cx| {
-                                                                let tip = if wrap_lines { "Line Wrap: Enabled" } else { "Line Wrap: Disabled" };
+                                                                    let tip = if wrap_lines { "Line Wrap: Enabled" } else { "Line Wrap: Disabled" };
                                                                 gpui_component::tooltip::Tooltip::new(tip).build(window, cx)
                                                             })
                                                             .px(px(6.))
@@ -659,55 +688,6 @@ impl RenderOnce for ResponseViewer {
                                                                 }
                                                             })
                                                             .child(Icon::new(IconName::Download).size(px(14.)))
-                                                    })
-                                                    // Save as Example Button
-                                                    .when(!is_viewing_example && req_id_opt.is_some(), |this| {
-                                                        let ws_s = ws_s.clone();
-                                                        let c_resp = c_resp.clone();
-                                                        let req_id = req_id_opt.unwrap();
-                                                        this.child(
-                                                            div()
-                                                                .id("btn-save-example")
-                                                                .tooltip(move |window, cx| {
-                                                                    gpui_component::tooltip::Tooltip::new("Save as Example").build(window, cx)
-                                                                })
-                                                                .cursor_pointer()
-                                                                .px(px(6.))
-                                                                .py(px(2.))
-                                                                .rounded(px(4.))
-                                                                .bg(t.bg_card)
-                                                                .border_1()
-                                                                .border_color(t.border)
-                                                                .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
-                                                                .text_xs()
-                                                                .text_color(t.text_secondary)
-                                                                .flex()
-                                                                .items_center()
-                                                                .justify_center()
-                                                                .on_click(move |_, _, cx| {
-                                                                    ws_s.update(cx, |ws, cx| {
-                                                                        if let Some(mut req) = ws.get_request_file(&req_id) {
-                                                                            let base_name = format!("{} {}", c_resp.status_code, c_resp.status_text);
-                                                                            let mut name = base_name.clone();
-                                                                            let mut idx = 2;
-                                                                            while req.examples.iter().any(|e| e.name == name) {
-                                                                                name = format!("{}-{}", base_name, idx);
-                                                                                idx += 1;
-                                                                            }
-                                                                            let ex = RequestExampleFile {
-                                                                                name,
-                                                                                status: c_resp.status_code,
-                                                                                headers: c_resp.headers.iter().map(|(k, v)| RequestKvItem::new(k, v)).collect(),
-                                                                                body: Some(String::from_utf8_lossy(&c_resp.body).to_string()),
-                                                                                extra: std::collections::BTreeMap::new(),
-                                                                            };
-                                                                            req.examples.push(ex);
-                                                                            ws.save_request_file(&req_id, &req, cx);
-                                                                        }
-                                                                    });
-                                                                })
-                                                                .child(Icon::new(IconName::Save).size(px(14.))),
-                                                        )
                                                     }),
                                             ),
                                     )

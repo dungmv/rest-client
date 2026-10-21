@@ -158,6 +158,11 @@ impl ResponseState {
     }
 
     pub fn view_example(&mut self, example: &RequestExampleFile, cx: &mut Context<Self>) {
+        self.view_example_internal(example);
+        cx.notify();
+    }
+
+    pub fn view_example_internal(&mut self, example: &RequestExampleFile) {
         self.active_example_name = Some(example.name.clone());
         let headers: Vec<(String, String)> = example
             .headers
@@ -166,11 +171,12 @@ impl ResponseState {
             .collect();
         let body = example.body.as_deref().unwrap_or("").as_bytes().to_vec();
         let size_bytes = body.len();
+        let status_text = restclient_core::models::status_code_to_reason(example.status).to_string();
         let record = HttpResponseRecord {
             id: format!("example-{}", example.name),
             request_id: String::new(),
             status_code: example.status,
-            status_text: format!("Example: {}", example.name),
+            status_text,
             headers,
             cookies: Vec::new(),
             body,
@@ -185,7 +191,6 @@ impl ResponseState {
         self.current_response = Some(record);
         self.scroll_handle = gpui::UniformListScrollHandle::new();
         self.refresh_formatted_body();
-        cx.notify();
     }
 
     pub fn restore_live_response(&mut self, req_id: &str, cx: &mut Context<Self>) {
@@ -199,12 +204,13 @@ impl ResponseState {
     }
 
     pub fn rename_example(&mut self, old_name: &str, new_name: &str, cx: &mut Context<Self>) {
+        self.rename_example_internal(old_name, new_name);
+        cx.notify();
+    }
+
+    pub fn rename_example_internal(&mut self, old_name: &str, new_name: &str) {
         if self.active_example_name.as_deref() == Some(old_name) {
             self.active_example_name = Some(new_name.to_string());
-            if let Some(r) = &mut self.current_response {
-                r.status_text = format!("Example: {}", new_name);
-            }
-            cx.notify();
         }
     }
 
@@ -549,6 +555,33 @@ mod tests {
                 icon_path
             );
         }
+    }
+
+    #[test]
+    fn test_view_example_preserves_http_status_without_name() {
+        let mut state = ResponseState::new();
+        let ex = restclient_core::storage::models::RequestExampleFile {
+            name: "Success 200".to_string(),
+            status: 200,
+            headers: vec![],
+            body: Some(r#"{"message":"hello"}"#.to_string()),
+            extra: std::collections::BTreeMap::new(),
+        };
+
+        state.view_example_internal(&ex);
+
+        assert_eq!(state.active_example_name.as_deref(), Some("Success 200"));
+        let resp = state.current_response.as_ref().expect("Response should exist");
+        assert_eq!(resp.status_code, 200);
+        // Requirement 2: HTTP status is preserved like request, NOT containing example name
+        assert_eq!(resp.status_text, "OK");
+        assert_ne!(resp.status_text, "Example: Success 200");
+
+        // Renaming example should update active_example_name, but status_text stays "OK"
+        state.rename_example_internal("Success 200", "Renamed Success");
+        assert_eq!(state.active_example_name.as_deref(), Some("Renamed Success"));
+        let resp_after = state.current_response.as_ref().expect("Response should exist");
+        assert_eq!(resp_after.status_text, "OK");
     }
 }
 

@@ -501,6 +501,13 @@ pub struct HttpResponseRecord {
     pub created_at: DateTime<Utc>,
 }
 
+pub fn status_code_to_reason(code: u16) -> &'static str {
+    reqwest::StatusCode::from_u16(code)
+        .ok()
+        .and_then(|s| s.canonical_reason())
+        .unwrap_or("")
+}
+
 impl HttpResponseRecord {
     pub fn body_as_str(&self) -> Result<&str, std::str::Utf8Error> {
         std::str::from_utf8(&self.body)
@@ -542,5 +549,19 @@ impl HttpResponseRecord {
                 k.eq_ignore_ascii_case("content-type")
                     && (v.to_lowercase().contains("xml") || v.to_lowercase().contains("application/xml") || v.to_lowercase().contains("text/xml"))
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_status_code_to_reason() {
+        assert_eq!(status_code_to_reason(200), "OK");
+        assert_eq!(status_code_to_reason(201), "Created");
+        assert_eq!(status_code_to_reason(404), "Not Found");
+        assert_eq!(status_code_to_reason(500), "Internal Server Error");
+        assert_eq!(status_code_to_reason(999), "");
     }
 }

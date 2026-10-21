@@ -599,6 +599,11 @@ impl AppView {
             }
         }));
 
+        // 6. Observe response_state: re-render AppView on response/example changes
+        _subscriptions.push(cx.observe(&response_state, |_, _, cx| {
+            cx.notify();
+        }));
+
         // 5. Observe OS appearance changes for System theme preference
         let ws_theme = workspace_state.clone();
         _subscriptions.push(window.observe_window_appearance(move |window, cx| {
@@ -1637,7 +1642,7 @@ impl Render for AppView {
                 }
             })
             // Custom Title Bar
-            .child(AppTitleBar::new(ws_entity.clone(), ed_entity.clone()))
+            .child(AppTitleBar::new(ws_entity.clone(), ed_entity.clone(), resp_entity.clone()))
             // Main workspace content area
             .child(
                 div()
