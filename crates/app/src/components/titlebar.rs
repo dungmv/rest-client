@@ -1,5 +1,6 @@
 use crate::state::{
-    EditorState, ModalState, ResponseState, ScopeSettingsTarget, SidebarState, WorkspaceDataState,
+    EditorState, EnvironmentState, ModalState, ResponseState, ScopeSettingsTarget, SidebarState,
+    WorkspaceDataState,
 };
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
@@ -39,6 +40,7 @@ fn app_icon_image() -> Arc<Image> {
 #[derive(IntoElement)]
 pub struct AppTitleBar {
     workspace_state: Entity<WorkspaceDataState>,
+    env_state: Entity<EnvironmentState>,
     modal_state: Entity<ModalState>,
     sidebar_state: Entity<SidebarState>,
     editor_state: Entity<EditorState>,
@@ -48,18 +50,13 @@ pub struct AppTitleBar {
 impl AppTitleBar {
     pub fn new(
         workspace_state: Entity<WorkspaceDataState>,
+        env_state: Entity<EnvironmentState>,
         modal_state: Entity<ModalState>,
         sidebar_state: Entity<SidebarState>,
         editor_state: Entity<EditorState>,
         response_state: Entity<ResponseState>,
     ) -> Self {
-        Self {
-            workspace_state,
-            modal_state,
-            sidebar_state,
-            editor_state,
-            response_state,
-        }
+        Self { workspace_state, env_state, modal_state, sidebar_state, editor_state, response_state }
     }
 }
 
@@ -70,6 +67,7 @@ impl RenderOnce for AppTitleBar {
         let is_linux = cfg!(target_os = "linux");
         let t = theme();
         let ws = self.workspace_state.read(cx);
+        let env_read = self.env_state.read(cx);
         let modal = self.modal_state.read(cx);
         let ed = self.editor_state.read(cx);
         let resp = self.response_state.read(cx);
@@ -94,7 +92,7 @@ impl RenderOnce for AppTitleBar {
             })
             .unwrap_or(folder_name);
 
-        let env_name = ws
+        let env_name = env_read
             .active_environment()
             .map(|e| e.name.clone())
             .unwrap_or_else(|| "No Environment".to_string());
@@ -339,11 +337,11 @@ impl RenderOnce for AppTitleBar {
             })
             // Environment pill dropdown: [● local ▾]
             .child({
-                let ws_s = ws_clone.clone();
+                let env_s = self.env_state.clone();
                 let modal_settings_clone = modal_clone.clone();
-                let envs = ws.environments.clone();
-                let active_env_id = ws.active_environment_id.clone();
-                let has_active = ws.active_environment().is_some();
+                let envs = env_read.environments.clone();
+                let active_env_id = env_read.active_environment_id.clone();
+                let has_active = env_read.active_environment().is_some();
 
                 Button::new("btn-env-breadcrumb")
                     .ghost()
@@ -378,13 +376,13 @@ impl RenderOnce for AppTitleBar {
                         let mut m = menu;
 
                         // 1. "No Environment" option
-                        let ws_none = ws_s.clone();
+                        let env_none = env_s.clone();
                         let is_none_active = active_env_id.is_none();
                         m = m.item(
                             PopupMenuItem::new("No Environment")
                                 .checked(is_none_active)
                                 .on_click(move |_, _, cx| {
-                                    ws_none.update(cx, |state, cx| {
+                                    env_none.update(cx, |state, cx| {
                                         state.set_active_environment(None, cx);
                                     });
                                 }),
@@ -394,12 +392,12 @@ impl RenderOnce for AppTitleBar {
                         for env in &envs {
                             let env_id = env.id.clone();
                             let is_act = active_env_id.as_deref() == Some(&env_id);
-                            let ws_env = ws_s.clone();
+                            let env_item = env_s.clone();
                             m = m.item(
                                 PopupMenuItem::new(env.name.clone())
                                     .checked(is_act)
                                     .on_click(move |_, _, cx| {
-                                        ws_env.update(cx, |state, cx| {
+                                        env_item.update(cx, |state, cx| {
                                             state.set_active_environment(Some(env_id.clone()), cx);
                                         });
                                     }),
@@ -508,51 +506,21 @@ impl RenderOnce for AppTitleBar {
             .child({
                 let modal_s = modal_clone.clone();
                 let is_vert = modal.split_layout_vertical;
-                div()
-                    .id("btn-split-toggle")
-                    .occlude()
-                    .w(px(28.))
-                    .h(px(26.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(4.))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(t.bg_hover))
-                    .text_color(t.text_secondary)
+                div().id("btn-split-toggle").occlude().w(px(28.)).h(px(26.))
+                    .flex().items_center().justify_center().rounded(px(4.)).cursor_pointer()
+                    .hover(|s| s.bg(t.bg_hover)).text_color(t.text_secondary)
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(move |_, _, cx| {
-                        modal_s.update(cx, |state, cx| {
-                            state.toggle_split_layout(cx);
-                        });
-                    })
-                    .child(if is_vert {
-                        Icon::new(IconName::PanelBottom).size(px(16.))
-                    } else {
-                        Icon::new(IconName::PanelRight).size(px(16.))
-                    })
+                    .on_click(move |_, _, cx| modal_s.update(cx, |state, cx| state.toggle_split_layout(cx)))
+                    .child(if is_vert { Icon::new(IconName::PanelBottom).size(px(16.)) } else { Icon::new(IconName::PanelRight).size(px(16.)) })
             })
             // Settings button
             .child({
                 let modal_s = modal_clone.clone();
-                div()
-                    .id("btn-settings")
-                    .occlude()
-                    .w(px(28.))
-                    .h(px(26.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(4.))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(t.bg_hover))
-                    .text_color(t.text_secondary)
+                div().id("btn-settings").occlude().w(px(28.)).h(px(26.))
+                    .flex().items_center().justify_center().rounded(px(4.)).cursor_pointer()
+                    .hover(|s| s.bg(t.bg_hover)).text_color(t.text_secondary)
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(move |_, _, cx| {
-                        modal_s.update(cx, |state, cx| {
-                            state.toggle_settings_modal(cx);
-                        });
-                    })
+                    .on_click(move |_, _, cx| modal_s.update(cx, |state, cx| state.toggle_settings_modal(cx)))
                     .child(Icon::new(IconName::Settings).size(px(16.)))
             });
 

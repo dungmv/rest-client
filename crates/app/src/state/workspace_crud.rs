@@ -50,7 +50,6 @@ impl WorkspaceDataState {
 
     pub fn delete_request(&mut self, req_id: &str, cx: &mut Context<Self>) {
         let _ = self.store.delete_request(req_id);
-        self.unsaved_requests.remove(req_id);
         self.pins.retain(|p| p != req_id);
         let _ = self.store.save_pins(&self.pins);
         self.reload_tree();
@@ -68,10 +67,6 @@ impl WorkspaceDataState {
             if let Some(pos) = self.pins.iter().position(|p| p == req_id) {
                 self.pins[pos] = new_rel_path.clone();
                 let _ = self.store.save_pins(&self.pins);
-            }
-            if self.local_state.active_request.as_deref() == Some(req_id) {
-                self.local_state.active_request = Some(new_rel_path.clone());
-                self.schedule_state_save(cx);
             }
 
             self.reload_tree();
@@ -279,6 +274,16 @@ impl WorkspaceDataState {
     pub fn reorder_pins(&mut self, new_pins: Vec<String>, cx: &mut Context<Self>) {
         self.pins = new_pins;
         let _ = self.store.save_pins(&self.pins);
+        cx.notify();
+    }
+
+    pub fn get_request_file(&self, req_id: &str) -> Option<RequestFile> {
+        self.store.read_request(req_id).ok()
+    }
+
+    pub fn save_request_file(&mut self, req_id: &str, req_file: &RequestFile, cx: &mut Context<Self>) {
+        let _ = self.store.write_request(req_id, req_file);
+        self.reload_tree();
         cx.notify();
     }
 }

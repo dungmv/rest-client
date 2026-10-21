@@ -1,6 +1,7 @@
 use crate::components::status_badge::MethodBadge;
 use crate::state::{
-    EditorState, GitActiveModal, GitState, GitTab, ModalState, SidebarState, WorkspaceDataState,
+    EditorState, EnvironmentState, GitActiveModal, GitState, GitTab, ModalState, PersistenceState,
+    SidebarState, WorkspaceDataState,
 };
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
@@ -16,6 +17,8 @@ use gpui_kit::assets::IconName;
 #[derive(IntoElement)]
 pub struct CommandPalette {
     workspace_state: Entity<WorkspaceDataState>,
+    env_state: Entity<EnvironmentState>,
+    persistence_state: Entity<PersistenceState>,
     modal_state: Entity<ModalState>,
     sidebar_state: Entity<SidebarState>,
     git_state: Entity<GitState>,
@@ -24,8 +27,11 @@ pub struct CommandPalette {
 }
 
 impl CommandPalette {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         workspace_state: Entity<WorkspaceDataState>,
+        env_state: Entity<EnvironmentState>,
+        persistence_state: Entity<PersistenceState>,
         modal_state: Entity<ModalState>,
         sidebar_state: Entity<SidebarState>,
         git_state: Entity<GitState>,
@@ -34,6 +40,8 @@ impl CommandPalette {
     ) -> Self {
         Self {
             workspace_state,
+            env_state,
+            persistence_state,
             modal_state,
             sidebar_state,
             git_state,
@@ -47,8 +55,10 @@ impl RenderOnce for CommandPalette {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
         let ws = self.workspace_state.read(cx);
+        let per = self.persistence_state.read(cx);
+        let env = self.env_state.read(cx);
         let mut requests = ws.requests.clone();
-        let recent = ws.local_state.recent.clone();
+        let recent = per.local_state.recent.clone();
         requests.sort_by_key(|r| {
             if let Some(pos) = recent.iter().position(|p| p == &r.id) {
                 pos
@@ -56,9 +66,9 @@ impl RenderOnce for CommandPalette {
                 recent.len() + 100
             }
         });
-        let envs = ws.environments.clone();
+        let envs = env.environments.clone();
 
-        let ws_clone = self.workspace_state.clone();
+        let env_clone = self.env_state.clone();
         let modal_clone = self.modal_state.clone();
         let sb_clone = self.sidebar_state.clone();
         let git_clone = self.git_state.clone();
@@ -496,7 +506,7 @@ impl RenderOnce for CommandPalette {
                                 envs.into_iter()
                                     .filter(|e| q.is_empty() || e.name.to_lowercase().contains(&q))
                                     .map(|env| {
-                                        let ws_s = ws_clone.clone();
+                                        let env_s = env_clone.clone();
                                         let modal_s = modal_clone.clone();
                                         let env_id = env.id.clone();
 
@@ -511,7 +521,7 @@ impl RenderOnce for CommandPalette {
                                             .items_center()
                                             .gap(px(8.))
                                             .on_click(move |_, _, cx| {
-                                                ws_s.update(cx, |state, cx| {
+                                                env_s.update(cx, |state, cx| {
                                                     state.set_active_environment(
                                                         Some(env_id.clone()),
                                                         cx,

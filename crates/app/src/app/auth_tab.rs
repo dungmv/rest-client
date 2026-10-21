@@ -1,5 +1,5 @@
 use super::auth_input::render_auth_input;
-use crate::state::{EditorState, ModalState, WorkspaceDataState};
+use crate::state::{EditorState, EnvironmentState, ModalState, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::{
     div, px, App, Div, Entity, ParentElement, Styled, Window,
@@ -24,6 +24,7 @@ pub fn render_auth_tab(
     auth: &Auth,
     folder_id: Option<&str>,
     workspace_state: &Entity<WorkspaceDataState>,
+    env_state: &Entity<EnvironmentState>,
     modal_state: &Entity<ModalState>,
     editor_state: &Entity<EditorState>,
     inputs: AuthTabInputs,
@@ -230,7 +231,7 @@ pub fn render_auth_tab(
                                 .child(render_auth_input(
                                     "auth-bearer-token-input",
                                     inputs.bearer_token_input,
-                                    workspace_state,
+                                    env_state,
                                     modal_state,
                                     window,
                                     cx,
@@ -271,7 +272,7 @@ pub fn render_auth_tab(
                                         .child(render_auth_input(
                                             "auth-basic-user-input",
                                             inputs.basic_user_input,
-                                            workspace_state,
+                                            env_state,
                                             modal_state,
                                             window,
                                             cx,
@@ -304,7 +305,7 @@ pub fn render_auth_tab(
                                         .child(render_auth_input(
                                             "auth-basic-pass-input",
                                             inputs.basic_pass_input,
-                                            workspace_state,
+                                            env_state,
                                             modal_state,
                                             window,
                                             cx,
@@ -355,7 +356,7 @@ pub fn render_auth_tab(
                                         .child(render_auth_input(
                                             "auth-apikey-key-input",
                                             inputs.apikey_key_input,
-                                            workspace_state,
+                                            env_state,
                                             modal_state,
                                             window,
                                             cx,
@@ -393,7 +394,7 @@ pub fn render_auth_tab(
                                         .child(render_auth_input(
                                             "auth-apikey-val-input",
                                             inputs.apikey_val_input,
-                                            workspace_state,
+                                            env_state,
                                             modal_state,
                                             window,
                                             cx,

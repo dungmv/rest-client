@@ -2,7 +2,7 @@ use crate::components::env_autocomplete::{
     build_tokenized_content, detect_unclosed_env_var, get_env_completions, get_variable_details,
     get_variable_kind_and_color, EnvVarCandidate,
 };
-use crate::state::{ModalState, WorkspaceDataState};
+use crate::state::{EnvironmentState, ModalState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -36,7 +36,7 @@ pub struct KvTable {
     on_update: Rc<dyn Fn(usize, String, String, bool, &mut Window, &mut App)>,
     on_add: Rc<dyn Fn(&mut Window, &mut App)>,
     on_remove: Rc<dyn Fn(usize, &mut Window, &mut App)>,
-    workspace_state: Option<Entity<WorkspaceDataState>>,
+    env_state: Option<Entity<EnvironmentState>>,
     modal_state: Option<Entity<ModalState>>,
 }
 
@@ -54,18 +54,18 @@ impl KvTable {
             on_update: Rc::new(on_update),
             on_add: Rc::new(on_add),
             on_remove: Rc::new(on_remove),
-            workspace_state: None,
+            env_state: None,
             modal_state: None,
         }
     }
 
-    pub fn workspace_state(mut self, ws: Entity<WorkspaceDataState>) -> Self {
-        self.workspace_state = Some(ws);
+    pub fn env_state(mut self, env: Entity<EnvironmentState>) -> Self {
+        self.env_state = Some(env);
         self
     }
 
-    pub fn optional_workspace_state(mut self, ws: Option<Entity<WorkspaceDataState>>) -> Self {
-        self.workspace_state = ws;
+    pub fn optional_env_state(mut self, env: Option<Entity<EnvironmentState>>) -> Self {
+        self.env_state = env;
         self
     }
 
@@ -85,13 +85,13 @@ impl RenderOnce for KvTable {
         let t = theme();
         let on_add_cb = self.on_add.clone();
         let id_prefix = self.id_prefix.clone();
-        let ws_clone = self.workspace_state.clone();
+        let env_clone = self.env_state.clone();
         let modal_clone = self.modal_state.clone();
 
         // Precompute variable information for all rows before running use_keyed_state
-        let row_env_info: Vec<RowEnvData> = if let Some(ws_entity) = &self.workspace_state {
-            let ws = ws_entity.read(cx);
-            let effective_env = ws.effective_environment();
+        let row_env_info: Vec<RowEnvData> = if let Some(env_entity) = &self.env_state {
+            let env = env_entity.read(cx);
+            let effective_env = env.effective_environment();
             self.pairs
                 .iter()
                 .map(|pair| {
@@ -99,7 +99,7 @@ impl RenderOnce for KvTable {
                         scan_variables(&pair.key, Some(&effective_env))
                             .into_iter()
                             .map(|v| {
-                                let (val, scope, is_res) = get_variable_details(ws, &v.name);
+                                let (val, scope, is_res) = get_variable_details(env, &v.name);
                                 (v.name, val, scope, is_res)
                             })
                             .collect()
@@ -111,7 +111,7 @@ impl RenderOnce for KvTable {
                         scan_variables(&pair.value, Some(&effective_env))
                             .into_iter()
                             .map(|v| {
-                                let (val, scope, is_res) = get_variable_details(ws, &v.name);
+                                let (val, scope, is_res) = get_variable_details(env, &v.name);
                                 (v.name, val, scope, is_res)
                             })
                             .collect()
@@ -121,14 +121,14 @@ impl RenderOnce for KvTable {
 
                     let key_completions = if pair.key.contains("{{") {
                         detect_unclosed_env_var(&pair.key)
-                            .map(|(pos, end, q)| (pos, end, get_env_completions(ws, &q)))
+                            .map(|(pos, end, q)| (pos, end, get_env_completions(env, &q)))
                     } else {
                         None
                     };
 
                     let val_completions = if pair.value.contains("{{") {
                         detect_unclosed_env_var(&pair.value)
-                            .map(|(pos, end, q)| (pos, end, get_env_completions(ws, &q)))
+                            .map(|(pos, end, q)| (pos, end, get_env_completions(env, &q)))
                     } else {
                         None
                     };
@@ -192,20 +192,20 @@ impl RenderOnce for KvTable {
 
                 let on_up_k = on_update.clone();
                 let on_up_v = on_update.clone();
-                let ws_for_init = self.workspace_state.clone();
+                let env_for_init = self.env_state.clone();
                 let k_init_val = key_val.clone();
                 let v_init_val = val_val.clone();
                 let row_holder = window.use_keyed_state(
                     gpui::SharedString::from(format!("{}-holder", row_prefix)),
                     cx,
                     |window, cx| {
-                        let init_k = if let Some(ws_m) = &ws_for_init {
-                            build_tokenized_content(&k_init_val, ws_m.read(cx))
+                        let init_k = if let Some(env_m) = &env_for_init {
+                            build_tokenized_content(&k_init_val, env_m.read(cx))
                         } else {
                             k_init_val.into()
                         };
-                        let init_v = if let Some(ws_m) = &ws_for_init {
-                            build_tokenized_content(&v_init_val, ws_m.read(cx))
+                        let init_v = if let Some(env_m) = &env_for_init {
+                            build_tokenized_content(&v_init_val, env_m.read(cx))
                         } else {
                             v_init_val.into()
                         };
@@ -315,7 +315,7 @@ impl RenderOnce for KvTable {
                                 div()
                                     .flex_1()
                                     .child({
-                                        let ws_k = ws_clone.clone();
+                                        let env_k = env_clone.clone();
                                         let modal_k = modal_clone.clone();
                                         let h_k = hover_k_state.clone();
                                         Input::new(&key_input)
@@ -325,8 +325,8 @@ impl RenderOnce for KvTable {
                                             .focus_bordered(false)
                                             .token(move |token_ctx, _window, cx| {
                                                 let var_name = token_ctx.token().id().to_string();
-                                                let (color, bg_tint) = if let Some(ws) = &ws_k {
-                                                    let (_val, scope, is_res) = get_variable_details(ws.read(cx), &var_name);
+                                                let (color, bg_tint) = if let Some(env) = &env_k {
+                                                    let (_val, scope, is_res) = get_variable_details(env.read(cx), &var_name);
                                                     let (_kind, c, bg) = get_variable_kind_and_color(&scope, is_res);
                                                     (c, bg)
                                                 } else {
@@ -445,7 +445,7 @@ impl RenderOnce for KvTable {
                                 let cur_k = key_val.clone();
                                 let cur_v = val_val.clone();
                                 let on_up_c = on_update.clone();
-                                let ws_k_c = ws_clone.clone();
+                                let env_k_c = env_clone.clone();
 
                                 this.child(
                                     deferred(
@@ -474,7 +474,7 @@ impl RenderOnce for KvTable {
                                                 let cur_k_item = cur_k.clone();
                                                 let cur_v_item = cur_v.clone();
                                                 let on_up = on_up_c.clone();
-                                                let ws_k_inner = ws_k_c.clone();
+                                                let env_k_inner = env_k_c.clone();
                                                 let (_kind, item_color, item_bg_tint) = get_variable_kind_and_color(&item_scope, true);
 
                                                 div()
@@ -491,8 +491,8 @@ impl RenderOnce for KvTable {
                                                         let mut new_key = cur_k_item.clone();
                                                         if start_pos <= new_key.len() && end_pos <= new_key.len() && start_pos <= end_pos {
                                                             new_key.replace_range(start_pos..end_pos, &format!("{{{{{}}}}}", item_name));
-                                                            let content = if let Some(ws_m) = &ws_k_inner {
-                                                                build_tokenized_content(&new_key, ws_m.read(cx))
+                                                            let content = if let Some(env_m) = &env_k_inner {
+                                                                build_tokenized_content(&new_key, env_m.read(cx))
                                                             } else {
                                                                 new_key.clone().into()
                                                             };
@@ -560,7 +560,7 @@ impl RenderOnce for KvTable {
                                 div()
                                     .flex_1()
                                     .child({
-                                        let ws_v = ws_clone.clone();
+                                        let env_v = env_clone.clone();
                                         let modal_v = modal_clone.clone();
                                         let h_v = hover_v_state.clone();
                                         Input::new(&val_input)
@@ -570,8 +570,8 @@ impl RenderOnce for KvTable {
                                             .focus_bordered(false)
                                             .token(move |token_ctx, _window, cx| {
                                                 let var_name = token_ctx.token().id().to_string();
-                                                let (color, bg_tint) = if let Some(ws) = &ws_v {
-                                                    let (_val, scope, is_res) = get_variable_details(ws.read(cx), &var_name);
+                                                let (color, bg_tint) = if let Some(env) = &env_v {
+                                                    let (_val, scope, is_res) = get_variable_details(env.read(cx), &var_name);
                                                     let (_kind, c, bg) = get_variable_kind_and_color(&scope, is_res);
                                                     (c, bg)
                                                 } else {
@@ -690,7 +690,7 @@ impl RenderOnce for KvTable {
                                 let cur_k = key_val.clone();
                                 let cur_v = val_val.clone();
                                 let on_up_c = on_update.clone();
-                                let ws_v_c = ws_clone.clone();
+                                let env_v_c = env_clone.clone();
 
                                 this.child(
                                     deferred(
@@ -719,7 +719,7 @@ impl RenderOnce for KvTable {
                                                 let cur_val = cur_v.clone();
                                                 let cur_k = cur_k.clone();
                                                 let on_up = on_up_c.clone();
-                                                let ws_v_inner = ws_v_c.clone();
+                                                let env_v_inner = env_v_c.clone();
                                                 let (_kind, item_color, item_bg_tint) = get_variable_kind_and_color(&item_scope, true);
 
                                                 div()
@@ -736,8 +736,8 @@ impl RenderOnce for KvTable {
                                                         let mut new_val = cur_val.clone();
                                                         if start_pos <= new_val.len() && end_pos <= new_val.len() && start_pos <= end_pos {
                                                             new_val.replace_range(start_pos..end_pos, &format!("{{{{{}}}}}", item_name));
-                                                            let content = if let Some(ws_m) = &ws_v_inner {
-                                                                build_tokenized_content(&new_val, ws_m.read(cx))
+                                                            let content = if let Some(env_m) = &env_v_inner {
+                                                                build_tokenized_content(&new_val, env_m.read(cx))
                                                             } else {
                                                                 new_val.clone().into()
                                                             };

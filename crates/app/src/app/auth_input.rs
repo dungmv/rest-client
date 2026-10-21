@@ -2,7 +2,7 @@ use crate::components::env_autocomplete::{
     build_tokenized_content, detect_unclosed_env_var, get_env_completions, get_variable_details,
     get_variable_kind_and_color,
 };
-use crate::state::{ModalState, WorkspaceDataState};
+use crate::state::{EnvironmentState, ModalState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -15,7 +15,7 @@ use gpui_component::scroll::ScrollableElement as _;
 pub fn render_auth_input<F>(
     input_id: &'static str,
     input_state: &Entity<InputState>,
-    workspace_state: &Entity<WorkspaceDataState>,
+    env_state: &Entity<EnvironmentState>,
     modal_state: &Entity<ModalState>,
     window: &mut Window,
     cx: &mut App,
@@ -28,11 +28,11 @@ where
     let current_val = input_state.read(cx).value().to_string();
 
     let (completion_candidates, unclosed) = if current_val.contains("{{") {
-        let ws = workspace_state.read(cx);
+        let env = env_state.read(cx);
         let unclosed = detect_unclosed_env_var(&current_val);
         let candidates = unclosed
             .as_ref()
-            .map(|(_, _, q)| get_env_completions(ws, q))
+            .map(|(_, _, q)| get_env_completions(env, q))
             .unwrap_or_default();
         (candidates, unclosed)
     } else {
@@ -47,9 +47,9 @@ where
     );
     let hovered_token = hover_token_state.read(cx).clone();
 
-    let ws_for_token = workspace_state.clone();
+    let env_for_token = env_state.clone();
     let modal_for_click = modal_state.clone();
-    let ws_for_hover = workspace_state.clone();
+    let env_for_hover = env_state.clone();
     let h_token = hover_token_state.clone();
 
     div()
@@ -77,8 +77,8 @@ where
                         .font_family(".SystemMonoFont")
                         .token(move |token_ctx, _window, cx| {
                             let var_name = token_ctx.token().id().to_string();
-                            let ws = ws_for_token.read(cx);
-                            let (_val, scope, is_res) = get_variable_details(ws, &var_name);
+                            let env = env_for_token.read(cx);
+                            let (_val, scope, is_res) = get_variable_details(env, &var_name);
                             let (_kind, color, bg_tint) =
                                 get_variable_kind_and_color(&scope, is_res);
 
@@ -120,8 +120,8 @@ where
                 ),
         )
         .when_some(hovered_token, |this, (var_name, _bounds)| {
-            let ws = ws_for_hover.read(cx);
-            let (val, scope, is_res) = get_variable_details(ws, &var_name);
+            let env = env_for_hover.read(cx);
+            let (val, scope, is_res) = get_variable_details(env, &var_name);
             let (_kind, color, bg_tint) = get_variable_kind_and_color(&scope, is_res);
 
             this.child(
@@ -196,7 +196,7 @@ where
                 .unwrap_or((0, 0));
             let current_text = current_val.clone();
             let inp_target = input_state.clone();
-            let ws_target = workspace_state.clone();
+            let env_target = env_state.clone();
             let on_up = on_update.clone();
 
             this.child(
@@ -255,7 +255,7 @@ where
                                     let cand_scope = cand.scope.clone();
                                     let cur_text = current_text.clone();
                                     let inp_c = inp_target.clone();
-                                    let ws_c = ws_target.clone();
+                                    let env_c = env_target.clone();
                                     let on_up_c = on_up.clone();
                                     let (_kind, cand_color, cand_bg_tint) =
                                         get_variable_kind_and_color(&cand_scope, true);
@@ -284,8 +284,8 @@ where
                                                     &format!("{{{{{}}}}}", cand_name),
                                                 );
                                                 let content = {
-                                                    let ws = ws_c.read(cx);
-                                                    build_tokenized_content(&new_text, ws)
+                                                    let env = env_c.read(cx);
+                                                    build_tokenized_content(&new_text, env)
                                                 };
                                                 inp_c.update(cx, |inp, cx| {
                                                     inp.set_value(content, window, cx);

@@ -3,7 +3,7 @@ use crate::components::env_autocomplete::{
     get_variable_kind_and_color,
 };
 use crate::components::status_badge::MethodBadge;
-use crate::state::{EditorState, ModalState, WorkspaceDataState};
+use crate::state::{EditorState, EnvironmentState, ModalState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -18,7 +18,7 @@ use restclient_core::models::HttpMethod;
 
 #[derive(IntoElement)]
 pub struct RequestBar {
-    workspace_state: Entity<WorkspaceDataState>,
+    env_state: Entity<EnvironmentState>,
     modal_state: Entity<ModalState>,
     editor_state: Entity<EditorState>,
     url_input: Entity<InputState>,
@@ -27,14 +27,14 @@ pub struct RequestBar {
 
 impl RequestBar {
     pub fn new(
-        workspace_state: Entity<WorkspaceDataState>,
+        env_state: Entity<EnvironmentState>,
         modal_state: Entity<ModalState>,
         editor_state: Entity<EditorState>,
         url_input: Entity<InputState>,
         on_send: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         Self {
-            workspace_state,
+            env_state,
             modal_state,
             editor_state,
             url_input,
@@ -55,7 +55,7 @@ impl RenderOnce for RequestBar {
         };
         let url = self.url_input.read(cx).value().to_string();
 
-        let ws_clone = self.workspace_state.clone();
+        let ws_clone = self.env_state.clone();
         let modal_clone = self.modal_state.clone();
         let ed_clone = self.editor_state.clone();
         let url_input_clone = self.url_input.clone();
@@ -63,7 +63,7 @@ impl RenderOnce for RequestBar {
 
         // Scan variables in URL and build completions only if URL contains {{
         let (var_map, completion_candidates, unclosed) = if url.contains("{{") {
-            let ws = self.workspace_state.read(cx);
+            let ws = self.env_state.read(cx);
             let effective_env = ws.effective_environment();
             let var_spans = scan_variables(&url, Some(&effective_env));
 

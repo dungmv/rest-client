@@ -1,11 +1,12 @@
 use super::AppView;
-use crate::state::{EditorState, WorkspaceState};
+use crate::state::{EditorState, PersistenceState, WorkspaceDataState};
 use gpui::{App, Entity, Window};
 use restclient_core::models::{Auth, RequestBody};
 
 pub fn save_active_request_without_redraw(
     editor: &Entity<EditorState>,
-    workspace: &Entity<WorkspaceState>,
+    persistence: &Entity<PersistenceState>,
+    workspace: &Entity<WorkspaceDataState>,
     cx: &mut App,
 ) {
     let is_scratch_or_none = editor
@@ -17,7 +18,8 @@ pub fn save_active_request_without_redraw(
     if !is_scratch_or_none {
         if let Some(req_id) = editor.read(cx).active_request.as_ref().map(|r| r.id.clone()) {
             let ed = editor.clone();
-            workspace.update(cx, |ws, cx| ws.schedule_save_active_request(req_id, ed, cx));
+            let ws = workspace.clone();
+            persistence.update(cx, |per, cx| per.schedule_save_active_request(req_id, ed, ws, cx));
         }
     }
 }
@@ -58,44 +60,44 @@ impl AppView {
             self.last_synced_body_version = ed_body_ver;
 
             let tokenized_url = {
-                let ws = self.workspace_state.read(cx);
-                crate::components::env_autocomplete::build_tokenized_content(&req.url, ws)
+                let env = self.env_state.read(cx);
+                crate::components::env_autocomplete::build_tokenized_content(&req.url, env)
             };
             self.url_input.update(cx, |inp, cx| {
                 inp.set_value(tokenized_url, window, cx);
             });
 
-            let ws_holder = self.workspace_state.clone();
+            let env_holder = self.env_state.clone();
             match &req.auth {
                 Auth::Bearer { token } => {
-                    let ws_m = ws_holder.clone();
+                    let env_m = env_holder.clone();
                     self.bearer_token_input.update(cx, |inp, cx| {
-                        let ws = ws_m.read(cx);
+                        let env = env_m.read(cx);
                         inp.set_value(
-                            crate::components::env_autocomplete::build_tokenized_content(token, ws),
+                            crate::components::env_autocomplete::build_tokenized_content(token, env),
                             window,
                             cx,
                         );
                     });
                 }
                 Auth::Basic { username, password } => {
-                    let ws_u = ws_holder.clone();
-                    let ws_p = ws_holder.clone();
+                    let env_u = env_holder.clone();
+                    let env_p = env_holder.clone();
                     self.basic_user_input.update(cx, |inp, cx| {
-                        let ws = ws_u.read(cx);
+                        let env = env_u.read(cx);
                         inp.set_value(
                             crate::components::env_autocomplete::build_tokenized_content(
-                                username, ws,
+                                username, env,
                             ),
                             window,
                             cx,
                         );
                     });
                     self.basic_pass_input.update(cx, |inp, cx| {
-                        let ws = ws_p.read(cx);
+                        let env = env_p.read(cx);
                         inp.set_value(
                             crate::components::env_autocomplete::build_tokenized_content(
-                                password, ws,
+                                password, env,
                             ),
                             window,
                             cx,
@@ -103,20 +105,20 @@ impl AppView {
                     });
                 }
                 Auth::ApiKey { key, value, .. } => {
-                    let ws_k = ws_holder.clone();
-                    let ws_v = ws_holder.clone();
+                    let env_k = env_holder.clone();
+                    let env_v = env_holder.clone();
                     self.apikey_key_input.update(cx, |inp, cx| {
-                        let ws = ws_k.read(cx);
+                        let env = env_k.read(cx);
                         inp.set_value(
-                            crate::components::env_autocomplete::build_tokenized_content(key, ws),
+                            crate::components::env_autocomplete::build_tokenized_content(key, env),
                             window,
                             cx,
                         );
                     });
                     self.apikey_val_input.update(cx, |inp, cx| {
-                        let ws = ws_v.read(cx);
+                        let env = env_v.read(cx);
                         inp.set_value(
-                            crate::components::env_autocomplete::build_tokenized_content(value, ws),
+                            crate::components::env_autocomplete::build_tokenized_content(value, env),
                             window,
                             cx,
                         );

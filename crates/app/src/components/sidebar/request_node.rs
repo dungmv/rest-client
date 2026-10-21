@@ -159,6 +159,7 @@ pub fn render_request_node(
         })
         .context_menu({
             let ws_menu = ctx.ws.clone();
+            let per_menu = ctx.persistence.clone();
             let sb_menu = ctx.sidebar.clone();
             let git_menu = ctx.git.clone();
             let r_id_menu = r_id_menu.clone();
@@ -249,6 +250,7 @@ pub fn render_request_node(
                 if is_dirty_git {
                     let git_disc = git_menu.clone();
                     let ws_disc = ws_menu.clone();
+                    let per_disc = per_menu.clone();
                     let ed_disc = ed_menu.clone();
                     let r_id_disc = r_id_menu.clone();
                     let toast_disc = toast_menu.clone();
@@ -283,8 +285,10 @@ pub fn render_request_node(
                                 git_disc.update(cx, |git, cx| {
                                     git.discard_file(&path_to_discard, cx);
                                 });
+                                per_disc.update(cx, |per, cx| {
+                                    per.mark_clean(&r_id_disc, cx);
+                                });
                                 ws_disc.update(cx, |ws, cx| {
-                                    ws.unsaved_requests.remove(&r_id_disc);
                                     ws.reload_all();
                                     let active_id = ed_disc.read(cx).active_request.as_ref().map(|r| r.id.clone());
                                     if active_id.as_deref() == Some(&r_id_disc) {

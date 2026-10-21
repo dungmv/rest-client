@@ -625,11 +625,18 @@ impl LocFile {
             .map(|dt| dt.with_timezone(&chrono::Utc))
             .unwrap_or_else(|_| chrono::Utc::now());
 
+        let reason = crate::models::status_code_to_reason(self.response.status);
+        let status_text = if reason.is_empty() {
+            format!("HTTP {}", self.response.status)
+        } else {
+            reason.to_string()
+        };
+
         HttpResponseRecord {
             id: format!("loc-{}", request_id),
             request_id: request_id.to_string(),
             status_code: self.response.status,
-            status_text: format!("HTTP {}", self.response.status),
+            status_text,
             duration_ms: self.response.duration_ms,
             size_bytes: self.response.size,
             headers: self.response.headers.clone(),
@@ -807,5 +814,36 @@ mod tests {
         assert_eq!(v2.current_value, "local-dev-secret");
         assert_eq!(v2.resolved_value(), "local-dev-secret");
         assert!(v2.secret);
+    }
+
+    #[test]
+    fn test_loc_file_to_record_status_text() {
+        let loc = LocFile {
+            sent_at: "2026-10-21T10:00:00Z".to_string(),
+            request: LocRequestInfo {
+                method: crate::models::HttpMethod::Get,
+                url: "https://api.example.com".to_string(),
+                headers: vec![],
+                body: None,
+            },
+            response: LocResponseInfo {
+                status: 200,
+                duration_ms: 50,
+                size: 10,
+                headers: vec![],
+                body: Some("{}".to_string()),
+                truncated: false,
+                binary: false,
+            },
+        };
+        let rec = loc.to_record("req-1");
+        assert_eq!(rec.status_code, 200);
+        assert_eq!(rec.status_text, "OK");
+
+        let mut loc_404 = loc;
+        loc_404.response.status = 404;
+        let rec_404 = loc_404.to_record("req-2");
+        assert_eq!(rec_404.status_code, 404);
+        assert_eq!(rec_404.status_text, "Not Found");
     }
 }

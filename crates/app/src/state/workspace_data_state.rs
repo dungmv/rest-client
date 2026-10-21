@@ -1,9 +1,11 @@
 use crate::settings::AppSettings;
-use gpui::{Context, Task};
-use restclient_core::models::{Environment, Folder, HttpRequestItem, Workspace};
-use restclient_core::storage::models::{FolderNode, LocalState, WorkspaceMeta};
+use gpui::Context;
+use restclient_core::models::{
+    Auth, Folder, HttpRequestItem, KeyValuePair, Workspace,
+};
+use restclient_core::storage::models::{FolderNode, WorkspaceMeta};
 use restclient_core::storage::{FsWorkspaceStore, WorkspaceStore};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -16,22 +18,9 @@ pub struct WorkspaceDataState {
     pub requests: Vec<HttpRequestItem>,
     pub parse_errors: HashMap<String, String>,
     pub pins: Vec<String>,
-    pub local_state: LocalState,
-    pub environments: Vec<Environment>,
-    pub global_environment: Environment,
-    pub active_environment_id: Option<String>,
-    pub conflicts: HashMap<String, String>,
-    pub corrupt_secrets_warning: Option<String>,
     pub last_renamed_request: Option<(String, String)>,
     pub last_renamed_example: Option<(String, String, String)>,
-    pub unsaved_requests: HashSet<String>,
-    pub running_request_id: Option<String>,
     pub recent_workspaces: Vec<String>,
-    pub state_save_task: Option<Task<()>>,
-    pub request_save_tasks: HashMap<String, Task<()>>,
-    pub env_save_task: Option<Task<()>>,
-    pub watcher: Option<restclient_core::storage::WorkspaceWatcher>,
-    pub watcher_task: Option<Task<()>>,
 }
 
 impl WorkspaceDataState {
@@ -68,22 +57,9 @@ impl WorkspaceDataState {
             requests: Vec::new(),
             parse_errors: HashMap::new(),
             pins: Vec::new(),
-            local_state: LocalState::default(),
-            environments: Vec::new(),
-            global_environment: Environment::new("default", "Globals"),
-            active_environment_id: None,
-            conflicts: HashMap::new(),
-            corrupt_secrets_warning: None,
             last_renamed_request: None,
             last_renamed_example: None,
-            unsaved_requests: HashSet::new(),
-            running_request_id: None,
             recent_workspaces: settings.recent_workspaces,
-            state_save_task: None,
-            request_save_tasks: HashMap::new(),
-            env_save_task: None,
-            watcher: None,
-            watcher_task: None,
         };
 
         state.reload_all();
@@ -100,22 +76,9 @@ impl WorkspaceDataState {
             requests: Vec::new(),
             parse_errors: HashMap::new(),
             pins: Vec::new(),
-            local_state: LocalState::default(),
-            environments: Vec::new(),
-            global_environment: Environment::new("default", "Globals"),
-            active_environment_id: None,
-            conflicts: HashMap::new(),
-            corrupt_secrets_warning: None,
             last_renamed_request: None,
             last_renamed_example: None,
-            unsaved_requests: HashSet::new(),
-            running_request_id: None,
             recent_workspaces: Vec::new(),
-            state_save_task: None,
-            request_save_tasks: HashMap::new(),
-            env_save_task: None,
-            watcher: None,
-            watcher_task: None,
         };
         state.reload_all();
         state
@@ -130,15 +93,12 @@ impl WorkspaceDataState {
         let _ = store.ensure_gitignore();
         self.store = store;
         self.workspace_path = path.clone();
-        self.conflicts.clear();
-        self.corrupt_secrets_warning = None;
 
         let mut settings = AppSettings::load();
         settings.add_recent_workspace(&path.to_string_lossy());
         self.recent_workspaces = settings.recent_workspaces;
 
         self.reload_all();
-        self.start_watcher(cx);
         cx.notify();
     }
 
@@ -160,7 +120,6 @@ impl WorkspaceDataState {
             &options,
         )?;
         self.reload_tree();
-        self.reload_environments();
         cx.notify();
         Ok(summary)
     }
@@ -202,16 +161,13 @@ impl WorkspaceDataState {
             id: self.workspace_path.to_string_lossy().to_string(),
             name: initial_name,
             description: String::new(),
-            active_environment_id: self.active_environment_id.clone(),
+            active_environment_id: None,
             headers: self.workspace_meta.headers.iter().cloned().map(Into::into).collect(),
             auth: self.workspace_meta.auth.clone().into(),
         });
 
         self.pins = self.store.load_pins().unwrap_or_default();
-        self.local_state = self.store.load_state().unwrap_or_default();
-
         self.reload_tree();
-        self.reload_environments();
     }
 
     pub fn reload_tree(&mut self) {
@@ -285,97 +241,101 @@ impl WorkspaceDataState {
         }
     }
 
-    pub fn reload_environments(&mut self) {
-        let ws_name = self.workspace_meta.name.clone();
-        let env_names = self.store.list_environments().unwrap_or_default();
-        let mut envs = Vec::new();
-
-        for name in &env_names {
-            if let Ok(env_file) = self.store.load_environment(name) {
-                let secrets = match self.store.load_secrets(name) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        self.corrupt_secrets_warning = Some(format!("{}", e));
-                        HashMap::new()
-                    }
-                };
-                let env = env_file.to_environment(name, &ws_name, name, &secrets);
-                envs.push(env);
-            }
-        }
-
-        self.environments = envs;
-
-        let active_opt = self.local_state.active_environment.clone()
-            .or_else(|| self.workspace_meta.default_environment.clone());
-
-        if let Some(act) = active_opt {
-            if self.environments.iter().any(|e| e.name == act || e.id == act) {
-                self.active_environment_id = Some(act);
-            } else {
-                self.active_environment_id = self.environments.first().map(|e| e.id.clone());
-            }
-        } else if self.active_environment_id.is_none() {
-            self.active_environment_id = self.environments.first().map(|e| e.id.clone());
-        }
-    }
-
-    pub fn active_environment(&self) -> Option<&Environment> {
-        if let Some(env_id) = &self.active_environment_id {
-            self.environments.iter().find(|e| &e.id == env_id || &e.name == env_id)
-        } else {
-            None
-        }
-    }
-
-    pub fn active_environment_mut(&mut self) -> Option<&mut Environment> {
-        if let Some(env_id) = &self.active_environment_id {
-            self.environments.iter_mut().find(|e| &e.id == env_id || &e.name == env_id)
-        } else {
-            None
-        }
-    }
-
-    pub fn schedule_state_save(&mut self, cx: &mut Context<Self>) {
-        self.state_save_task = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(std::time::Duration::from_millis(1500)).await;
-            if let Some(this) = this.upgrade() {
-                this.update(cx, |ws, _| {
-                    let _ = ws.store.save_state(&ws.local_state);
-                });
-            }
-        }));
-    }
-
     pub fn find_request(&self, req_id: &str) -> Option<&HttpRequestItem> {
         self.requests.iter().find(|r| r.id == req_id)
     }
 
-    pub fn set_active_environment(&mut self, env_id: Option<String>, cx: &mut Context<Self>) {
-        self.active_environment_id = env_id.clone();
-        self.local_state.active_environment = env_id;
-        self.schedule_state_save(cx);
+    pub fn save_workspace_scope_settings(
+        &mut self,
+        headers: Vec<KeyValuePair>,
+        auth: Auth,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace_meta.headers = headers.iter().cloned().map(Into::into).collect();
+        self.workspace_meta.auth = auth.clone().into();
+        if let Some(ws) = &mut self.active_workspace {
+            ws.headers = headers;
+            ws.auth = auth;
+        }
+        let _ = self.store.save_workspace_meta(&self.workspace_meta);
         cx.notify();
     }
 
-    pub fn effective_environment(&self) -> Environment {
-        let ws_name = self.workspace_meta.name.as_str();
-        let mut effective = Environment::new(ws_name, "Effective");
-
-        for v in &self.global_environment.variables {
-            effective.variables.push(v.clone());
+    pub fn save_folder_scope_settings(
+        &mut self,
+        folder_id: &str,
+        headers: Vec<KeyValuePair>,
+        auth: Auth,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(f) = self.folders.iter_mut().find(|f| f.id == folder_id) {
+            f.headers = headers.clone();
+            f.auth = auth.clone();
         }
-
-        if let Some(active_env) = self.active_environment() {
-            for v in &active_env.variables {
-                if let Some(existing) = effective.variables.iter_mut().find(|x| x.key == v.key) {
-                    *existing = v.clone();
-                } else {
-                    effective.variables.push(v.clone());
-                }
-            }
+        if let Ok(mut meta) = self.store.load_folder_meta(folder_id) {
+            meta.headers = headers.into_iter().map(Into::into).collect();
+            meta.auth = auth.into();
+            let _ = self.store.save_folder_meta(folder_id, &meta);
         }
-        effective
+        cx.notify();
     }
 
+    pub fn get_folder_hierarchy(&self, folder_id: Option<&str>) -> Vec<&Folder> {
+        let mut chain = Vec::new();
+        let mut cur_id = folder_id.map(|s| s.to_string());
+        while let Some(id) = cur_id {
+            if let Some(folder) = self.folders.iter().find(|f| f.id == id) {
+                chain.push(folder);
+                cur_id = folder.parent_id.clone();
+            } else {
+                break;
+            }
+        }
+        chain.reverse();
+        chain
+    }
+
+    pub fn resolve_request_hierarchy(&self, req: &HttpRequestItem) -> (Vec<KeyValuePair>, Auth) {
+        let ws_headers = self.active_workspace.as_ref().map(|w| w.headers.as_slice()).unwrap_or(&[]);
+        let ws_auth = self.active_workspace.as_ref().map(|w| &w.auth).unwrap_or(&Auth::None);
+
+        let folder_chain_refs = self.get_folder_hierarchy(req.folder_id.as_deref());
+        let folder_chain: Vec<(&[KeyValuePair], &Auth)> = folder_chain_refs
+            .iter()
+            .map(|f| (f.headers.as_slice(), &f.auth))
+            .collect();
+
+        restclient_core::http::resolve_hierarchical_headers_and_auth(
+            ws_headers,
+            ws_auth,
+            &folder_chain,
+            &req.headers,
+            &req.auth,
+        )
+    }
+
+    pub fn get_inherited_auth_description(&self, folder_id: Option<&str>) -> String {
+        let folder_chain_refs = self.get_folder_hierarchy(folder_id);
+        for f in folder_chain_refs.iter().rev() {
+            if !f.auth.is_inherit() {
+                let kind = match &f.auth {
+                    Auth::None => "No Auth",
+                    Auth::Bearer { .. } => "Bearer Token",
+                    Auth::Basic { .. } => "Basic Auth",
+                    Auth::ApiKey { .. } => "API Key",
+                    Auth::Inherit => "Inherit",
+                };
+                return format!("Inherited from folder \"{}\" ({})", f.name, kind);
+            }
+        }
+        let ws_auth = self.active_workspace.as_ref().map(|w| &w.auth).unwrap_or(&Auth::None);
+        let ws_name = self.active_workspace.as_ref().map(|w| w.name.as_str()).unwrap_or("Workspace");
+        match ws_auth {
+            Auth::None => format!("Inherited from workspace \"{}\" (No Auth)", ws_name),
+            Auth::Bearer { .. } => format!("Inherited from workspace \"{}\" (Bearer Token)", ws_name),
+            Auth::Basic { .. } => format!("Inherited from workspace \"{}\" (Basic Auth)", ws_name),
+            Auth::ApiKey { .. } => format!("Inherited from workspace \"{}\" (API Key)", ws_name),
+            Auth::Inherit => "No auth configured in parent hierarchy".to_string(),
+        }
+    }
 }

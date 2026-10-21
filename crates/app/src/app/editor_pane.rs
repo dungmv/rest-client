@@ -46,12 +46,16 @@ impl AppView {
 
         let ws_entity = self.workspace_state.clone();
         let ed_entity = self.editor_state.clone();
+        let per_entity = self.persistence_state.clone();
+        let env_entity = self.env_state.clone();
         let app_view_entity = cx.entity().clone();
         let req_id_str = active_req_id.unwrap_or_else(|| "scratch".to_string());
         let ws_read = ws_entity.read(cx);
-        let active_conflict = ws_read.conflicts.get(&req_id_str).cloned();
+        let per_read = per_entity.read(cx);
+        let env_read = env_entity.read(cx);
+        let active_conflict = per_read.conflicts.get(&req_id_str).cloned();
         let active_parse_err = ws_read.parse_errors.get(&req_id_str).cloned();
-        let corrupt_sec_err = ws_read.corrupt_secrets_warning.clone();
+        let corrupt_sec_err = env_read.corrupt_secrets_warning.clone();
 
         div()
             .size_full()
@@ -61,6 +65,8 @@ impl AppView {
             .flex_col()
             // Conflict banner
             .when_some(active_conflict, |this, msg| {
+                let per_rel = per_entity.clone();
+                let per_keep = per_entity.clone();
                 let ws_rel = ws_entity.clone();
                 let ws_keep = ws_entity.clone();
                 let cid = req_id_str.clone();
@@ -107,8 +113,8 @@ impl AppView {
                                         .bg(t.primary)
                                         .text_color(t.primary_foreground)
                                         .on_click(move |_, _, cx| {
-                                            ws_rel.update(cx, |ws, cx| {
-                                                ws.resolve_conflict_reload(&cid, cx);
+                                            per_rel.update(cx, |per, cx| {
+                                                per.resolve_conflict_reload(&cid, ws_rel.clone(), cx);
                                             });
                                         })
                                         .child("Reload"),
@@ -125,8 +131,8 @@ impl AppView {
                                         .border_color(t.border)
                                         .text_color(t.text_primary)
                                         .on_click(move |_, _, cx| {
-                                            ws_keep.update(cx, |ws, cx| {
-                                                ws.resolve_conflict_keep(&cid_k, cx);
+                                            per_keep.update(cx, |per, cx| {
+                                                per.resolve_conflict_keep(&cid_k, ws_keep.clone(), cx);
                                             });
                                         })
                                         .child("Keep mine"),
@@ -184,7 +190,7 @@ impl AppView {
             .child({
                 let view_handle = app_view_entity.clone();
                 RequestBar::new(
-                    ws_entity.clone(),
+                    self.env_state.clone(),
                     self.modal_state.clone(),
                     ed_entity.clone(),
                     self.url_input.clone(),
@@ -285,6 +291,8 @@ impl AppView {
                             self.raw_textarea.clone(),
                         )
                         .workspace_state(ws_entity.clone())
+                        .persistence_state(self.persistence_state.clone())
+                        .env_state(self.env_state.clone())
                         .toast_state(self.toast_state.clone()),
                     ),
                     RequestTabKind::Params => {
@@ -296,6 +304,7 @@ impl AppView {
                             .unwrap_or_default();
                         let ed_up = ed_entity.clone();
                         let ws_up = ws_entity.clone();
+                        let per_up = self.persistence_state.clone();
                         let ed_add = ed_entity.clone();
                         let ed_del = ed_entity.clone();
                         div().size_full().child(
@@ -306,7 +315,7 @@ impl AppView {
                                     ed_up.update(cx, |state, cx| {
                                         state.update_param(idx, k, v, enabled, cx);
                                     });
-                                    save_active_request_without_redraw(&ed_up, &ws_up, cx);
+                                    save_active_request_without_redraw(&ed_up, &per_up, &ws_up, cx);
                                 },
                                 move |_, cx| {
                                     ed_add.update(cx, |state, cx| {
@@ -319,7 +328,7 @@ impl AppView {
                                     });
                                 },
                             )
-                            .workspace_state(ws_entity.clone())
+                            .env_state(self.env_state.clone())
                             .modal_state(self.modal_state.clone()),
                         )
                     }
@@ -351,6 +360,7 @@ impl AppView {
                         };
                         let ed_up = ed_entity.clone();
                         let ws_up = ws_entity.clone();
+                        let per_up = self.persistence_state.clone();
                         let ed_add = ed_entity.clone();
                         let ed_del = ed_entity.clone();
                         div()
@@ -388,7 +398,7 @@ impl AppView {
                                             ed_up.update(cx, |state, cx| {
                                                 state.update_header(idx, k, v, enabled, cx);
                                             });
-                                            save_active_request_without_redraw(&ed_up, &ws_up, cx);
+                                            save_active_request_without_redraw(&ed_up, &per_up, &ws_up, cx);
                                         },
                                         move |_, cx| {
                                             ed_add.update(cx, |state, cx| {
@@ -401,7 +411,7 @@ impl AppView {
                                             });
                                         },
                                     )
-                                    .workspace_state(ws_entity.clone())
+                                    .env_state(self.env_state.clone())
                                     .modal_state(self.modal_state.clone()),
                                 ),
                             )
@@ -423,6 +433,7 @@ impl AppView {
                             &auth,
                             folder_id.as_deref(),
                             &self.workspace_state,
+                            &self.env_state,
                             &self.modal_state,
                             &self.editor_state,
                             AuthTabInputs {

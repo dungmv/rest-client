@@ -1,5 +1,5 @@
 use crate::components::env_autocomplete::{detect_unclosed_env_var, get_env_completions};
-use crate::state::WorkspaceState;
+use crate::state::EnvironmentState;
 use crate::theme::theme;
 use anyhow::Result;
 use gpui::prelude::FluentBuilder as _;
@@ -434,16 +434,16 @@ struct CandidateDef {
 
 pub struct ScriptCompletionProvider {
     kind: ScriptEditorKind,
-    workspace_state: Option<Entity<WorkspaceState>>,
+    env_state: Option<Entity<EnvironmentState>>,
 }
 
 impl ScriptCompletionProvider {
     pub fn new(kind: ScriptEditorKind) -> Self {
-        Self { kind, workspace_state: None }
+        Self { kind, env_state: None }
     }
 
-    pub fn with_workspace(kind: ScriptEditorKind, ws: Entity<WorkspaceState>) -> Self {
-        Self { kind, workspace_state: Some(ws) }
+    pub fn with_environment(kind: ScriptEditorKind, env_state: Entity<EnvironmentState>) -> Self {
+        Self { kind, env_state: Some(env_state) }
     }
 
     fn get_candidates(&self, base_path: &str) -> Vec<CandidateDef> {
@@ -940,9 +940,9 @@ impl CompletionProvider for ScriptCompletionProvider {
 
         // 1. Check for unclosed {{ or {{prefix in script
         if let Some((start_pos_byte, _end_pos_byte, q)) = detect_unclosed_env_var(slice) {
-            if let Some(ws_entity) = &self.workspace_state {
-                let ws = ws_entity.read(cx);
-                let candidates = get_env_completions(ws, &q);
+            if let Some(env_entity) = &self.env_state {
+                let env = env_entity.read(cx);
+                let candidates = get_env_completions(env, &q);
                 let start_pos = rope.offset_to_position(start_pos_byte);
                 let end_pos = rope.offset_to_position(safe_offset);
                 let items: Vec<CompletionItem> = candidates
@@ -980,9 +980,9 @@ impl CompletionProvider for ScriptCompletionProvider {
             {
                 let var_query = &slice[quote_idx + 1..];
                 if !var_query.contains(['"', '\'', '\n']) {
-                    if let Some(ws_entity) = &self.workspace_state {
-                        let ws = ws_entity.read(cx);
-                        let candidates = get_env_completions(ws, var_query);
+                    if let Some(env_entity) = &self.env_state {
+                        let env = env_entity.read(cx);
+                        let candidates = get_env_completions(env, var_query);
                         let start_lsp = rope.offset_to_position(quote_idx + 1);
                         let end_lsp = rope.offset_to_position(safe_offset);
                         let items: Vec<CompletionItem> = candidates

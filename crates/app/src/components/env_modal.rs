@@ -1,4 +1,4 @@
-use crate::state::{ModalState, SidebarState, WorkspaceDataState};
+use crate::state::{EnvironmentState, ModalState, SidebarState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -14,19 +14,19 @@ use restclient_core::models::{Environment, EnvironmentVariable};
 
 #[derive(IntoElement)]
 pub struct EnvironmentModal {
-    workspace_state: Entity<WorkspaceDataState>,
+    env_state: Entity<EnvironmentState>,
     modal_state: Entity<ModalState>,
     sidebar_state: Entity<SidebarState>,
 }
 
 impl EnvironmentModal {
     pub fn new(
-        workspace_state: Entity<WorkspaceDataState>,
+        env_state: Entity<EnvironmentState>,
         modal_state: Entity<ModalState>,
         sidebar_state: Entity<SidebarState>,
     ) -> Self {
         Self {
-            workspace_state,
+            env_state,
             modal_state,
             sidebar_state,
         }
@@ -36,7 +36,7 @@ impl EnvironmentModal {
 impl RenderOnce for EnvironmentModal {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
-        let ws = self.workspace_state.read(cx);
+        let ws = self.env_state.read(cx);
         let modal = self.modal_state.read(cx);
         let sidebar = self.sidebar_state.read(cx);
 
@@ -48,7 +48,7 @@ impl RenderOnce for EnvironmentModal {
             .clone()
             .unwrap_or_else(|| "globals".to_string());
         let var_query = modal.var_filter_query.to_lowercase();
-        let ws_clone = self.workspace_state.clone();
+        let ws_clone = self.env_state.clone();
         let modal_clone = self.modal_state.clone();
         let sidebar_clone = self.sidebar_state.clone();
         let renaming_env_id = sidebar.renaming_env_id.clone();

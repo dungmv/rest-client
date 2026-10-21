@@ -22,6 +22,8 @@ use std::sync::Arc;
 
 pub struct AppView {
     pub(crate) workspace_state: Entity<WorkspaceDataState>,
+    pub(crate) env_state: Entity<EnvironmentState>,
+    pub(crate) persistence_state: Entity<PersistenceState>,
     pub(crate) sidebar_state: Entity<SidebarState>,
     pub(crate) modal_state: Entity<ModalState>,
     pub(crate) git_state: Entity<GitState>,
@@ -55,12 +57,23 @@ pub struct AppView {
 
 impl AppView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let workspace_state = cx.new(|cx| {
-            let mut s = WorkspaceDataState::new();
-            s.start_watcher(cx);
-            s
+        let workspace_state = cx.new(|_| WorkspaceDataState::new());
+        let (ws_dir, ws_store, ws_name) = {
+            let ws = workspace_state.read(cx);
+            (
+                ws.workspace_path.clone(),
+                ws.store.clone(),
+                ws.active_workspace.as_ref().map(|w| w.name.clone()).unwrap_or_else(|| "Workspace".to_string()),
+            )
+        };
+        let persistence_state = cx.new(|_| PersistenceState::new(ws_store.clone(), ws_dir.clone()));
+        let initial_active_env = persistence_state.read(cx).local_state.active_environment.clone();
+        let env_state = cx.new(|_| EnvironmentState::new(ws_store.clone(), ws_name, initial_active_env));
+
+        persistence_state.update(cx, |p, cx| {
+            p.start_watcher(workspace_state.clone(), env_state.clone(), cx);
         });
-        let ws_dir = workspace_state.read(cx).workspace_path.clone();
+
         let sidebar_state = cx.new(|_| SidebarState::new());
         let modal_state = cx.new(|_| ModalState::new());
         let git_state = cx.new(|_| GitState::new(ws_dir));
@@ -91,7 +104,7 @@ impl AppView {
             state.set_highlighter_factory(highlighter_factory.clone(), cx);
             state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
                 crate::components::env_autocomplete::EnvCompletionProvider::new(
-                    workspace_state.clone(),
+                    env_state.clone(),
                 ),
             ));
             state.language("json").line_number(true).folding(true)
@@ -101,7 +114,7 @@ impl AppView {
             state.set_highlighter_factory(highlighter_factory.clone(), cx);
             state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
                 crate::components::env_autocomplete::EnvCompletionProvider::new(
-                    workspace_state.clone(),
+                    env_state.clone(),
                 ),
             ));
             state.language("xml").line_number(true).folding(true)
@@ -126,9 +139,9 @@ impl AppView {
             let mut state = CodeEditorState::new(window, cx);
             state.set_highlighter_factory(highlighter_factory.clone(), cx);
             state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
-                ScriptCompletionProvider::with_workspace(
+                ScriptCompletionProvider::with_environment(
                     ScriptEditorKind::PreRequest,
-                    workspace_state.clone(),
+                    env_state.clone(),
                 ),
             ));
             state
@@ -140,9 +153,9 @@ impl AppView {
             let mut state = CodeEditorState::new(window, cx);
             state.set_highlighter_factory(highlighter_factory.clone(), cx);
             state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
-                ScriptCompletionProvider::with_workspace(
+                ScriptCompletionProvider::with_environment(
                     ScriptEditorKind::Tests,
-                    workspace_state.clone(),
+                    env_state.clone(),
                 ),
             ));
             state
@@ -172,7 +185,8 @@ impl AppView {
         // Select initial request from workspace if the user has saved requests
         let (initial_req, ws_store) = {
             let ws_read = workspace_state.read(cx);
-            let req = ws_read
+            let per_read = persistence_state.read(cx);
+            let req = per_read
                 .local_state
                 .active_request
                 .as_ref()
@@ -187,8 +201,8 @@ impl AppView {
 
             let req_url = req.url.clone();
             let tokenized_url = {
-                let ws = workspace_state.read(cx);
-                crate::components::env_autocomplete::build_tokenized_content(&req_url, ws)
+                let env = env_state.read(cx);
+                crate::components::env_autocomplete::build_tokenized_content(&req_url, env)
             };
             url_input.update(cx, |inp, cx| {
                 inp.set_value(tokenized_url, window, cx);
@@ -226,37 +240,37 @@ impl AppView {
                 }
             }
 
-            let ws_for_auth = workspace_state.clone();
+            let env_for_auth = env_state.clone();
             match &req.auth {
                 Auth::Bearer { token } => {
-                    let ws_m = ws_for_auth.clone();
+                    let env_m = env_for_auth.clone();
                     bearer_token_input.update(cx, |inp, cx| {
-                        let ws = ws_m.read(cx);
+                        let env = env_m.read(cx);
                         inp.set_value(
-                            crate::components::env_autocomplete::build_tokenized_content(token, ws),
+                            crate::components::env_autocomplete::build_tokenized_content(token, env),
                             window,
                             cx,
                         );
                     });
                 }
                 Auth::Basic { username, password } => {
-                    let ws_u = ws_for_auth.clone();
-                    let ws_p = ws_for_auth.clone();
+                    let env_u = env_for_auth.clone();
+                    let env_p = env_for_auth.clone();
                     basic_user_input.update(cx, |inp, cx| {
-                        let ws = ws_u.read(cx);
+                        let env = env_u.read(cx);
                         inp.set_value(
                             crate::components::env_autocomplete::build_tokenized_content(
-                                username, ws,
+                                username, env,
                             ),
                             window,
                             cx,
                         );
                     });
                     basic_pass_input.update(cx, |inp, cx| {
-                        let ws = ws_p.read(cx);
+                        let env = env_p.read(cx);
                         inp.set_value(
                             crate::components::env_autocomplete::build_tokenized_content(
-                                password, ws,
+                                password, env,
                             ),
                             window,
                             cx,
@@ -264,20 +278,20 @@ impl AppView {
                     });
                 }
                 Auth::ApiKey { key, value, .. } => {
-                    let ws_k = ws_for_auth.clone();
-                    let ws_v = ws_for_auth.clone();
+                    let env_k = env_for_auth.clone();
+                    let env_v = env_for_auth.clone();
                     apikey_key_input.update(cx, |inp, cx| {
-                        let ws = ws_k.read(cx);
+                        let env = env_k.read(cx);
                         inp.set_value(
-                            crate::components::env_autocomplete::build_tokenized_content(key, ws),
+                            crate::components::env_autocomplete::build_tokenized_content(key, env),
                             window,
                             cx,
                         );
                     });
                     apikey_val_input.update(cx, |inp, cx| {
-                        let ws = ws_v.read(cx);
+                        let env = env_v.read(cx);
                         inp.set_value(
-                            crate::components::env_autocomplete::build_tokenized_content(value, ws),
+                            crate::components::env_autocomplete::build_tokenized_content(value, env),
                             window,
                             cx,
                         );
@@ -296,6 +310,8 @@ impl AppView {
         let _subscriptions = setup_app_subscriptions(
             SubscriptionTargets {
                 workspace_state: &workspace_state,
+                env_state: &env_state,
+                persistence_state: &persistence_state,
                 modal_state: &modal_state,
                 sidebar_state: &sidebar_state,
                 git_state: &git_state,
@@ -334,6 +350,8 @@ impl AppView {
 
         Self {
             workspace_state,
+            env_state,
+            persistence_state,
             sidebar_state,
             modal_state,
             git_state,
@@ -430,6 +448,7 @@ impl Render for AppView {
                         .size_range(px(200.)..px(480.))
                         .child(SidebarTree::new(
                             ws_entity.clone(),
+                            self.persistence_state.clone(),
                             sidebar_entity.clone(),
                             modal_entity.clone(),
                             git_entity.clone(),
@@ -571,6 +590,7 @@ impl Render for AppView {
             // Custom Title Bar
             .child(AppTitleBar::new(
                 ws_entity.clone(),
+                self.env_state.clone(),
                 modal_entity.clone(),
                 sidebar_entity.clone(),
                 ed_entity.clone(),
@@ -589,6 +609,8 @@ impl Render for AppView {
         attach_modal_overlays(
             root,
             &ws_entity,
+            &self.env_state,
+            &self.persistence_state,
             &modal_entity,
             &sidebar_entity,
             &git_entity,

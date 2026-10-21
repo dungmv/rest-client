@@ -491,6 +491,7 @@ mod tests {
         assert!(state.current_response.is_some());
         let resp = state.current_response.as_ref().unwrap();
         assert_eq!(resp.status_code, 200);
+        assert_eq!(resp.status_text, "OK");
         assert_eq!(resp.duration_ms, 42);
         assert_eq!(String::from_utf8_lossy(&resp.body), r#"{"token":"xyz"}"#);
         assert!(state.formatted_body.is_some());

@@ -1,9 +1,115 @@
-use super::WorkspaceDataState;
-use gpui::Context;
-use restclient_core::models::{Auth, Environment, Folder, HttpRequestItem, KeyValuePair};
+use gpui::{Context, Task};
+use restclient_core::models::Environment;
 use restclient_core::storage::models::EnvironmentFile;
+use restclient_core::storage::WorkspaceStore;
+use std::collections::HashMap;
+use std::sync::Arc;
 
-impl WorkspaceDataState {
+pub struct EnvironmentState {
+    pub store: Arc<dyn WorkspaceStore>,
+    pub workspace_name: String,
+    pub environments: Vec<Environment>,
+    pub global_environment: Environment,
+    pub active_environment_id: Option<String>,
+    pub corrupt_secrets_warning: Option<String>,
+    pub env_save_task: Option<Task<()>>,
+}
+
+impl EnvironmentState {
+    pub fn new(store: Arc<dyn WorkspaceStore>, workspace_name: String, initial_active_id: Option<String>) -> Self {
+        let mut state = Self {
+            store,
+            workspace_name: workspace_name.clone(),
+            environments: Vec::new(),
+            global_environment: Environment::new(&workspace_name, "Globals"),
+            active_environment_id: initial_active_id,
+            corrupt_secrets_warning: None,
+            env_save_task: None,
+        };
+        state.reload_environments();
+        state
+    }
+
+    pub fn set_workspace(&mut self, store: Arc<dyn WorkspaceStore>, workspace_name: String, active_env: Option<String>) {
+        self.store = store;
+        self.workspace_name = workspace_name.clone();
+        self.active_environment_id = active_env;
+        self.corrupt_secrets_warning = None;
+        self.global_environment = Environment::new(&workspace_name, "Globals");
+        self.reload_environments();
+    }
+
+    pub fn reload_environments(&mut self) {
+        let ws_name = self.workspace_name.clone();
+        let env_names = self.store.list_environments().unwrap_or_default();
+        let mut envs = Vec::new();
+
+        for name in &env_names {
+            if let Ok(env_file) = self.store.load_environment(name) {
+                let secrets = match self.store.load_secrets(name) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        self.corrupt_secrets_warning = Some(format!("{}", e));
+                        HashMap::new()
+                    }
+                };
+                let env = env_file.to_environment(name, &ws_name, name, &secrets);
+                envs.push(env);
+            }
+        }
+
+        self.environments = envs;
+
+        if let Some(act) = &self.active_environment_id {
+            if !self.environments.iter().any(|e| &e.name == act || &e.id == act) {
+                self.active_environment_id = self.environments.first().map(|e| e.id.clone());
+            }
+        } else if self.active_environment_id.is_none() {
+            self.active_environment_id = self.environments.first().map(|e| e.id.clone());
+        }
+    }
+
+    pub fn active_environment(&self) -> Option<&Environment> {
+        if let Some(env_id) = &self.active_environment_id {
+            self.environments.iter().find(|e| &e.id == env_id || &e.name == env_id)
+        } else {
+            None
+        }
+    }
+
+    pub fn active_environment_mut(&mut self) -> Option<&mut Environment> {
+        if let Some(env_id) = &self.active_environment_id {
+            self.environments.iter_mut().find(|e| &e.id == env_id || &e.name == env_id)
+        } else {
+            None
+        }
+    }
+
+    pub fn set_active_environment(&mut self, env_id: Option<String>, cx: &mut Context<Self>) {
+        self.active_environment_id = env_id;
+        cx.notify();
+    }
+
+    pub fn effective_environment(&self) -> Environment {
+        let ws_name = self.workspace_name.as_str();
+        let mut effective = Environment::new(ws_name, "Effective");
+
+        for v in &self.global_environment.variables {
+            effective.variables.push(v.clone());
+        }
+
+        if let Some(active_env) = self.active_environment() {
+            for v in &active_env.variables {
+                if let Some(existing) = effective.variables.iter_mut().find(|x| x.key == v.key) {
+                    *existing = v.clone();
+                } else {
+                    effective.variables.push(v.clone());
+                }
+            }
+        }
+        effective
+    }
+
     pub fn save_global_environment_silently(&mut self, env: Environment) {
         self.global_environment = env;
     }
@@ -60,100 +166,6 @@ impl WorkspaceDataState {
             self.set_active_environment(self.environments.first().map(|e| e.id.clone()), cx);
         }
         cx.notify();
-    }
-
-    pub fn save_workspace_scope_settings(
-        &mut self,
-        headers: Vec<KeyValuePair>,
-        auth: Auth,
-        cx: &mut Context<Self>,
-    ) {
-        self.workspace_meta.headers = headers.iter().cloned().map(Into::into).collect();
-        self.workspace_meta.auth = auth.clone().into();
-        if let Some(ws) = &mut self.active_workspace {
-            ws.headers = headers;
-            ws.auth = auth;
-        }
-        let _ = self.store.save_workspace_meta(&self.workspace_meta);
-        cx.notify();
-    }
-
-    pub fn save_folder_scope_settings(
-        &mut self,
-        folder_id: &str,
-        headers: Vec<KeyValuePair>,
-        auth: Auth,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(f) = self.folders.iter_mut().find(|f| f.id == folder_id) {
-            f.headers = headers.clone();
-            f.auth = auth.clone();
-        }
-        if let Ok(mut meta) = self.store.load_folder_meta(folder_id) {
-            meta.headers = headers.into_iter().map(Into::into).collect();
-            meta.auth = auth.into();
-            let _ = self.store.save_folder_meta(folder_id, &meta);
-        }
-        cx.notify();
-    }
-
-    pub fn get_folder_hierarchy(&self, folder_id: Option<&str>) -> Vec<&Folder> {
-        let mut chain = Vec::new();
-        let mut cur_id = folder_id.map(|s| s.to_string());
-        while let Some(id) = cur_id {
-            if let Some(folder) = self.folders.iter().find(|f| f.id == id) {
-                chain.push(folder);
-                cur_id = folder.parent_id.clone();
-            } else {
-                break;
-            }
-        }
-        chain.reverse();
-        chain
-    }
-
-    pub fn resolve_request_hierarchy(&self, req: &HttpRequestItem) -> (Vec<KeyValuePair>, Auth) {
-        let ws_headers = self.active_workspace.as_ref().map(|w| w.headers.as_slice()).unwrap_or(&[]);
-        let ws_auth = self.active_workspace.as_ref().map(|w| &w.auth).unwrap_or(&Auth::None);
-
-        let folder_chain_refs = self.get_folder_hierarchy(req.folder_id.as_deref());
-        let folder_chain: Vec<(&[KeyValuePair], &Auth)> = folder_chain_refs
-            .iter()
-            .map(|f| (f.headers.as_slice(), &f.auth))
-            .collect();
-
-        restclient_core::http::resolve_hierarchical_headers_and_auth(
-            ws_headers,
-            ws_auth,
-            &folder_chain,
-            &req.headers,
-            &req.auth,
-        )
-    }
-
-    pub fn get_inherited_auth_description(&self, folder_id: Option<&str>) -> String {
-        let folder_chain_refs = self.get_folder_hierarchy(folder_id);
-        for f in folder_chain_refs.iter().rev() {
-            if !f.auth.is_inherit() {
-                let kind = match &f.auth {
-                    Auth::None => "No Auth",
-                    Auth::Bearer { .. } => "Bearer Token",
-                    Auth::Basic { .. } => "Basic Auth",
-                    Auth::ApiKey { .. } => "API Key",
-                    Auth::Inherit => "Inherit",
-                };
-                return format!("Inherited from folder \"{}\" ({})", f.name, kind);
-            }
-        }
-        let ws_auth = self.active_workspace.as_ref().map(|w| &w.auth).unwrap_or(&Auth::None);
-        let ws_name = self.active_workspace.as_ref().map(|w| w.name.as_str()).unwrap_or("Workspace");
-        match ws_auth {
-            Auth::None => format!("Inherited from workspace \"{}\" (No Auth)", ws_name),
-            Auth::Bearer { .. } => format!("Inherited from workspace \"{}\" (Bearer Token)", ws_name),
-            Auth::Basic { .. } => format!("Inherited from workspace \"{}\" (Basic Auth)", ws_name),
-            Auth::ApiKey { .. } => format!("Inherited from workspace \"{}\" (API Key)", ws_name),
-            Auth::Inherit => "No auth configured in parent hierarchy".to_string(),
-        }
     }
 
     pub fn save_environments(&mut self, envs: Vec<Environment>, cx: &mut Context<Self>) {

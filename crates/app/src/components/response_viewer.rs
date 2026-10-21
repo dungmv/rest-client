@@ -50,9 +50,8 @@ impl RenderOnce for ResponseViewer {
         let t = theme();
         let resp_s = self.response_state.read(cx);
         let ed_s = self.editor_state.read(cx);
-        let ws = self.workspace_state.read(cx);
 
-        let active_id = ws.local_state.active_request.clone();
+        let active_id = ed_s.active_request.as_ref().map(|r| r.id.clone());
         let is_viewing_example = resp_s.active_example_name.is_some();
 
         let current_resp = resp_s.current_response.clone();

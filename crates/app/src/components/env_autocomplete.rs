@@ -1,4 +1,4 @@
-use crate::state::WorkspaceState;
+use crate::state::EnvironmentState;
 use anyhow::Result;
 use gpui::{App, Entity, Task, Window};
 use gpui_component::input::{CompletionProvider, InlineToken, InputContent};
@@ -74,13 +74,13 @@ pub fn detect_unclosed_env_var_at(text: &str, cursor_pos: Option<usize>) -> Opti
 }
 
 /// Returns all available environment variables matching `query` (case-insensitive)
-pub fn get_env_completions(ws: &WorkspaceState, query: &str) -> Vec<EnvVarCandidate> {
+pub fn get_env_completions(env: &EnvironmentState, query: &str) -> Vec<EnvVarCandidate> {
     let q = query.to_lowercase();
     let mut candidates = Vec::new();
     let mut seen_keys = std::collections::HashSet::new();
 
     // 1. Active Environment variables (highest priority)
-    if let Some(active_env) = ws.active_environment() {
+    if let Some(active_env) = env.active_environment() {
         for v in &active_env.variables {
             if !seen_keys.contains(&v.key) {
                 if q.is_empty() || v.key.to_lowercase().contains(&q) {
@@ -97,7 +97,7 @@ pub fn get_env_completions(ws: &WorkspaceState, query: &str) -> Vec<EnvVarCandid
     }
 
     // 2. Global Environment variables
-    for v in &ws.global_environment.variables {
+    for v in &env.global_environment.variables {
         if !seen_keys.contains(&v.key) {
             if q.is_empty() || v.key.to_lowercase().contains(&q) {
                 candidates.push(EnvVarCandidate {
@@ -141,9 +141,9 @@ pub fn get_env_completions(ws: &WorkspaceState, query: &str) -> Vec<EnvVarCandid
 }
 
 /// Resolves variable details: `(value, scope, is_resolved)`
-pub fn get_variable_details(ws: &WorkspaceState, var_name: &str) -> (String, String, bool) {
+pub fn get_variable_details(env: &EnvironmentState, var_name: &str) -> (String, String, bool) {
     // 1. Check Active Env
-    if let Some(active_env) = ws.active_environment() {
+    if let Some(active_env) = env.active_environment() {
         if let Some(v) = active_env.variables.iter().find(|x| x.key == var_name) {
             let val = if v.secret { "••••••••".to_string() } else { v.resolved_value().to_string() };
             return (val, format!("Active: {}", active_env.name), true);
@@ -151,7 +151,7 @@ pub fn get_variable_details(ws: &WorkspaceState, var_name: &str) -> (String, Str
     }
 
     // 2. Check Global Env
-    if let Some(v) = ws.global_environment.variables.iter().find(|x| x.key == var_name) {
+    if let Some(v) = env.global_environment.variables.iter().find(|x| x.key == var_name) {
         let val = if v.secret { "••••••••".to_string() } else { v.resolved_value().to_string() };
         return (val, "Global".to_string(), true);
     }
@@ -208,12 +208,12 @@ pub fn get_variable_kind_and_color(scope: &str, is_res: bool) -> (EnvVarKind, gp
 }
 
 /// Builds `InputContent` with inline tokens for all variable spans `{{var}}` found in `text`.
-pub fn build_tokenized_content(text: &str, ws: &WorkspaceState) -> InputContent {
+pub fn build_tokenized_content(text: &str, env: &EnvironmentState) -> InputContent {
     if !text.contains("{{") {
         return InputContent::new(text);
     }
     let mut content = InputContent::new(text);
-    let effective_env = ws.effective_environment();
+    let effective_env = env.effective_environment();
     let spans = restclient_core::interpolation::scan_variables(text, Some(&effective_env));
     for span in spans {
         if span.start < text.len() && span.end <= text.len() {
@@ -229,12 +229,12 @@ pub fn build_tokenized_content(text: &str, ws: &WorkspaceState) -> InputContent 
 }
 
 pub struct EnvCompletionProvider {
-    workspace_state: Entity<WorkspaceState>,
+    env_state: Entity<EnvironmentState>,
 }
 
 impl EnvCompletionProvider {
-    pub fn new(workspace_state: Entity<WorkspaceState>) -> Self {
-        Self { workspace_state }
+    pub fn new(env_state: Entity<EnvironmentState>) -> Self {
+        Self { env_state }
     }
 }
 
@@ -254,8 +254,8 @@ impl CompletionProvider for EnvCompletionProvider {
         if let Some(brace_pos) = slice.rfind("{{") {
             let after = &slice[brace_pos + 2..];
             if !after.contains("}}") && !after.contains('\n') && !after.contains('"') {
-                let ws = self.workspace_state.read(cx);
-                let candidates = get_env_completions(ws, after);
+                let env = self.env_state.read(cx);
+                let candidates = get_env_completions(env, after);
 
                 let start_pos = rope.offset_to_position(brace_pos);
                 let end_pos = rope.offset_to_position(safe_offset);
@@ -332,8 +332,9 @@ mod tests {
 
     #[test]
     fn test_get_env_completions_and_details() {
-        let mut ws = WorkspaceState::new();
-        ws.global_environment.variables.push(restclient_core::models::EnvironmentVariable {
+        let store = std::sync::Arc::new(restclient_core::storage::FsWorkspaceStore::new(std::path::Path::new("./test-env-comp")));
+        let mut env = EnvironmentState::new(store, "default".to_string(), None);
+        env.global_environment.variables.push(restclient_core::models::EnvironmentVariable {
             key: "apiKey".to_string(),
             initial_value: "secret-123".to_string(),
             current_value: "".to_string(),
@@ -348,32 +349,32 @@ mod tests {
             secret: false,
         });
         let env_id = custom_env.id.clone();
-        ws.environments.push(custom_env);
-        ws.active_environment_id = Some(env_id);
+        env.environments.push(custom_env);
+        env.active_environment_id = Some(env_id);
 
         // 1. Completion test
-        let completions = get_env_completions(&ws, "base");
+        let completions = get_env_completions(&env, "base");
         assert!(completions.iter().any(|c| c.name == "baseUrl" && c.scope.contains("Staging")));
 
-        let global_comp = get_env_completions(&ws, "api");
+        let global_comp = get_env_completions(&env, "api");
         assert!(global_comp.iter().any(|c| c.name == "apiKey" && c.is_secret));
 
         // Dynamic completion test
-        let dyn_comp = get_env_completions(&ws, "guid");
+        let dyn_comp = get_env_completions(&env, "guid");
         assert!(dyn_comp.iter().any(|c| c.name == "$guid" && c.scope == "Dynamic"));
 
         // 2. Variable details test
-        let (val, scope, is_res) = get_variable_details(&ws, "baseUrl");
+        let (val, scope, is_res) = get_variable_details(&env, "baseUrl");
         assert_eq!(val, "https://staging.api.com");
         assert!(scope.contains("Staging"));
         assert!(is_res);
 
-        let (val, scope, is_res) = get_variable_details(&ws, "apiKey");
+        let (val, scope, is_res) = get_variable_details(&env, "apiKey");
         assert_eq!(val, "••••••••");
         assert_eq!(scope, "Global");
         assert!(is_res);
 
-        let (_, _, is_res) = get_variable_details(&ws, "nonExistent");
+        let (_, _, is_res) = get_variable_details(&env, "nonExistent");
         assert!(!is_res);
     }
 }

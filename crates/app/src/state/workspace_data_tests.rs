@@ -1,6 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use crate::state::{GitActiveModal, GitState, GitTab, ModalState, ScopeSettingsTarget, SidebarState, WorkspaceDataState};
+    use crate::state::{
+        EnvironmentState, GitActiveModal, GitState, GitTab, ModalState, PersistenceState,
+        ScopeSettingsTarget, SidebarState, WorkspaceDataState,
+    };
     use restclient_core::models::{
         Auth, Environment, EnvironmentVariable, Folder, HttpMethod, HttpRequestItem, KeyValuePair, Workspace,
     };
@@ -114,12 +117,12 @@ mod tests {
         let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
         let _ = store.init_workspace("Test WS");
 
-        let mut ws_state = WorkspaceDataState::new_for_path(temp_dir.clone(), store);
-        ws_state.environments = vec![active.clone()];
-        ws_state.global_environment = global;
-        ws_state.active_environment_id = Some(active.id.clone());
+        let mut env_state = EnvironmentState::new(store, "Test WS".to_string(), Some(active.id.clone()));
+        env_state.environments = vec![active.clone()];
+        env_state.global_environment = global;
+        env_state.active_environment_id = Some(active.id.clone());
 
-        let effective = ws_state.effective_environment();
+        let effective = env_state.effective_environment();
         let host_var = effective.variables.iter().find(|v| v.key == "HOST").unwrap();
         assert_eq!(host_var.resolved_value(), "prod.example.com");
 
@@ -145,17 +148,19 @@ mod tests {
         ws_state.reload_tree();
         assert_eq!(ws_state.requests.len(), 1);
 
+        let mut per_state = PersistenceState::new(store.clone(), temp_dir.clone());
+
         // 1. External modification while dirty triggers conflict
-        ws_state.unsaved_requests.insert(rel_path.clone());
-        if ws_state.unsaved_requests.contains(&rel_path) {
-            ws_state.conflicts.insert(rel_path.clone(), "File was modified externally while you have unsaved changes.".to_string());
+        per_state.unsaved_requests.insert(rel_path.clone());
+        if per_state.unsaved_requests.contains(&rel_path) {
+            per_state.conflicts.insert(rel_path.clone(), "File was modified externally while you have unsaved changes.".to_string());
         }
-        assert!(ws_state.conflicts.contains_key(&rel_path));
+        assert!(per_state.conflicts.contains_key(&rel_path));
 
         // Resolve keep mine
-        ws_state.conflicts.remove(&rel_path);
-        ws_state.unsaved_requests.remove(&rel_path);
-        assert!(!ws_state.conflicts.contains_key(&rel_path));
+        per_state.conflicts.remove(&rel_path);
+        per_state.unsaved_requests.remove(&rel_path);
+        assert!(!per_state.conflicts.contains_key(&rel_path));
 
         // 2. Invalid YAML: test parse error recording and keeping good version
         let req_file_path = temp_dir.join("collections").join(&rel_path);
@@ -252,7 +257,7 @@ mod tests {
         let store: Arc<dyn WorkspaceStore> = Arc::new(FsWorkspaceStore::new(&temp_dir));
         let _ = store.init_workspace("Test WS");
 
-        let mut ws_state = WorkspaceDataState::new_for_path(temp_dir.clone(), store.clone());
+        let mut env_state = EnvironmentState::new(store.clone(), "Test WS".to_string(), None);
 
         let mut test_env = Environment::new("ws-test", "Staging");
         test_env.variables.push(EnvironmentVariable {
@@ -262,12 +267,12 @@ mod tests {
             secret: false,
         });
 
-        ws_state.environments.push(test_env);
+        env_state.environments.push(test_env);
         // Direct save environments to disk
-        for env in &ws_state.environments {
+        for env in &env_state.environments {
             let (file, secrets) = EnvironmentFile::from_environment(env);
-            let _ = ws_state.store.save_environment(&env.name, &file);
-            let _ = ws_state.store.save_secrets(&env.name, &secrets);
+            let _ = env_state.store.save_environment(&env.name, &file);
+            let _ = env_state.store.save_secrets(&env.name, &secrets);
         }
 
         // Verify files exist in storage

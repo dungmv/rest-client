@@ -23,6 +23,7 @@ pub struct EditorState {
     pub pinned_tabs: HashSet<String>,
     pub active_tab_kind: RequestTabKind,
     pub is_sending: bool,
+    pub running_request_id: Option<String>,
     pub send_progress: Option<String>,
     pub cancel_tx: Option<oneshot::Sender<()>>,
     pub is_dirty: bool,
@@ -50,6 +51,7 @@ impl EditorState {
             pinned_tabs: HashSet::new(),
             active_tab_kind: RequestTabKind::Body,
             is_sending: false,
+            running_request_id: None,
             send_progress: None,
             cancel_tx: None,
             is_dirty: false,
@@ -623,8 +625,9 @@ impl EditorState {
     }
 
     // Sending state
-    pub fn start_sending(&mut self, cancel_tx: oneshot::Sender<()>, cx: &mut Context<Self>) {
+    pub fn start_sending(&mut self, req_id: Option<String>, cancel_tx: oneshot::Sender<()>, cx: &mut Context<Self>) {
         self.is_sending = true;
+        self.running_request_id = req_id;
         self.send_progress = Some("Connecting...".to_string());
         self.cancel_tx = Some(cancel_tx);
         cx.notify();
@@ -637,6 +640,7 @@ impl EditorState {
 
     pub fn stop_sending(&mut self, cx: &mut Context<Self>) {
         self.is_sending = false;
+        self.running_request_id = None;
         self.send_progress = None;
         self.cancel_tx = None;
         cx.notify();

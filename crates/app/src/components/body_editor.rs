@@ -1,6 +1,6 @@
-﻿use std::ops::Range;
+use std::ops::Range;
 use crate::components::kv_table::KvTable;
-use crate::state::{EditorState, ToastState, WorkspaceState};
+use crate::state::{EditorState, EnvironmentState, PersistenceState, ToastState, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -26,10 +26,12 @@ pub struct JsonHighlighter {
 
 fn persist_active_request_without_redraw(
     editor: &Entity<EditorState>,
-    workspace: Option<&Entity<WorkspaceState>>,
+    persistence: Option<&Entity<PersistenceState>>,
+    workspace: Option<&Entity<WorkspaceDataState>>,
     cx: &mut App,
 ) {
-    let (Some(workspace), Some(req_id)) = (
+    let (Some(persistence), Some(workspace), Some(req_id)) = (
+        persistence,
         workspace,
         editor.read(cx).active_request.as_ref().map(|r| r.id.clone()),
     ) else {
@@ -38,7 +40,8 @@ fn persist_active_request_without_redraw(
     let is_scratch = editor.read(cx).active_request.as_ref().map(|r| r.workspace_id == "scratch").unwrap_or(true);
     if !is_scratch {
         let ed = editor.clone();
-        workspace.update(cx, |ws, cx| ws.schedule_save_active_request(req_id, ed, cx));
+        let ws = workspace.clone();
+        persistence.update(cx, |p, cx| p.schedule_save_active_request(req_id, ed, ws, cx));
     }
 }
 
@@ -867,7 +870,9 @@ pub struct BodyEditor {
     json_editor: Entity<CodeEditorState>,
     xml_editor: Entity<CodeEditorState>,
     raw_textarea: Entity<TextareaState>,
-    workspace_state: Option<Entity<WorkspaceState>>,
+    workspace_state: Option<Entity<WorkspaceDataState>>,
+    persistence_state: Option<Entity<PersistenceState>>,
+    env_state: Option<Entity<EnvironmentState>>,
     toast_state: Option<Entity<ToastState>>,
 }
 
@@ -884,12 +889,24 @@ impl BodyEditor {
             xml_editor,
             raw_textarea,
             workspace_state: None,
+            persistence_state: None,
+            env_state: None,
             toast_state: None,
         }
     }
 
-    pub fn workspace_state(mut self, ws: Entity<WorkspaceState>) -> Self {
+    pub fn workspace_state(mut self, ws: Entity<WorkspaceDataState>) -> Self {
         self.workspace_state = Some(ws);
+        self
+    }
+
+    pub fn persistence_state(mut self, ps: Entity<PersistenceState>) -> Self {
+        self.persistence_state = Some(ps);
+        self
+    }
+
+    pub fn env_state(mut self, env: Entity<EnvironmentState>) -> Self {
+        self.env_state = Some(env);
         self
     }
 
@@ -1266,6 +1283,7 @@ impl RenderOnce for BodyEditor {
                                 let pairs = pairs.clone();
                                 let ed_up = ed_entity.clone();
                                 let ws_up = self.workspace_state.clone();
+                                let per_up = self.persistence_state.clone();
                                 let ed_add = ed_entity.clone();
                                 let ed_del = ed_entity.clone();
                                 let req_id_str = req_id_str.clone();
@@ -1281,7 +1299,7 @@ impl RenderOnce for BodyEditor {
                                                 ed_up.update(cx, |state, cx| {
                                                     state.update_form_param(idx, k, v, enabled, cx);
                                                 });
-                                                persist_active_request_without_redraw(&ed_up, ws_up.as_ref(), cx);
+                                                persist_active_request_without_redraw(&ed_up, per_up.as_ref(), ws_up.as_ref(), cx);
                                             },
                                             move |_, cx| {
                                                 ed_add.update(cx, |state, cx| {
@@ -1294,7 +1312,7 @@ impl RenderOnce for BodyEditor {
                                                 });
                                             },
                                         )
-                                        .optional_workspace_state(self.workspace_state.clone())
+                                        .optional_env_state(self.env_state.clone())
                                     )
                                     .into_any_element()
                             }
@@ -1342,8 +1360,10 @@ impl RenderOnce for BodyEditor {
 
                                         let ed_up_k = ed_row.clone();
                                         let ed_up_v = ed_row.clone();
-                                                let ws_up = self.workspace_state.clone();
-                                                let ws_up_v = ws_up.clone();
+                                        let ws_up = self.workspace_state.clone();
+                                        let ws_up_v = ws_up.clone();
+                                        let per_up = self.persistence_state.clone();
+                                        let per_up_v = per_up.clone();
                                         let fp_k = file_path.clone();
                                         let fp_v = file_path.clone();
                                         let mp_holder = window.use_keyed_state(
@@ -1372,7 +1392,7 @@ impl RenderOnce for BodyEditor {
                                                         ed_up_k.update(cx, |state, cx| {
                                                             state.update_multipart_item(idx, k, v, is_file, fp_k.clone(), true, cx);
                                                         });
-                                                        persist_active_request_without_redraw(&ed_up_k, ws_up.as_ref(), cx);
+                                                        persist_active_request_without_redraw(&ed_up_k, per_up.as_ref(), ws_up.as_ref(), cx);
                                                     }
                                                 });
 
@@ -1385,7 +1405,7 @@ impl RenderOnce for BodyEditor {
                                                         ed_up_v.update(cx, |state, cx| {
                                                             state.update_multipart_item(idx, k, v, is_file, fp_v.clone(), true, cx);
                                                         });
-                                                        persist_active_request_without_redraw(&ed_up_v, ws_up_v.as_ref(), cx);
+                                                        persist_active_request_without_redraw(&ed_up_v, per_up_v.as_ref(), ws_up_v.as_ref(), cx);
                                                     }
                                                 });
 

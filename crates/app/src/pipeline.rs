@@ -21,7 +21,6 @@ pub enum HttpSendEvent {
 impl AppView {
     pub fn send_current_request(&self, cx: &mut Context<Self>) {
         let ed_entity = self.editor_state.clone();
-        let ws_entity = self.workspace_state.clone();
         let executor = self.executor.clone();
         let rt = self.tokio_rt.clone();
 
@@ -45,8 +44,8 @@ impl AppView {
         // 1. Resolve Dynamic Fake Variables ({{$uuid}}, {{$timestamp}}, etc.)
         resolve_fake_vars_in_request(&mut req_item);
 
-        let ws = ws_entity.read(cx);
-        let mut effective_env = Some(ws.effective_environment());
+        let env_entity = self.env_state.clone();
+        let mut effective_env = Some(env_entity.read(cx).effective_environment());
 
         // 2. Pre-request Script execution
         let pre_script_code = req_item.script.as_ref().and_then(|s| {
@@ -117,11 +116,7 @@ impl AppView {
 
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
         ed_entity.update(cx, |state, cx| {
-            state.start_sending(cancel_tx, cx);
-        });
-        ws_entity.update(cx, |ws, cx| {
-            ws.running_request_id = Some(req_item.id.clone());
-            cx.notify();
+            state.start_sending(Some(req_item.id.clone()), cancel_tx, cx);
         });
         let initial_logs = pre_output.console_entries.clone();
         self.response_state.update(cx, |resp, cx| {
@@ -201,8 +196,8 @@ impl AppView {
                                 // Update workspace environment with mutations (Request chaining)
                                 let all_mutations: Vec<_> = pre_output.env_mutations.iter().chain(post_output.env_mutations.iter()).cloned().collect();
                                 if !all_mutations.is_empty() {
-                                    this.workspace_state.update(cx, |ws, cx| {
-                                        if let Some(act_env) = ws.active_environment_mut() {
+                                    this.env_state.update(cx, |env, cx| {
+                                        if let Some(act_env) = env.active_environment_mut() {
                                             for (k, v_opt) in &all_mutations {
                                                 if let Some(val) = v_opt {
                                                     if let Some(var) = act_env.variables.iter_mut().find(|v| v.key == *k) {
@@ -219,15 +214,15 @@ impl AppView {
                                                     act_env.variables.retain(|v| v.key != *k);
                                                 }
                                             }
-                                            let envs = ws.environments.clone();
-                                            ws.save_environments(envs, cx);
+                                            let envs = env.environments.clone();
+                                            env.save_environments(envs, cx);
                                         } else {
                                             for (k, v_opt) in &all_mutations {
                                                 if let Some(val) = v_opt {
-                                                    if let Some(var) = ws.global_environment.variables.iter_mut().find(|v| v.key == *k) {
+                                                    if let Some(var) = env.global_environment.variables.iter_mut().find(|v| v.key == *k) {
                                                         var.current_value = val.clone();
                                                     } else {
-                                                        ws.global_environment.variables.push(EnvironmentVariable {
+                                                        env.global_environment.variables.push(EnvironmentVariable {
                                                             key: k.clone(),
                                                             initial_value: "".to_string(),
                                                             current_value: val.clone(),
@@ -235,11 +230,11 @@ impl AppView {
                                                         });
                                                     }
                                                 } else {
-                                                    ws.global_environment.variables.retain(|v| v.key != *k);
+                                                    env.global_environment.variables.retain(|v| v.key != *k);
                                                 }
                                             }
-                                            let global = ws.global_environment.clone();
-                                            ws.save_global_environment(global, cx);
+                                            let global = env.global_environment.clone();
+                                            env.save_global_environment(global, cx);
                                         }
                                     });
                                 }
@@ -257,7 +252,6 @@ impl AppView {
 
                                 let loc_file = restclient_core::storage::models::LocFile::from_record(&final_record);
                                 this.workspace_state.update(cx, |ws, cx| {
-                                    ws.running_request_id = None;
                                     if let Some(r) = ws.requests.iter_mut().find(|r| r.id == req_id) {
                                         r.last_status_code = Some(status);
                                     }
@@ -280,19 +274,11 @@ impl AppView {
                                 });
                             }
                             HttpSendEvent::Cancelled => {
-                                this.workspace_state.update(cx, |ws, cx| {
-                                    ws.running_request_id = None;
-                                    cx.notify();
-                                });
                                 this.editor_state.update(cx, |ed, cx| {
                                     ed.stop_sending(cx);
                                 });
                             }
                             HttpSendEvent::Error(err_msg) => {
-                                this.workspace_state.update(cx, |ws, cx| {
-                                    ws.running_request_id = None;
-                                    cx.notify();
-                                });
                                 this.editor_state.update(cx, |ed, cx| {
                                     ed.stop_sending(cx);
                                 });

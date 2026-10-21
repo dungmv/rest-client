@@ -1,4 +1,4 @@
-use super::WorkspaceDataState;
+use super::{EnvironmentState, WorkspaceDataState};
 use gpui::{px, AppContext, Context, Entity, Pixels, Window};
 use gpui_component::input::InputState;
 use std::collections::HashSet;
@@ -289,7 +289,7 @@ impl SidebarState {
         &mut self,
         env_id: String,
         initial_name: String,
-        ws: Entity<WorkspaceDataState>,
+        env_state: Entity<EnvironmentState>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -311,8 +311,8 @@ impl SidebarState {
                     this.cancel_renaming_environment(cx);
                     let trimmed = val.trim();
                     if !trimmed.is_empty() {
-                        ws.update(cx, |ws, cx| {
-                            ws.rename_environment(&e_id, trimmed.to_string(), cx);
+                        env_state.update(cx, |env, cx| {
+                            env.rename_environment(&e_id, trimmed.to_string(), cx);
                         });
                     }
                 }

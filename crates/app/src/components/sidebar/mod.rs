@@ -15,7 +15,8 @@ pub use item_actions::*;
 pub use request_node::*;
 
 use crate::state::{
-    EditorState, GitState, ModalState, ResponseState, SidebarState, ToastState, WorkspaceDataState,
+    EditorState, GitState, ModalState, PersistenceState, ResponseState, SidebarState, ToastState,
+    WorkspaceDataState,
 };
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
@@ -53,6 +54,7 @@ pub struct SidebarRenderContext<'a> {
     pub running_request_id: Option<&'a str>,
     pub git_status: Option<&'a GitStatusResult>,
     pub ws: &'a Entity<WorkspaceDataState>,
+    pub persistence: &'a Entity<PersistenceState>,
     pub sidebar: &'a Entity<SidebarState>,
     pub modal: &'a Entity<ModalState>,
     pub git: &'a Entity<GitState>,
@@ -64,6 +66,7 @@ pub struct SidebarRenderContext<'a> {
 #[derive(IntoElement)]
 pub struct SidebarTree {
     workspace_state: Entity<WorkspaceDataState>,
+    persistence_state: Entity<PersistenceState>,
     sidebar_state: Entity<SidebarState>,
     modal_state: Entity<ModalState>,
     git_state: Entity<GitState>,
@@ -73,8 +76,10 @@ pub struct SidebarTree {
 }
 
 impl SidebarTree {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         workspace_state: Entity<WorkspaceDataState>,
+        persistence_state: Entity<PersistenceState>,
         sidebar_state: Entity<SidebarState>,
         modal_state: Entity<ModalState>,
         git_state: Entity<GitState>,
@@ -84,6 +89,7 @@ impl SidebarTree {
     ) -> Self {
         Self {
             workspace_state,
+            persistence_state,
             sidebar_state,
             modal_state,
             git_state,
@@ -119,6 +125,7 @@ impl RenderOnce for SidebarTree {
             running_request_id,
         ) = {
             let ws = self.workspace_state.read(cx);
+            let per = self.persistence_state.read(cx);
             let sb = self.sidebar_state.read(cx);
             let git = self.git_state.read(cx);
             let req_items: Vec<SidebarReqItem> = ws
@@ -176,8 +183,8 @@ impl RenderOnce for SidebarTree {
                 sb.collapsed_requests.clone(),
                 ws.pins.clone(),
                 ws.parse_errors.clone(),
-                ws.unsaved_requests.clone(),
-                ws.running_request_id.clone(),
+                per.unsaved_requests.clone(),
+                self.editor_state.read(cx).running_request_id.clone(),
             )
         };
         let is_syncing = git_is_syncing;
@@ -192,6 +199,7 @@ impl RenderOnce for SidebarTree {
         let has_nothing = folders.is_empty() && requests.is_empty();
 
         let ws_clone = self.workspace_state.clone();
+        let per_clone = self.persistence_state.clone();
         let sb_clone = self.sidebar_state.clone();
         let modal_clone = self.modal_state.clone();
         let git_clone = self.git_state.clone();
@@ -247,6 +255,7 @@ impl RenderOnce for SidebarTree {
             running_request_id: running_request_id.as_deref(),
             git_status: git_status.as_ref(),
             ws: &ws_clone,
+            persistence: &per_clone,
             sidebar: &sb_clone,
             modal: &modal_clone,
             git: &git_clone,

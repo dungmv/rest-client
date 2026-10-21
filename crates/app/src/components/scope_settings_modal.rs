@@ -1,5 +1,5 @@
 use crate::components::kv_table::KvTable;
-use crate::state::{ModalState, ScopeSettingsTarget, WorkspaceDataState};
+use crate::state::{EnvironmentState, ModalState, ScopeSettingsTarget, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -24,16 +24,19 @@ pub enum ScopeSettingsTab {
 #[derive(IntoElement)]
 pub struct ScopeSettingsModal {
     workspace_state: Entity<WorkspaceDataState>,
+    env_state: Entity<EnvironmentState>,
     modal_state: Entity<ModalState>,
 }
 
 impl ScopeSettingsModal {
     pub fn new(
         workspace_state: Entity<WorkspaceDataState>,
+        env_state: Entity<EnvironmentState>,
         modal_state: Entity<ModalState>,
     ) -> Self {
         Self {
             workspace_state,
+            env_state,
             modal_state,
         }
     }
@@ -550,7 +553,7 @@ impl RenderOnce for ScopeSettingsModal {
                                         )
                                         .child(
                                             KvTable::new("scope-headers-table", pairs, on_update, on_add, on_remove)
-                                                .workspace_state(ws_clone.clone())
+                                                .env_state(self.env_state.clone())
                                                 .modal_state(modal_clone.clone()),
                                         )
                                         .into_any_element()

@@ -1,6 +1,7 @@
 use crate::components::*;
 use crate::state::{
-    EditorState, GitState, ModalState, SidebarState, ToastState, WorkspaceDataState,
+    EditorState, EnvironmentState, GitState, ModalState, PersistenceState, SidebarState,
+    ToastState, WorkspaceDataState,
 };
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Div, Entity, ParentElement, Window};
@@ -9,6 +10,8 @@ use gpui::{App, Div, Entity, ParentElement, Window};
 pub fn attach_modal_overlays(
     root: Div,
     workspace_state: &Entity<WorkspaceDataState>,
+    env_state: &Entity<EnvironmentState>,
+    persistence_state: &Entity<PersistenceState>,
     modal_state: &Entity<ModalState>,
     sidebar_state: &Entity<SidebarState>,
     git_state: &Entity<GitState>,
@@ -29,6 +32,8 @@ pub fn attach_modal_overlays(
     let show_git_modal = git_state.read(cx).show_modal;
 
     let ws_entity = workspace_state.clone();
+    let env_entity = env_state.clone();
+    let per_entity = persistence_state.clone();
     let modal_entity = modal_state.clone();
     let sidebar_entity = sidebar_state.clone();
     let git_entity = git_state.clone();
@@ -37,7 +42,7 @@ pub fn attach_modal_overlays(
 
     root.when(show_env_modal, |this| {
         this.child(EnvironmentModal::new(
-            ws_entity.clone(),
+            env_entity.clone(),
             modal_entity.clone(),
             sidebar_entity.clone(),
         ))
@@ -58,6 +63,7 @@ pub fn attach_modal_overlays(
     .when(show_scope_settings_modal, |this| {
         this.child(ScopeSettingsModal::new(
             ws_entity.clone(),
+            env_entity.clone(),
             modal_entity.clone(),
         ))
     })
@@ -81,6 +87,8 @@ pub fn attach_modal_overlays(
         let send_cb = send_request_cb.clone();
         this.child(CommandPalette::new(
             ws_entity.clone(),
+            env_entity.clone(),
+            per_entity.clone(),
             modal_entity.clone(),
             sidebar_entity.clone(),
             git_entity.clone(),
