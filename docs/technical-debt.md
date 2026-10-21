@@ -9,10 +9,10 @@
 | ID | Vấn đề / Khoản nợ | Khu vực ảnh hưởng | Mức độ | Độ phức tạp | Trạng thái |
 |:---|:---|:---|:---:|:---:|:---:|
 | **TD-01** | Clippy compiler error (`never_loop`) & warnings | `crates/core/src/importers/openapi.rs` | **P0 (Blocker)** | Thấp | 🟢 Đã giải quyết |
-| **TD-02** | God Object State (`WorkspaceState` > 3.300 LOC, 70+ fields) | `crates/app/src/state/workspace_state.rs` | **P0 (Critical)** | Cao | 🔴 Chưa xử lý |
+| **TD-02** | God Object State (`WorkspaceState` > 3.300 LOC, 70+ fields) | `crates/app/src/state/` | **P0 (Critical)** | Cao | 🟢 Đã giải quyết (2026-10-21) |
 | **TD-03** | Unbounded Memory Cache ở `ResponseState` (No LRU) | `crates/app/src/state/response_state.rs` | **P1 (High)** | Trung bình | 🔴 Chưa xử lý |
 | **TD-04** | Giant Component Files (> 2.000 LOC / file) | `git_modal.rs`, `sidebar_tree.rs`, `app.rs` | **P1 (High)** | Cao | 🟢 Đã giải quyết (2026-10-21) |
-| **TD-05** | Dual-State Sync & Race condition tiềm ẩn | `crates/app/src/app.rs`, `editor_state.rs` | **P1 (High)** | Trung bình | 🔴 Chưa xử lý |
+| **TD-05** | Dual-State Sync & Race condition tiềm ẩn | `crates/app/src/app/`, `persistence_state.rs` | **P1 (High)** | Trung bình | 🟢 Đã giải quyết (2026-10-21) |
 | **TD-06** | Lạm dụng `.clone()` trong HTTP Request Pipeline | `crates/app/src/pipeline.rs` | **P2 (Medium)** | Thấp | 🟢 Đã giải quyết |
 | **TD-07** | Panics tiềm ẩn do `unwrap()` trên Mutex / Option | `crates/core/src/http/executor.rs` | **P2 (Medium)** | Thấp | 🔴 Chưa xử lý |
 | **TD-08** | Inconsistent Code Comments & Documentation Language | `crates/core/src/http/executor.rs` | **P2 (Medium)** | Thấp | 🔴 Chưa xử lý |
@@ -49,16 +49,19 @@
 - **Rủi ro:**
   - Mọi thao tác nhỏ (như gõ phím vào ô commit message hay toggle modal) đều trigger notify redraw trên `Entity<WorkspaceState>`, gây ra re-render không cần thiết cho các component quan sát nó.
   - Cực kỳ khó viết unit test độc lập cho từng module.
-- **Kết quả giải quyết (Triệt để - Multi-Entity Architecture):**
+- **Kết quả giải quyết (Triệt để - Radical Multi-Entity Architecture):**
   - Xóa bỏ hoàn toàn God Object `WorkspaceState` cũ và không sử dụng bất kỳ monolithic facade/proxy ủy quyền nào.
-  - Phân rã thành 4 GPUI Entity States độc lập với ngữ nghĩa tường minh:
-    1. **`WorkspaceDataState`** (`crates/app/src/state/workspace_data_state.rs` ~381 LOC): Quản lý dữ liệu lưu trữ disk, requests, folders, environments, pins, local settings. Tách logic nghiệp vụ thành các submodules chuyên biệt: `workspace_crud.rs` (~284 LOC), `workspace_env.rs` (~206 LOC), `workspace_watcher.rs` (~273 LOC).
-    2. **`GitState`** (`crates/app/src/state/git_state.rs` ~424 LOC & `git_ops.rs` ~274 LOC): Đảm nhiệm toàn bộ VCS operations, staging, commit, diff view, branch switcher, remotes, history.
-    3. **`ModalState`** (`crates/app/src/state/modal_state.rs` ~220 LOC): Quản lý cờ hiển thị của tất cả modals (`env`, `git`, `settings`, `import`, `cookies`, `scope_settings`, `rename_workspace`), theme preference, split layout vertical.
-    4. **`SidebarState`** (`crates/app/src/state/sidebar_state.rs` ~396 LOC): Quản lý sidebar width, folder/request collapsed sets, inline renaming controls/subscriptions cho request/folder/env/example/workspace, navigation history (`record_navigation`, `navigate_back`, `navigate_forward`).
-  - Toàn bộ UI components và AppView chuyển thẳng sang cú pháp ngữ nghĩa tường minh (ví dụ: `modal_state.open_env_modal(...)`, `git_state.commit(...)`, `sidebar_state.start_renaming(...)`), triệt tiêu hoàn toàn re-render chéo giữa Git/Modals/Sidebar và Data core.
-  - Mọi file đều tuân thủ nghiêm ngặt giới hạn độ dài `< 450 LOC` (chuẩn dưới 650 LOC).
-  - Toàn bộ 112 unit tests passed 100%, 0 clippy warnings với `-D warnings`.
+  - Phân rã thành 6 GPUI Entity States độc lập với đơn trách nhiệm và ranh giới rõ ràng:
+    1. **`WorkspaceDataState`** (`crates/app/src/state/workspace_data_state.rs` ~341 LOC & `workspace_crud.rs` ~289 LOC): Chỉ chứa pure domain data (requests, folders, pins, workspace metadata, CRUD operations, hierarchy resolution).
+    2. **`EnvironmentState`** (`crates/app/src/state/environment_state.rs` ~218 LOC): Quản lý toàn bộ danh sách environments, global environment, active environment ID, corrupt secrets, effective environment fallback (`effective_environment()`), tạo/sao chép/đổi tên/xóa environment và lưu disk debounced.
+    3. **`PersistenceState`** (`crates/app/src/state/persistence_state.rs` ~311 LOC): Quản lý persistence I/O, `WorkspaceStore`, background `WorkspaceWatcher`, nhận `FsEvent`, external conflicts, dirty unsaved requests tracking và debounced save background tasks.
+    4. **`GitState`** (`crates/app/src/state/git_state.rs` ~424 LOC & `git_ops.rs` ~274 LOC): Đảm nhiệm toàn bộ VCS operations, staging, commit, diff view, branch switcher, remotes, history.
+    5. **`ModalState`** (`crates/app/src/state/modal_state.rs` ~238 LOC): Quản lý cờ hiển thị của tất cả modals (`env`, `git`, `settings`, `import`, `cookies`, `scope_settings`, `rename_workspace`), theme preference, split layout vertical.
+    6. **`SidebarState`** (`crates/app/src/state/sidebar_state.rs` ~396 LOC): Quản lý sidebar width, folder/request collapsed sets, inline renaming controls/subscriptions cho request/folder/env/example/workspace, navigation history (`record_navigation`, `navigate_back`, `navigate_forward`).
+  - Xóa bỏ hoàn toàn các file ngụy trang god object trước đó (`workspace_env.rs`, `workspace_watcher.rs`).
+  - Toàn bộ UI components và AppView chuyển thẳng sang cú pháp ngữ nghĩa tường minh (ví dụ: `modal_state.open_env_modal(...)`, `git_state.commit(...)`, `sidebar_state.start_renaming(...)`, `env_state.set_active_environment(...)`), triệt tiêu hoàn toàn re-render chéo giữa Git/Modals/Sidebar/Environments/Persistence và Data core.
+  - Mọi file đều tuân thủ nghiêm ngặt giới hạn độ dài `< 650 LOC` (phần lớn `< 450 LOC`).
+  - Toàn bộ 114 unit tests passed 100%, 0 clippy warnings với `-D warnings`.
 
 ---
 
@@ -100,18 +103,23 @@
 
 ---
 
-### TD-05: Dual-State Synchronization & Race Condition (High)
+### TD-05: Dual-State Synchronization & Race Condition (High) - 🟢 Đã giải quyết (2026-10-21)
 
-- **Mô tả:**
+- **Mô tả ban đầu:**
   - Request đang được mở nằm đồng thời ở nhiều nơi:
     1. Input buffer của `InputState` / `CodeEditorState` (trên UI thread).
     2. `EditorState.active_request` (trong entity state).
-    3. Danh sách `WorkspaceState.requests` (danh sách nguồn từ disk).
-  - Quá trình đồng bộ được thực hiện bán thủ công qua hàm [`save_active_request_without_redraw`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/app.rs#L61-L73) và cơ chế debounce.
-- **Rủi ro:** Khi chuyển tab nhanh, đóng tab hoặc khi File Watcher từ bên ngoài báo thay đổi file trên ổ đĩa, có khả năng dữ liệu đang gõ dở bị ghi đè hoặc bị desync giữa UI buffer và disk storage.
-- **Giải pháp:**
-  - Xây dựng mô hình Single Source of Truth rõ ràng.
-  - Gắn `DirtyFlag` và `revision_id` trên từng request để kiểm tra optimistic concurrency control trước khi lưu xuống disk hoặc nạp bản ghi mới từ watcher.
+    3. Danh sách `WorkspaceDataState.requests` (danh sách nguồn từ disk).
+  - Quá trình đồng bộ được thực hiện bán thủ công qua hàm `save_active_request_without_redraw` và cơ chế debounce.
+- **Rủi ro:** Khi chuyển tab nhanh, đóng tab hoặc khi File Watcher từ bên ngoài báo thay đổi file trên ổ đĩa, có khả năng dữ liệu đang gõ dở bị ghi đè hoặc bị desync giữa UI buffer và disk storage. Đặc biệt xuất hiện lỗi khi vừa click chọn request trong sidebar, request đã lập tức bị đánh dấu modified (chuyển vàng) do scheduler tự kích hoạt dirty save.
+- **Kết quả giải quyết:**
+  - Tách riêng `PersistenceState` chuyên trách việc auto-save debounced, file watcher và conflict detection.
+  - Sửa đổi cơ chế dirty tracking trong `subscriptions.rs`:
+    - Khi chuyển request (`last_req_id != req_id`), observer trên `editor_state` chỉ nạp cache và cập nhật ID, tuyệt đối không lập lịch auto-save và không đưa vào `unsaved_requests`. Khắc phục triệt để lỗi request vừa click đã chuyển màu vàng và báo modified giả.
+    - Cơ chế auto-save debounced chỉ kích hoạt khi đang ở cùng request và request thực sự có biến đổi (`is_dirty == true`).
+    - Snapshot `req_snapshot` an toàn khi lập lịch lưu để đảm bảo nếu người dùng chuyển tab ngay sau khi gõ, dữ liệu đã gõ vẫn được flush xuống disk đúng đắn mà không bị desync.
+    - Đặt lại `ed.is_dirty = false` ngay khi background task ghi file xuống disk thành công.
+  - Xử lý external conflicts thông qua `conflicts` map của `PersistenceState`, ngăn chặn watcher ghi đè lên thay đổi chưa lưu của người dùng.
 
 ---
 
@@ -183,21 +191,21 @@
 ```mermaid
 flowchart TD
     subgraph Sprint 1: Stability & Cleanliness
-        TD01["TD-01: Fix Clippy Error & Warnings"]
+        TD01["TD-01: Fix Clippy Error & Warnings (Đã xong)"]
         TD08["TD-08: Standardize English Comments"]
         TD07["TD-07: Safe Mutex & Unwrap Handling"]
     end
 
     subgraph Sprint 2: Memory & Leak Prevention
         TD03["TD-03: Add LRU Eviction to Response Cache"]
-        TD06["TD-06: Optimize Pipeline Allocations"]
+        TD06["TD-06: Optimize Pipeline Allocations (Đã xong)"]
         TD09["TD-09: Compact Struct Layouts"]
     end
 
     subgraph Sprint 3: Structural Refactoring
-        TD02["TD-02: Split WorkspaceState God Object"]
-        TD04["TD-04: Modularize Giant UI Components"]
-        TD05["TD-05: Robust Dirty-Tracking Sync"]
+        TD02["TD-02: Split WorkspaceState God Object (Đã xong)"]
+        TD04["TD-04: Modularize Giant UI Components (Đã xong)"]
+        TD05["TD-05: Robust Dirty-Tracking Sync (Đã xong)"]
     end
 
     Sprint 1 --> Sprint 2 --> Sprint 3
