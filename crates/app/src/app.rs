@@ -1352,7 +1352,7 @@ impl Render for AppView {
                                                                     div()
                                                                         .font_weight(gpui::FontWeight::BOLD)
                                                                         .text_color(t.status_4xx)
-                                                                        .child("âš ï¸ Conflict:")
+                                                                        .child("! Conflict:")
                                                                 )
                                                                 .child(
                                                                     div()
@@ -1416,7 +1416,7 @@ impl Render for AppView {
                                                         .gap(px(8.))
                                                         .text_xs()
                                                         .text_color(t.status_5xx)
-                                                        .child("âš ï¸ Parse error on disk (showing last good in-memory version):")
+                                                        .child("! Parse error on disk (showing last good in-memory version):")
                                                         .child(
                                                             div()
                                                                 .font_family("monospace")
@@ -1439,7 +1439,7 @@ impl Render for AppView {
                                                         .gap(px(8.))
                                                         .text_xs()
                                                         .text_color(t.status_4xx)
-                                                        .child(format!("âš ï¸ Sensitive Data Warning: {}", msg))
+                                                        .child(format!("! Sensitive Data Warning: {}", msg))
                                                 )
                                             })
                                             // Top Request Bar: Method + URL + Send
@@ -1515,7 +1515,7 @@ impl Render for AppView {
                                                         let has_pre = active_req_info.as_ref().map(|info| info.2).unwrap_or(false);
                                                         TabItem::new("tab-pre-script", "Pre-request")
                                                             .active(active_tab_kind == RequestTabKind::PreRequestScript)
-                                                            .when(has_pre, |tab| tab.badge("â—"))
+                                                            .when(has_pre, |tab| tab.badge("*"))
                                                             .on_click(move |_, _, cx| {
                                                                 ed_c.update(cx, |state, cx| {
                                                                     state.set_active_tab_kind(RequestTabKind::PreRequestScript, cx);
@@ -1527,7 +1527,7 @@ impl Render for AppView {
                                                         let has_test = active_req_info.as_ref().map(|info| info.3).unwrap_or(false);
                                                         TabItem::new("tab-tests", "Post-response")
                                                             .active(active_tab_kind == RequestTabKind::Tests)
-                                                            .when(has_test, |tab| tab.badge("â—"))
+                                                            .when(has_test, |tab| tab.badge("*"))
                                                             .on_click(move |_, _, cx| {
                                                                 ed_c.update(cx, |state, cx| {
                                                                     state.set_active_tab_kind(RequestTabKind::Tests, cx);
@@ -1702,22 +1702,10 @@ impl Render for AppView {
                                                                                     .border_color(t.border)
                                                                                     .child(
                                                                                         div()
-                                                                                            .flex()
-                                                                                            .items_center()
-                                                                                            .gap(px(6.))
-                                                                                            .child(
-                                                                                                div()
-                                                                                                    .text_xs()
-                                                                                                    .font_weight(gpui::FontWeight::MEDIUM)
-                                                                                                    .text_color(t.text_primary)
-                                                                                                    .child(auth_label),
-                                                                                            )
-                                                                                            .child(
-                                                                                                div()
-                                                                                                    .text_xs()
-                                                                                                    .text_color(t.text_muted)
-                                                                                                    .child("â–¾"),
-                                                                                            ),
+                                                                                            .text_xs()
+                                                                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                                                                            .text_color(t.text_primary)
+                                                                                            .child(auth_label),
                                                                                     )
                                                                                     .dropdown_menu(move |menu, _window, _cx| {
                                                                                         let ed_inh = ed_m.clone();
@@ -2030,22 +2018,10 @@ impl Render for AppView {
                                                                                                     .border_color(t.border)
                                                                                                     .child(
                                                                                                         div()
-                                                                                                            .flex()
-                                                                                                            .items_center()
-                                                                                                            .gap(px(6.))
-                                                                                                            .child(
-                                                                                                                div()
-                                                                                                                    .text_xs()
-                                                                                                                    .font_weight(gpui::FontWeight::MEDIUM)
-                                                                                                                    .text_color(t.text_primary)
-                                                                                                                    .child(loc_label),
-                                                                                                            )
-                                                                                                            .child(
-                                                                                                                div()
-                                                                                                                    .text_xs()
-                                                                                                                    .text_color(t.text_muted)
-                                                                                                                    .child("â–¾"),
-                                                                                                            ),
+                                                                                                            .text_xs()
+                                                                                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                                                                                            .text_color(t.text_primary)
+                                                                                                            .child(loc_label),
                                                                                                     )
                                                                                                     .dropdown_menu(move |menu, _window, _cx| {
                                                                                                         let ed_h = ed_l.clone();

@@ -1158,7 +1158,7 @@ impl RenderOnce for ScriptEditor {
                         .flex()
                         .items_center()
                         .gap(px(6.))
-                        .child("⚠ Script Error:")
+                        .child("! Script Error:")
                         .child(err),
                 )
             })

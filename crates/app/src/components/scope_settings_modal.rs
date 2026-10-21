@@ -583,22 +583,10 @@ impl RenderOnce for ScopeSettingsModal {
                                                         .border_color(t.border)
                                                         .child(
                                                             div()
-                                                                .flex()
-                                                                .items_center()
-                                                                .gap(px(6.))
-                                                                .child(
-                                                                    div()
-                                                                        .text_xs()
-                                                                        .font_weight(gpui::FontWeight::MEDIUM)
-                                                                        .text_color(t.text_primary)
-                                                                        .child(auth_label),
-                                                                )
-                                                                .child(
-                                                                    div()
-                                                                        .text_xs()
-                                                                        .text_color(t.text_muted)
-                                                                        .child("▾"),
-                                                                ),
+                                                                .text_xs()
+                                                                .font_weight(gpui::FontWeight::MEDIUM)
+                                                                .text_color(t.text_primary)
+                                                                .child(auth_label),
                                                         )
                                                         .dropdown_menu(move |menu, _window, _cx| {
                                                             let mut m = menu;
@@ -932,22 +920,10 @@ impl RenderOnce for ScopeSettingsModal {
                                                                         .border_color(t.border)
                                                                         .child(
                                                                             div()
-                                                                                .flex()
-                                                                                .items_center()
-                                                                                .gap(px(6.))
-                                                                                .child(
-                                                                                    div()
-                                                                                        .text_xs()
-                                                                                        .font_weight(gpui::FontWeight::MEDIUM)
-                                                                                        .text_color(t.text_primary)
-                                                                                        .child(loc_label),
-                                                                                )
-                                                                                .child(
-                                                                                    div()
-                                                                                        .text_xs()
-                                                                                        .text_color(t.text_muted)
-                                                                                        .child("▾"),
-                                                                                ),
+                                                                                .text_xs()
+                                                                                .font_weight(gpui::FontWeight::MEDIUM)
+                                                                                .text_color(t.text_primary)
+                                                                                .child(loc_label),
                                                                         )
                                                                         .dropdown_menu(move |menu, _window, _cx| {
                                                                             let ws_h = ws_loc.clone();

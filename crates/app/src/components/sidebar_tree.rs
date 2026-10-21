@@ -568,7 +568,7 @@ impl RenderOnce for SidebarTree {
                                 div()
                                     .text_xs()
                                     .text_color(t.status_5xx)
-                                    .child("⚠"),
+                                    .child("!"),
                             )
                         })
                         .when(running_request_id.as_deref() == Some(&req.id), |this| {
