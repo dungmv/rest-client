@@ -80,6 +80,7 @@ impl KeyValuePair {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Auth {
     #[default]
+    Inherit,
     None,
     Bearer {
         token: String,
@@ -94,6 +95,16 @@ pub enum Auth {
         #[serde(default = "default_true")]
         in_header: bool,
     },
+}
+
+impl Auth {
+    pub fn is_inherit(&self) -> bool {
+        matches!(self, Auth::Inherit)
+    }
+
+    pub fn is_none(&self) -> bool {
+        matches!(self, Auth::None)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -270,7 +281,7 @@ impl HttpRequestItem {
             url: url.into(),
             params: Vec::new(),
             headers: Vec::new(),
-            auth: Auth::None,
+            auth: Auth::Inherit,
             body: RequestBody::None,
             settings: RequestSettings::default(),
             sort_order: 0,
@@ -291,6 +302,10 @@ pub struct Folder {
     pub parent_id: Option<String>,
     #[serde(default)]
     pub sort_order: i32,
+    #[serde(default)]
+    pub headers: Vec<KeyValuePair>,
+    #[serde(default)]
+    pub auth: Auth,
 }
 
 impl Folder {
@@ -301,6 +316,8 @@ impl Folder {
             name: name.into(),
             parent_id: None,
             sort_order: 0,
+            headers: Vec::new(),
+            auth: Auth::Inherit,
         }
     }
 }
@@ -354,6 +371,10 @@ pub struct Workspace {
     pub description: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_environment_id: Option<String>,
+    #[serde(default)]
+    pub headers: Vec<KeyValuePair>,
+    #[serde(default)]
+    pub auth: Auth,
 }
 
 impl Workspace {
@@ -363,6 +384,8 @@ impl Workspace {
             name: name.into(),
             description: String::new(),
             active_environment_id: None,
+            headers: Vec::new(),
+            auth: Auth::None,
         }
     }
 }

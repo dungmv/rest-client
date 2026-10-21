@@ -237,6 +237,8 @@ pub fn create_group(
     let folder_meta = FolderFile {
         name: name.to_string(),
         order: Vec::new(),
+        headers: Vec::new(),
+        auth: crate::storage::models::RequestAuth::Inherit,
         extra: std::collections::BTreeMap::new(),
     };
     let content = to_yaml_string(&folder_meta)?;
@@ -375,6 +377,8 @@ pub fn reorder_folder(
         FolderFile {
             name,
             order: Vec::new(),
+            headers: Vec::new(),
+            auth: crate::storage::models::RequestAuth::Inherit,
             extra: std::collections::BTreeMap::new(),
         }
     };

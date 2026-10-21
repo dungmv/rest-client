@@ -4,7 +4,7 @@ use crate::storage::fs_ops::{
     path_to_forward_slash, rename_group, rename_request, reorder_folder,
 };
 use crate::storage::models::{
-    EnvironmentFile, FolderFile, FolderNode, LocFile, LocalState, PinsFile, RequestFile,
+    EnvironmentFile, FolderFile, FolderNode, LocFile, LocalState, PinsFile, RequestAuth, RequestFile,
     RequestNode, WorkspaceMeta, WorkspaceTree,
 };
 use crate::storage::serialize::{atomic_write_str, to_yaml_string, with_retry};
@@ -84,12 +84,16 @@ impl FsWorkspaceStore {
             serde_yaml::from_str::<FolderFile>(&raw).unwrap_or_else(|_| FolderFile {
                 name: dir_name.clone(),
                 order: Vec::new(),
+                headers: Vec::new(),
+                auth: RequestAuth::Inherit,
                 extra: BTreeMap::new(),
             })
         } else {
             FolderFile {
                 name: dir_name.clone(),
                 order: Vec::new(),
+                headers: Vec::new(),
+                auth: RequestAuth::Inherit,
                 extra: BTreeMap::new(),
             }
         };
@@ -232,6 +236,8 @@ impl WorkspaceStore for FsWorkspaceStore {
             version: 1,
             name: name.to_string(),
             default_environment: Some("local".to_string()),
+            headers: Vec::new(),
+            auth: RequestAuth::None,
             extra: BTreeMap::new(),
         };
         self.save_workspace_meta(&meta)?;
@@ -434,6 +440,8 @@ impl WorkspaceStore for FsWorkspaceStore {
             return Ok(FolderFile {
                 name: folder_rel.to_string(),
                 order: Vec::new(),
+                headers: Vec::new(),
+                auth: RequestAuth::Inherit,
                 extra: BTreeMap::new(),
             });
         }

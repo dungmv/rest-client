@@ -1,4 +1,4 @@
-﻿use crate::components::status_badge::{MethodBadge, StatusCodeBadge};
+use crate::components::status_badge::{MethodBadge, StatusCodeBadge};
 use crate::state::{EditorState, GitActiveModal, ResponseState, ToastState, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
@@ -401,7 +401,11 @@ impl RenderOnce for SidebarTree {
                                 PopupMenuItem::new("Copy as cURL")
                                     .on_click(move |_, _, cx| {
                                         if let Some(r) = ws_curl.read(cx).find_request(&r_id_curl) {
-                                            let curl = restclient_core::curl::request_to_curl(r, None);
+                                            let mut r_clone = r.clone();
+                                            let (resolved_h, resolved_a) = ws_curl.read(cx).resolve_request_hierarchy(&r_clone);
+                                            r_clone.headers = resolved_h;
+                                            r_clone.auth = resolved_a;
+                                            let curl = restclient_core::curl::request_to_curl(&r_clone, None);
                                             cx.write_to_clipboard(gpui::ClipboardItem::new_string(curl));
                                         }
                                     }),
@@ -1779,6 +1783,9 @@ fn render_folder_node(
                     let ws_del = ws_clone.clone();
                     let f_id_del = f_id.clone();
 
+                    let ws_settings = ws_clone.clone();
+                    let f_id_settings = f_id.clone();
+
                     move |menu, _window, _cx| {
                         let ws_n = ws_new.clone();
                         let ed_n = ed_new.clone();
@@ -1790,6 +1797,9 @@ fn render_folder_node(
                         let ws_r = ws_ren.clone();
                         let f_id_r = f_id_ren.clone();
                         let f_name_r = f_name_ren.clone();
+
+                        let ws_set = ws_settings.clone();
+                        let f_id_set = f_id_settings.clone();
 
                         let ws_d = ws_del.clone();
                         let f_id_d = f_id_del.clone();
@@ -1824,6 +1834,15 @@ fn render_folder_node(
                                     .on_click(move |_, window, cx| {
                                         ws_r.update(cx, |state, cx| {
                                             state.start_renaming_folder(f_id_r.clone(), f_name_r.clone(), window, cx);
+                                        });
+                                    }),
+                            )
+                            .item(
+                                gpui_component::menu::PopupMenuItem::new("Folder Settings...")
+                                    .icon(IconName::Settings)
+                                    .on_click(move |_, _, cx| {
+                                        ws_set.update(cx, |state, cx| {
+                                            state.open_folder_settings(f_id_set.clone(), cx);
                                         });
                                     }),
                             )
@@ -2095,6 +2114,8 @@ mod tests {
                 parent_id: None,
                 name: "Auth".to_string(),
                 sort_order: 0,
+                headers: Vec::new(),
+                auth: restclient_core::models::Auth::Inherit,
             },
             Folder {
                 id: "auth/sub".to_string(),
@@ -2102,6 +2123,8 @@ mod tests {
                 parent_id: Some("auth".to_string()),
                 name: "Sub".to_string(),
                 sort_order: 0,
+                headers: Vec::new(),
+                auth: restclient_core::models::Auth::Inherit,
             },
         ];
 

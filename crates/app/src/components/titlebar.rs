@@ -221,11 +221,20 @@ impl RenderOnce for AppTitleBar {
                         let ws_new = ws_s.clone();
                         let ws_open = ws_s.clone();
                         let ws_rename = ws_s.clone();
+                        let ws_settings = ws_s.clone();
                         let ws_folder = ws_s.clone();
                         let ws_clean = ws_s.clone();
                         let ws_import = ws_s.clone();
 
                         let mut m = menu
+                            .item(
+                                PopupMenuItem::new("Workspace Settings...").icon(IconName::Settings)
+                                    .on_click(move |_, _, cx| {
+                                        ws_settings.update(cx, |state, cx| {
+                                            state.open_workspace_settings(cx);
+                                        });
+                                    })
+                            )
                             .item(
                                 PopupMenuItem::new("Rename Workspace...").icon(IconName::Pencil)
                                     .on_click(move |_, window, cx| {

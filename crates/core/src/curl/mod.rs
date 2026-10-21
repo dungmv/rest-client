@@ -357,7 +357,7 @@ pub fn request_to_curl(item: &HttpRequestItem, env: Option<&Environment>) -> Str
 
     // Auth
     match &item.auth {
-        Auth::None => {}
+        Auth::Inherit | Auth::None => {}
         Auth::Bearer { token } => {
             let t = interpolate(token, env).text;
             parts.push("-H".to_string());

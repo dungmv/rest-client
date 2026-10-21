@@ -18,7 +18,8 @@ use gpui_component::input::{
 };
 use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
 use gpui_component::scroll::ScrollableElement;
-use gpui_kit::assets::AllAssets;
+use gpui_component::Icon;
+use gpui_kit::assets::{AllAssets, IconName};
 use platform::default_window_options;
 use restclient_core::http::{HttpError, HttpExecutor, HttpProgress, ReqwestExecutor, ResolvedRequest};
 use restclient_core::models::{
@@ -251,7 +252,7 @@ impl AppView {
                         inp.set_value(crate::components::env_autocomplete::build_tokenized_content(value, ws), window, cx);
                     });
                 }
-                Auth::None => {}
+                Auth::Inherit | Auth::None => {}
             }
 
             let req_id = req.id.clone();
@@ -682,6 +683,14 @@ impl AppView {
 
         if ed.is_sending {
             return;
+        }
+
+        // 0. Resolve Hierarchical Headers & Auth (Workspace -> Folder hierarchy -> Request)
+        {
+            let ws = self.workspace_state.read(cx);
+            let (resolved_headers, resolved_auth) = ws.resolve_request_hierarchy(&req_item);
+            req_item.headers = resolved_headers;
+            req_item.auth = resolved_auth;
         }
 
         // 1. Resolve Dynamic Fake Variables ({{$uuid}}, {{$timestamp}}, etc.)
@@ -1300,6 +1309,7 @@ impl Render for AppView {
         let show_env_modal = self.workspace_state.read(cx).show_env_modal;
         let show_cookies_modal = self.workspace_state.read(cx).show_cookies_modal;
         let show_settings_modal = self.workspace_state.read(cx).show_settings_modal;
+        let show_scope_settings_modal = self.workspace_state.read(cx).scope_settings_target.is_some();
         let show_git_modal = self.workspace_state.read(cx).show_git_modal;
         let show_import_modal = self.workspace_state.read(cx).show_import_modal;
         let show_rename_workspace_modal = self.workspace_state.read(cx).show_rename_workspace_modal;
@@ -1383,7 +1393,7 @@ impl Render for AppView {
                                     inp.set_value(crate::components::env_autocomplete::build_tokenized_content(value, ws), window, cx);
                                 });
                             }
-                            Auth::None => {
+                            Auth::Inherit | Auth::None => {
                                 self.bearer_token_input.update(cx, |inp, cx| {
                                     inp.set_value(String::new(), window, cx);
                                 });
@@ -1918,43 +1928,85 @@ impl Render for AppView {
                                                             }
                                                             RequestTabKind::Headers => {
                                                                 let headers = ed_entity.read(cx).active_request.as_ref().map(|r| r.headers.clone()).unwrap_or_default();
+                                                                let inherited_count = {
+                                                                    let active_r = ed_entity.read(cx).active_request.clone();
+                                                                    if let Some(r) = active_r {
+                                                                        let ws_r = ws_entity.read(cx);
+                                                                        let ws_h = ws_r.active_workspace.as_ref().map(|w| w.headers.len()).unwrap_or(0);
+                                                                        let folder_h: usize = ws_r.get_folder_hierarchy(r.folder_id.as_deref())
+                                                                            .iter()
+                                                                            .map(|f| f.headers.len())
+                                                                            .sum();
+                                                                        ws_h + folder_h
+                                                                    } else {
+                                                                        0
+                                                                    }
+                                                                };
                                                                 let ed_up = ed_entity.clone();
                                                                 let ws_up = ws_entity.clone();
                                                                 let ed_add = ed_entity.clone();
                                                                 let ed_del = ed_entity.clone();
-                                                                div().size_full().child(
-                                                                    KvTable::new(
-                                                                        format!("headers-kv-{}", req_id_str),
-                                                                        headers,
-                                                                        move |idx, k, v, enabled, _, cx| {
-                                                                            ed_up.update(cx, |state, cx| {
-                                                                                state.update_header(idx, k, v, enabled, cx);
-                                                                            });
-                                                                            save_active_request_without_redraw(&ed_up, &ws_up, cx);
-                                                                        },
-                                                                        move |_, cx| {
-                                                                            ed_add.update(cx, |state, cx| {
-                                                                                state.add_header(cx);
-                                                                            });
-                                                                        },
-                                                                        move |idx, _, cx| {
-                                                                            ed_del.update(cx, |state, cx| {
-                                                                                state.remove_header(idx, cx);
-                                                                            });
-                                                                        },
+                                                                div()
+                                                                    .size_full()
+                                                                    .flex()
+                                                                    .flex_col()
+                                                                    .when(inherited_count > 0, |this| {
+                                                                        this.child(
+                                                                            div()
+                                                                                .px(px(12.))
+                                                                                .py(px(6.))
+                                                                                .bg(t.bg_app)
+                                                                                .border_b_1()
+                                                                                .border_color(t.border)
+                                                                                .flex()
+                                                                                .items_center()
+                                                                                .gap(px(6.))
+                                                                                .child(Icon::new(IconName::Info).size(px(14.)))
+                                                                                .child(
+                                                                                    div()
+                                                                                        .text_xs()
+                                                                                        .text_color(t.text_secondary)
+                                                                                        .child(format!("{} inherited header(s) from parent folder/workspace will be merged on send", inherited_count)),
+                                                                                ),
+                                                                        )
+                                                                    })
+                                                                    .child(
+                                                                        div().flex_1().child(
+                                                                            KvTable::new(
+                                                                                format!("headers-kv-{}", req_id_str),
+                                                                                headers,
+                                                                                move |idx, k, v, enabled, _, cx| {
+                                                                                    ed_up.update(cx, |state, cx| {
+                                                                                        state.update_header(idx, k, v, enabled, cx);
+                                                                                    });
+                                                                                    save_active_request_without_redraw(&ed_up, &ws_up, cx);
+                                                                                },
+                                                                                move |_, cx| {
+                                                                                    ed_add.update(cx, |state, cx| {
+                                                                                        state.add_header(cx);
+                                                                                    });
+                                                                                },
+                                                                                move |idx, _, cx| {
+                                                                                    ed_del.update(cx, |state, cx| {
+                                                                                        state.remove_header(idx, cx);
+                                                                                    });
+                                                                                },
+                                                                            )
+                                                                            .workspace_state(ws_entity.clone())
+                                                                        )
                                                                     )
-                                                                    .workspace_state(ws_entity.clone())
-                                                                )
                                                             }
                                                             RequestTabKind::Auth => {
-                                                                let auth = ed_entity.read(cx).active_request.as_ref().map(|r| r.auth.clone()).unwrap_or(Auth::None);
+                                                                let auth = ed_entity.read(cx).active_request.as_ref().map(|r| r.auth.clone()).unwrap_or(Auth::Inherit);
                                                                 let ed_c = ed_entity.clone();
                                                                 let auth_label = match &auth {
+                                                                    Auth::Inherit => "Inherit",
                                                                     Auth::None => "None",
                                                                     Auth::Bearer { .. } => "Bearer Token",
                                                                     Auth::Basic { .. } => "Basic Auth",
                                                                     Auth::ApiKey { .. } => "API Key",
                                                                 };
+                                                                let is_inherit = matches!(auth, Auth::Inherit);
                                                                 let is_none = matches!(auth, Auth::None);
                                                                 let is_bearer = matches!(auth, Auth::Bearer { .. });
                                                                 let is_basic = matches!(auth, Auth::Basic { .. });
@@ -2010,12 +2062,24 @@ impl Render for AppView {
                                                                                             ),
                                                                                     )
                                                                                     .dropdown_menu(move |menu, _window, _cx| {
+                                                                                        let ed_inh = ed_m.clone();
                                                                                         let ed_none = ed_m.clone();
                                                                                         let ed_bearer = ed_m.clone();
                                                                                         let ed_basic = ed_m.clone();
                                                                                         let ed_apikey = ed_m.clone();
 
                                                                                         menu.item(
+                                                                                            PopupMenuItem::new("Inherit")
+                                                                                                .checked(is_inherit)
+                                                                                                .on_click(move |_, _, cx| {
+                                                                                                    ed_inh.update(cx, |state, cx| {
+                                                                                                        if !matches!(state.active_request.as_ref().map(|r| &r.auth), Some(Auth::Inherit)) {
+                                                                                                            state.set_auth(Auth::Inherit, cx);
+                                                                                                        }
+                                                                                                    });
+                                                                                                }),
+                                                                                        )
+                                                                                        .item(
                                                                                             PopupMenuItem::new("None")
                                                                                                 .checked(is_none)
                                                                                                 .on_click(move |_, _, cx| {
@@ -2064,6 +2128,26 @@ impl Render for AppView {
                                                                     )
                                                                     .child({
                                                                         match auth {
+                                                                            Auth::Inherit => {
+                                                                                let folder_id = ed_c.read(cx).active_request.as_ref().and_then(|r| r.folder_id.clone());
+                                                                                let desc = ws_entity.read(cx).get_inherited_auth_description(folder_id.as_deref());
+                                                                                div()
+                                                                                    .p(px(10.))
+                                                                                    .rounded(px(6.))
+                                                                                    .bg(t.bg_app)
+                                                                                    .border_1()
+                                                                                    .border_color(t.border)
+                                                                                    .flex()
+                                                                                    .items_center()
+                                                                                    .gap(px(8.))
+                                                                                    .child(Icon::new(IconName::Info).size(px(16.)))
+                                                                                    .child(
+                                                                                        div()
+                                                                                            .text_xs()
+                                                                                            .text_color(t.text_secondary)
+                                                                                            .child(desc),
+                                                                                    )
+                                                                            }
                                                                             Auth::None => {
                                                                                 div()
                                                                                     .pt(px(4.))
@@ -2500,6 +2584,9 @@ impl Render for AppView {
             })
             .when(show_settings_modal, |this| {
                 this.child(SettingsModal::new(ws_entity.clone(), ed_entity.clone()))
+            })
+            .when(show_scope_settings_modal, |this| {
+                this.child(ScopeSettingsModal::new(ws_entity.clone()))
             })
             .when(show_git_modal, |this| {
                 this.child(GitModal::new(ws_entity.clone()))

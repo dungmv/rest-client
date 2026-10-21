@@ -4,7 +4,7 @@ use crate::state::EditorState;
 use gpui::{AppContext as _, Context, Entity, Pixels, Task, Window, px};
 use gpui_component::input::InputState;
 use restclient_core::models::{
-    Environment, Folder, HttpMethod, HttpRequestItem, Workspace,
+    Auth, Environment, Folder, HttpMethod, HttpRequestItem, KeyValuePair, Workspace,
 };
 use restclient_core::storage::models::{
     EnvironmentFile, FolderNode, LocalState, RequestFile, WorkspaceMeta,
@@ -28,6 +28,12 @@ pub enum GitActiveModal {
     History,
     NewBranch,
     Remotes,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScopeSettingsTarget {
+    Workspace,
+    Folder(String),
 }
 
 pub struct WorkspaceState {
@@ -56,6 +62,7 @@ pub struct WorkspaceState {
     pub show_cookies_modal: bool,
     pub show_command_palette: bool,
     pub show_settings_modal: bool,
+    pub scope_settings_target: Option<ScopeSettingsTarget>,
     pub theme_preference: crate::theme::ThemePreference,
     pub show_git_modal: bool,
     pub show_rename_workspace_modal: bool,
@@ -161,6 +168,7 @@ impl WorkspaceState {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            scope_settings_target: None,
             theme_preference: crate::theme::ThemePreference::from_str_opt(settings.theme.as_deref()),
             show_git_modal: false,
             show_rename_workspace_modal: false,
@@ -316,6 +324,8 @@ impl WorkspaceState {
             name: initial_name,
             description: String::new(),
             active_environment_id: self.active_environment_id.clone(),
+            headers: self.workspace_meta.headers.iter().cloned().map(Into::into).collect(),
+            auth: self.workspace_meta.auth.clone().into(),
         });
 
         self.pins = self.store.load_pins().unwrap_or_default();
@@ -364,6 +374,8 @@ impl WorkspaceState {
                 let mut f = Folder::new(ws_name, &folder_node.file.name);
                 f.id = folder_node.rel_path.clone();
                 f.parent_id = parent_id;
+                f.headers = folder_node.file.headers.iter().cloned().map(Into::into).collect();
+                f.auth = folder_node.file.auth.clone().into();
                 all_folders.push(f);
 
                 for req_node in &folder_node.requests {
@@ -1636,6 +1648,118 @@ impl WorkspaceState {
         cx.notify();
     }
 
+    pub fn open_workspace_settings(&mut self, cx: &mut Context<Self>) {
+        self.scope_settings_target = Some(ScopeSettingsTarget::Workspace);
+        cx.notify();
+    }
+
+    pub fn open_folder_settings(&mut self, folder_id: String, cx: &mut Context<Self>) {
+        self.scope_settings_target = Some(ScopeSettingsTarget::Folder(folder_id));
+        cx.notify();
+    }
+
+    pub fn close_scope_settings(&mut self, cx: &mut Context<Self>) {
+        self.scope_settings_target = None;
+        cx.notify();
+    }
+
+    pub fn save_workspace_scope_settings(
+        &mut self,
+        headers: Vec<KeyValuePair>,
+        auth: Auth,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace_meta.headers = headers.iter().cloned().map(Into::into).collect();
+        self.workspace_meta.auth = auth.clone().into();
+        if let Some(ws) = &mut self.active_workspace {
+            ws.headers = headers;
+            ws.auth = auth;
+        }
+        let _ = self.store.save_workspace_meta(&self.workspace_meta);
+        cx.notify();
+    }
+
+    pub fn save_folder_scope_settings(
+        &mut self,
+        folder_id: &str,
+        headers: Vec<KeyValuePair>,
+        auth: Auth,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(f) = self.folders.iter_mut().find(|f| f.id == folder_id) {
+            f.headers = headers.clone();
+            f.auth = auth.clone();
+        }
+        if let Ok(mut meta) = self.store.load_folder_meta(folder_id) {
+            meta.headers = headers.into_iter().map(Into::into).collect();
+            meta.auth = auth.into();
+            let _ = self.store.save_folder_meta(folder_id, &meta);
+        }
+        cx.notify();
+    }
+
+    /// Traces folder hierarchy from root folder to immediate parent folder containing the request
+    pub fn get_folder_hierarchy(&self, folder_id: Option<&str>) -> Vec<&Folder> {
+        let mut chain = Vec::new();
+        let mut cur_id = folder_id.map(|s| s.to_string());
+        while let Some(id) = cur_id {
+            if let Some(folder) = self.folders.iter().find(|f| f.id == id) {
+                chain.push(folder);
+                cur_id = folder.parent_id.clone();
+            } else {
+                break;
+            }
+        }
+        chain.reverse();
+        chain
+    }
+
+    /// Resolves effective headers and auth for a request, taking Workspace & Folder hierarchy into account
+    pub fn resolve_request_hierarchy(&self, req: &HttpRequestItem) -> (Vec<KeyValuePair>, Auth) {
+        let ws_headers = self.active_workspace.as_ref().map(|w| w.headers.as_slice()).unwrap_or(&[]);
+        let ws_auth = self.active_workspace.as_ref().map(|w| &w.auth).unwrap_or(&Auth::None);
+
+        let folder_chain_refs = self.get_folder_hierarchy(req.folder_id.as_deref());
+        let folder_chain: Vec<(&[KeyValuePair], &Auth)> = folder_chain_refs
+            .iter()
+            .map(|f| (f.headers.as_slice(), &f.auth))
+            .collect();
+
+        restclient_core::http::resolve_hierarchical_headers_and_auth(
+            ws_headers,
+            ws_auth,
+            &folder_chain,
+            &req.headers,
+            &req.auth,
+        )
+    }
+
+    /// Gets preview description of inherited auth for a request or folder
+    pub fn get_inherited_auth_description(&self, folder_id: Option<&str>) -> String {
+        let folder_chain_refs = self.get_folder_hierarchy(folder_id);
+        for f in folder_chain_refs.iter().rev() {
+            if !f.auth.is_inherit() {
+                let kind = match &f.auth {
+                    Auth::None => "No Auth",
+                    Auth::Bearer { .. } => "Bearer Token",
+                    Auth::Basic { .. } => "Basic Auth",
+                    Auth::ApiKey { .. } => "API Key",
+                    Auth::Inherit => "Inherit",
+                };
+                return format!("Inherited from folder \"{}\" ({})", f.name, kind);
+            }
+        }
+        let ws_auth = self.active_workspace.as_ref().map(|w| &w.auth).unwrap_or(&Auth::None);
+        let ws_name = self.active_workspace.as_ref().map(|w| w.name.as_str()).unwrap_or("Workspace");
+        match ws_auth {
+            Auth::None => format!("Inherited from workspace \"{}\" (No Auth)", ws_name),
+            Auth::Bearer { .. } => format!("Inherited from workspace \"{}\" (Bearer Token)", ws_name),
+            Auth::Basic { .. } => format!("Inherited from workspace \"{}\" (Basic Auth)", ws_name),
+            Auth::ApiKey { .. } => format!("Inherited from workspace \"{}\" (API Key)", ws_name),
+            Auth::Inherit => "No auth configured in parent hierarchy".to_string(),
+        }
+    }
+
     pub fn set_theme_preference(&mut self, pref: crate::theme::ThemePreference, cx: &mut Context<Self>) {
         self.theme_preference = pref;
         let appearance = cx.window_appearance();
@@ -2431,6 +2555,7 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            scope_settings_target: None,
             theme_preference: Default::default(),
             show_git_modal: false,
             show_rename_workspace_modal: false,
@@ -2532,6 +2657,7 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            scope_settings_target: None,
             theme_preference: Default::default(),
             show_git_modal: false,
             show_rename_workspace_modal: false,
@@ -2668,6 +2794,7 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            scope_settings_target: None,
             theme_preference: Default::default(),
             show_git_modal: false,
             show_rename_workspace_modal: false,
@@ -2779,6 +2906,7 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            scope_settings_target: None,
             theme_preference: Default::default(),
             show_git_modal: false,
             show_rename_workspace_modal: false,
@@ -2878,6 +3006,7 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            scope_settings_target: None,
             theme_preference: Default::default(),
             show_git_modal: false,
             show_rename_workspace_modal: false,
@@ -2989,6 +3118,7 @@ mod tests {
             show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            scope_settings_target: None,
             theme_preference: Default::default(),
             show_git_modal: false,
             show_rename_workspace_modal: false,
@@ -3061,6 +3191,145 @@ mod tests {
         assert!(ws_state.recent_workspaces.is_empty());
         assert!(ws_state.nav_history.is_empty());
         assert_eq!(ws_state.nav_index, 0);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_workspace_and_folder_scope_hierarchy() {
+        let temp_dir = std::env::temp_dir().join(format!("test_ws_scope_{}", uuid::Uuid::new_v4().simple()));
+        let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
+        let _ = store.init_workspace("Hierarchy Test WS");
+
+        let mut ws = Workspace::new("Hierarchy Test WS");
+        ws.headers = vec![KeyValuePair::new("X-Workspace", "ws1")];
+        ws.auth = Auth::Bearer { token: "ws-token".to_string() };
+
+        let mut folder_users = Folder::new("ws", "Users");
+        folder_users.id = "users".to_string();
+        folder_users.headers = vec![KeyValuePair::new("X-Folder", "users")];
+        folder_users.auth = Auth::Inherit;
+
+        let mut folder_admin = Folder::new("ws", "Admin");
+        folder_admin.id = "users/admin".to_string();
+        folder_admin.parent_id = Some("users".to_string());
+        folder_admin.headers = vec![KeyValuePair::new("X-Admin", "true")];
+        folder_admin.auth = Auth::Basic { username: "admin".to_string(), password: "secret".to_string() };
+
+        let ws_state = WorkspaceState {
+            store,
+            workspace_path: temp_dir.clone(),
+            workspace_meta: WorkspaceMeta::default(),
+            active_workspace: Some(ws),
+            folders: vec![folder_users, folder_admin],
+            requests: Vec::new(),
+            parse_errors: HashMap::new(),
+            pins: Vec::new(),
+            local_state: LocalState::default(),
+            environments: Vec::new(),
+            global_environment: Environment::new("default", "Globals"),
+            active_environment_id: None,
+            selected_env_modal_id: None,
+            env_filter_query: String::new(),
+            var_filter_query: String::new(),
+            git_branch: None,
+            git_tracked_warning: false,
+            filter_query: String::new(),
+            sidebar_collapsed: false,
+            sidebar_width: px(260.),
+            split_layout_vertical: false,
+            show_env_modal: false,
+            show_cookies_modal: false,
+            show_command_palette: false,
+            show_settings_modal: false,
+            scope_settings_target: None,
+            theme_preference: Default::default(),
+            show_git_modal: false,
+            show_rename_workspace_modal: false,
+            show_import_modal: false,
+            import_target_folder_rel: None,
+            active_git_modal: None,
+            git_tab: GitTab::Changes,
+            git_status: None,
+            git_history: Vec::new(),
+            git_branches: Vec::new(),
+            git_remotes: Vec::new(),
+            git_selected_staged_files: HashSet::new(),
+            git_selected_unstaged_files: HashSet::new(),
+            git_selected_file: None,
+            git_diff_content: None,
+            git_selected_commit: None,
+            git_expanded_history_files: HashSet::new(),
+            git_commit_message: String::new(),
+            git_error: None,
+            git_loading: false,
+            git_is_syncing: false,
+            renaming_request_id: None,
+            rename_input: None,
+            rename_subscription: None,
+            renaming_folder_id: None,
+            rename_folder_input: None,
+            rename_folder_subscription: None,
+            renaming_env_id: None,
+            rename_env_input: None,
+            rename_env_subscription: None,
+            renaming_example: None,
+            rename_example_input: None,
+            rename_example_subscription: None,
+            rename_workspace_input: None,
+            rename_workspace_subscription: None,
+            last_renamed_example: None,
+            collapsed_folders: HashSet::new(),
+            collapsed_requests: HashSet::new(),
+            unsaved_requests: HashSet::new(),
+            running_request_id: None,
+            recent_workspaces: Vec::new(),
+            nav_history: Vec::new(),
+            nav_index: 0,
+            state_save_task: None,
+            request_save_tasks: HashMap::new(),
+            env_save_task: None,
+            conflicts: HashMap::new(),
+            corrupt_secrets_warning: None,
+            last_renamed_request: None,
+            watcher: None,
+            watcher_task: None,
+        };
+
+        // Case 1: Request in subfolder (users/admin) with Inherit auth
+        let mut req1 = HttpRequestItem::new("ws", "Admin Req", HttpMethod::Get, "https://api.com/admin");
+        req1.folder_id = Some("users/admin".to_string());
+        req1.headers = vec![KeyValuePair::new("X-Req", "1")];
+        req1.auth = Auth::Inherit;
+
+        let (headers1, auth1) = ws_state.resolve_request_hierarchy(&req1);
+        assert_eq!(headers1.len(), 4); // X-Workspace, X-Folder, X-Admin, X-Req
+        assert_eq!(auth1, Auth::Basic { username: "admin".to_string(), password: "secret".to_string() });
+
+        // Case 2: Request in top folder (users) with Inherit auth
+        let mut req2 = HttpRequestItem::new("ws", "Users Req", HttpMethod::Get, "https://api.com/users");
+        req2.folder_id = Some("users".to_string());
+        req2.auth = Auth::Inherit;
+
+        let (headers2, auth2) = ws_state.resolve_request_hierarchy(&req2);
+        assert_eq!(headers2.len(), 2); // X-Workspace, X-Folder
+        assert_eq!(auth2, Auth::Bearer { token: "ws-token".to_string() }); // Inherited from Workspace!
+
+        // Case 3: Root request (no folder) with Inherit auth
+        let mut req3 = HttpRequestItem::new("ws", "Root Req", HttpMethod::Get, "https://api.com/root");
+        req3.auth = Auth::Inherit;
+
+        let (headers3, auth3) = ws_state.resolve_request_hierarchy(&req3);
+        assert_eq!(headers3.len(), 1); // X-Workspace
+        assert_eq!(auth3, Auth::Bearer { token: "ws-token".to_string() });
+
+        // Case 4: Request in subfolder with explicit None auth
+        let mut req4 = HttpRequestItem::new("ws", "Public Req", HttpMethod::Get, "https://api.com/public");
+        req4.folder_id = Some("users/admin".to_string());
+        req4.auth = Auth::None;
+
+        let (_, auth4) = ws_state.resolve_request_hierarchy(&req4);
+        assert_eq!(auth4, Auth::None);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

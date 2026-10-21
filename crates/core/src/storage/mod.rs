@@ -136,6 +136,8 @@ mod tests {
         let folder = FolderFile {
             name: "Auth".to_string(),
             order: vec!["login".to_string(), "refresh".to_string(), "logout".to_string()],
+            headers: Vec::new(),
+            auth: RequestAuth::Inherit,
             extra: BTreeMap::new(),
         };
         let f_yaml_1 = to_yaml_string(&folder).unwrap();

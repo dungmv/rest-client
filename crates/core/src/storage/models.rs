@@ -25,6 +25,10 @@ pub struct WorkspaceMeta {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_environment: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub headers: Vec<RequestKvItem>,
+    #[serde(default, skip_serializing_if = "RequestAuth::is_none")]
+    pub auth: RequestAuth,
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_yaml::Value>,
 }
@@ -35,6 +39,8 @@ impl Default for WorkspaceMeta {
             version: 1,
             name: "My Workspace".to_string(),
             default_environment: Some("local".to_string()),
+            headers: Vec::new(),
+            auth: RequestAuth::None,
             extra: BTreeMap::new(),
         }
     }
@@ -45,6 +51,10 @@ pub struct FolderFile {
     pub name: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub order: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub headers: Vec<RequestKvItem>,
+    #[serde(default, skip_serializing_if = "RequestAuth::is_inherit")]
+    pub auth: RequestAuth,
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_yaml::Value>,
 }
@@ -102,6 +112,7 @@ impl From<RequestKvItem> for KeyValuePair {
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum RequestAuth {
     #[default]
+    Inherit,
     None,
     Bearer {
         token: String,
@@ -118,9 +129,20 @@ pub enum RequestAuth {
     },
 }
 
+impl RequestAuth {
+    pub fn is_inherit(&self) -> bool {
+        matches!(self, RequestAuth::Inherit)
+    }
+
+    pub fn is_none(&self) -> bool {
+        matches!(self, RequestAuth::None)
+    }
+}
+
 impl From<Auth> for RequestAuth {
     fn from(auth: Auth) -> Self {
         match auth {
+            Auth::Inherit => RequestAuth::Inherit,
             Auth::None => RequestAuth::None,
             Auth::Bearer { token } => RequestAuth::Bearer { token },
             Auth::Basic { username, password } => RequestAuth::Basic { username, password },
@@ -132,6 +154,7 @@ impl From<Auth> for RequestAuth {
 impl From<RequestAuth> for Auth {
     fn from(auth: RequestAuth) -> Self {
         match auth {
+            RequestAuth::Inherit => Auth::Inherit,
             RequestAuth::None => Auth::None,
             RequestAuth::Bearer { token } => Auth::Bearer { token },
             RequestAuth::Basic { username, password } => Auth::Basic { username, password },
