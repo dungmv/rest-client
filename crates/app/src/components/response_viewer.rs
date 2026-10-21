@@ -53,6 +53,9 @@ impl RenderOnce for ResponseViewer {
 
         let active_id = ed_s.active_request.as_ref().map(|r| r.id.clone());
         let is_viewing_example = resp_s.active_example_name.is_some();
+        let is_sending_this_request = ed_s.is_sending
+            && (ed_s.running_request_id.is_none()
+                || active_id.as_deref() == ed_s.running_request_id.as_deref());
 
         let current_resp = resp_s.current_response.clone();
         let active_tab = resp_s.active_tab;
@@ -79,7 +82,33 @@ impl RenderOnce for ResponseViewer {
                     .items_center()
                     .justify_between()
                     .child({
-                        if let Some(resp) = &current_resp {
+                        if is_sending_this_request {
+                            let progress_text = ed_s
+                                .send_progress
+                                .clone()
+                                .unwrap_or_else(|| "Sending request...".to_string());
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.))
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(6.))
+                                        .px(px(8.))
+                                        .py(px(3.))
+                                        .rounded(px(4.))
+                                        .bg(gpui::Hsla { a: 0.12, ..t.primary })
+                                        .border_1()
+                                        .border_color(gpui::Hsla { a: 0.3, ..t.primary })
+                                        .text_xs()
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .text_color(t.primary)
+                                        .child(Icon::new(IconName::RefreshCw).size(px(12.)))
+                                        .child(progress_text),
+                                )
+                        } else if let Some(resp) = &current_resp {
                             let status_color = t.status_color(resp.status_code);
                             let rs_clone = resp_state_clone.clone();
 
@@ -133,15 +162,6 @@ impl RenderOnce for ResponseViewer {
                                         .text_color(t.text_secondary)
                                         .child(format!("📦 {}", resp.formatted_size())),
                                 )
-                        } else if ed_s.is_sending {
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(6.))
-                                .text_xs()
-                                .font_weight(gpui::FontWeight::MEDIUM)
-                                .text_color(t.primary)
-                                .child(ed_s.send_progress.clone().unwrap_or_else(|| "Sending...".to_string()))
                         } else {
                             div()
                                 .flex()
@@ -187,7 +207,7 @@ impl RenderOnce for ResponseViewer {
                     ),
             )
             // High-Precision Timing Popover
-            .when(show_timing, |this| {
+            .when(show_timing && !is_sending_this_request, |this| {
                 if let Some(resp) = &current_resp {
                     let timing = &resp.timing;
                     let total_ms = timing.total_ms.max(1);
@@ -334,7 +354,11 @@ impl RenderOnce for ResponseViewer {
                     })
                     .child({
                         let rs_c = resp_state_clone.clone();
-                        let count_str = current_resp.as_ref().map(|r| format!("{}", r.headers.len())).unwrap_or_else(|| "0".to_string());
+                        let count_str = if is_sending_this_request {
+                            "-".to_string()
+                        } else {
+                            current_resp.as_ref().map(|r| format!("{}", r.headers.len())).unwrap_or_else(|| "0".to_string())
+                        };
                         TabItem::new("tab-resp-headers", "Headers")
                             .active(active_tab == ResponseTabKind::Headers)
                             .badge(count_str)
@@ -346,7 +370,11 @@ impl RenderOnce for ResponseViewer {
                     })
                     .child({
                         let rs_c = resp_state_clone.clone();
-                        let count_str = current_resp.as_ref().map(|r| format!("{}", r.cookies.len())).unwrap_or_else(|| "0".to_string());
+                        let count_str = if is_sending_this_request {
+                            "-".to_string()
+                        } else {
+                            current_resp.as_ref().map(|r| format!("{}", r.cookies.len())).unwrap_or_else(|| "0".to_string())
+                        };
                         TabItem::new("tab-resp-cookies", "Cookies")
                             .active(active_tab == ResponseTabKind::Cookies)
                             .badge(count_str)
@@ -358,12 +386,16 @@ impl RenderOnce for ResponseViewer {
                     })
                     .child({
                         let rs_c = resp_state_clone.clone();
-                        let total_tests = resp_s.test_results.len();
-                        let passed_tests = resp_s.test_results.iter().filter(|r| r.passed).count();
-                        let badge_str = if total_tests > 0 {
-                            format!("{}/{}", passed_tests, total_tests)
+                        let badge_str = if is_sending_this_request {
+                            "-".to_string()
                         } else {
-                            "0".to_string()
+                            let total_tests = resp_s.test_results.len();
+                            let passed_tests = resp_s.test_results.iter().filter(|r| r.passed).count();
+                            if total_tests > 0 {
+                                format!("{}/{}", passed_tests, total_tests)
+                            } else {
+                                "0".to_string()
+                            }
                         };
                         TabItem::new("tab-resp-tests", "Tests")
                             .active(active_tab == ResponseTabKind::Tests)
@@ -396,7 +428,79 @@ impl RenderOnce for ResponseViewer {
                     .child({
                         match active_tab {
                             ResponseTabKind::Response => {
-                                if current_resp.is_none() {
+                                if is_sending_this_request {
+                                    let progress_text = ed_s
+                                        .send_progress
+                                        .clone()
+                                        .unwrap_or_else(|| "Waiting for response from server...".to_string());
+                                    let ed_s_cancel = self.editor_state.clone();
+
+                                    div()
+                                        .size_full()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .justify_center()
+                                        .gap(px(14.))
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .w(px(56.))
+                                                .h(px(56.))
+                                                .rounded_full()
+                                                .bg(gpui::Hsla { a: 0.1, ..t.primary })
+                                                .text_color(t.primary)
+                                                .child(Icon::new(IconName::RefreshCw).size(px(26.))),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_col()
+                                                .items_center()
+                                                .gap(px(4.))
+                                                .child(
+                                                    div()
+                                                        .text_base()
+                                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                        .text_color(t.text_primary)
+                                                        .child("Sending request..."),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .text_color(t.text_secondary)
+                                                        .child(progress_text),
+                                                ),
+                                        )
+                                        .child(
+                                            div()
+                                                .id("btn-cancel-in-response-view")
+                                                .cursor_pointer()
+                                                .mt(px(4.))
+                                                .px(px(12.))
+                                                .py(px(5.))
+                                                .rounded(px(4.))
+                                                .bg(t.bg_card)
+                                                .border_1()
+                                                .border_color(t.border)
+                                                .text_xs()
+                                                .font_weight(gpui::FontWeight::MEDIUM)
+                                                .text_color(t.status_5xx)
+                                                .hover(|s| s.bg(t.bg_hover))
+                                                .on_click(move |_, _, cx| {
+                                                    ed_s_cancel.update(cx, |state, cx| {
+                                                        if let Some(tx) = state.cancel_tx.take() {
+                                                            let _ = tx.send(());
+                                                        }
+                                                        state.stop_sending(cx);
+                                                    });
+                                                })
+                                                .child("Cancel Request"),
+                                        )
+                                        .into_any_element()
+                                } else if current_resp.is_none() {
                                     div()
                                         .size_full()
                                         .flex()
@@ -782,7 +886,23 @@ impl RenderOnce for ResponseViewer {
                                 }
                             }
                             ResponseTabKind::Request => {
-                                if let Some(resp) = &current_resp {
+                                if is_sending_this_request {
+                                    div()
+                                        .size_full()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .justify_center()
+                                        .gap(px(8.))
+                                        .child(Icon::new(IconName::RefreshCw).size(px(20.)).text_color(t.primary))
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(t.text_secondary)
+                                                .child("Sending request... Outgoing details will be recorded once sent."),
+                                        )
+                                        .into_any_element()
+                                } else if let Some(resp) = &current_resp {
                                     if let Some(sent) = &resp.request_sent {
                                         let sent_url_copy = sent.url.clone();
                                         let mut curl_cmd = format!("curl -X {} '{}'", sent.method.as_str(), sent.url);
@@ -1075,7 +1195,23 @@ impl RenderOnce for ResponseViewer {
                                 }
                             }
                             ResponseTabKind::Headers => {
-                                if let Some(resp) = &current_resp {
+                                if is_sending_this_request {
+                                    div()
+                                        .size_full()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .justify_center()
+                                        .gap(px(8.))
+                                        .child(Icon::new(IconName::RefreshCw).size(px(20.)).text_color(t.primary))
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(t.text_secondary)
+                                                .child("Sending request... Response headers will appear here."),
+                                        )
+                                        .into_any_element()
+                                } else if let Some(resp) = &current_resp {
                                     div()
                                         .size_full()
                                         .overflow_y_scrollbar()
@@ -1114,7 +1250,23 @@ impl RenderOnce for ResponseViewer {
                                 }
                             }
                             ResponseTabKind::Cookies => {
-                                if let Some(resp) = &current_resp {
+                                if is_sending_this_request {
+                                    div()
+                                        .size_full()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .justify_center()
+                                        .gap(px(8.))
+                                        .child(Icon::new(IconName::RefreshCw).size(px(20.)).text_color(t.primary))
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(t.text_secondary)
+                                                .child("Sending request... Response cookies will appear here."),
+                                        )
+                                        .into_any_element()
+                                } else if let Some(resp) = &current_resp {
                                     let parsed_cookies = resp.parsed_cookies();
                                     if parsed_cookies.is_empty() {
                                         div().p(px(12.)).text_xs().text_color(t.text_muted).child("No cookies received in this response.").into_any_element()
@@ -1184,11 +1336,29 @@ impl RenderOnce for ResponseViewer {
                                 }
                             }
                             ResponseTabKind::Tests => {
-                                crate::components::TestResultsPanel::new(
-                                    resp_s.test_results.clone(),
-                                    resp_s.console_logs.clone(),
-                                )
-                                .into_any_element()
+                                if is_sending_this_request {
+                                    div()
+                                        .size_full()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .justify_center()
+                                        .gap(px(8.))
+                                        .child(Icon::new(IconName::RefreshCw).size(px(20.)).text_color(t.primary))
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(t.text_secondary)
+                                                .child("Sending request... Tests will execute after response is received."),
+                                        )
+                                        .into_any_element()
+                                } else {
+                                    crate::components::TestResultsPanel::new(
+                                        resp_s.test_results.clone(),
+                                        resp_s.console_logs.clone(),
+                                    )
+                                    .into_any_element()
+                                }
                             }
                             ResponseTabKind::Console => {
                                 crate::components::ConsolePanel::new(

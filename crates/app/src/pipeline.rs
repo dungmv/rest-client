@@ -119,7 +119,9 @@ impl AppView {
             state.start_sending(Some(req_item.id.clone()), cancel_tx, cx);
         });
         let initial_logs = pre_output.console_entries.clone();
+        let r_id = req_item.id.clone();
         self.response_state.update(cx, |resp, cx| {
+            resp.start_sending(Some(&r_id), cx);
             resp.set_pre_request_logs(initial_logs, cx);
         });
 

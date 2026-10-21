@@ -125,6 +125,23 @@ impl ResponseState {
         cx.notify();
     }
 
+    pub fn start_sending_internal(&mut self, req_id: Option<&str>) {
+        if let Some(id) = req_id {
+            self.session_responses.remove(id);
+        }
+        self.current_response = None;
+        self.formatted_body = None;
+        self.test_results.clear();
+        self.show_timing_popover = false;
+        self.active_example_name = None;
+        self.scroll_handle = gpui::UniformListScrollHandle::new();
+    }
+
+    pub fn start_sending(&mut self, req_id: Option<&str>, cx: &mut Context<Self>) {
+        self.start_sending_internal(req_id);
+        cx.notify();
+    }
+
     pub fn set_response_for_request(
         &mut self,
         req_id: String,
@@ -360,6 +377,44 @@ impl ResponseState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_start_sending_clears_active_data() {
+        let mut state = ResponseState::new();
+        let rec = HttpResponseRecord {
+            id: "resp-1".to_string(),
+            request_id: "req-1".to_string(),
+            status_code: 200,
+            status_text: "OK".to_string(),
+            duration_ms: 25,
+            size_bytes: 10,
+            headers: vec![("content-type".to_string(), "application/json".to_string())],
+            cookies: vec![],
+            body: b"{\"a\":1}".to_vec(),
+            timing: restclient_core::models::TimingBreakdown::default(),
+            request_sent: None,
+            test_results: vec![],
+            console_logs: vec![],
+            created_at: chrono::Utc::now(),
+        };
+
+        state.session_responses.insert("req-1".to_string(), rec.clone());
+        state.current_response = Some(rec);
+        state.show_timing_popover = true;
+        state.active_example_name = Some("example-1".to_string());
+        state.refresh_formatted_body();
+        assert!(state.current_response.is_some());
+        assert!(state.formatted_body.is_some());
+        assert!(state.session_responses.contains_key("req-1"));
+
+        state.start_sending_internal(Some("req-1"));
+
+        assert!(state.current_response.is_none());
+        assert!(state.formatted_body.is_none());
+        assert!(!state.show_timing_popover);
+        assert!(state.active_example_name.is_none());
+        assert!(!state.session_responses.contains_key("req-1"));
+    }
 
     #[test]
     fn test_console_logs_filtering() {
