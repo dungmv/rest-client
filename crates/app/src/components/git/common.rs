@@ -1,0 +1,164 @@
+use crate::state::WorkspaceState;
+use crate::theme::theme;
+use gpui::{
+    div, px, App, AppContext as _, Entity, InteractiveElement as _, IntoElement, ParentElement,
+    StatefulInteractiveElement as _, Styled, Window,
+};
+use gpui_component::Icon;
+use gpui_kit::assets::IconName;
+use restclient_core::git::GitFileStatus;
+
+pub fn render_status_badge(status: GitFileStatus) -> gpui::AnyElement {
+    let color = match status {
+        GitFileStatus::Modified => gpui::rgb(0xfacc15),
+        GitFileStatus::Added | GitFileStatus::Untracked => gpui::rgb(0x4ade80),
+        GitFileStatus::Deleted => gpui::rgb(0xef4444),
+        _ => gpui::rgb(0x9ca3af),
+    };
+
+    div()
+        .w(px(16.))
+        .h(px(16.))
+        .rounded(px(3.))
+        .bg(gpui::Hsla { a: 0.15, ..color.into() })
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_xs()
+        .font_weight(gpui::FontWeight::BOLD)
+        .text_color(color)
+        .child(status.code())
+        .into_any_element()
+}
+
+pub fn render_checkbox(
+    id: &str,
+    checked: bool,
+    partial: bool,
+    on_toggle: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> gpui::AnyElement {
+    let t = theme();
+    let symbol = if checked {
+        "✓"
+    } else if partial {
+        "−"
+    } else {
+        ""
+    };
+    let is_active = checked || partial;
+
+    div()
+        .id(gpui::SharedString::from(id.to_string()))
+        .w(px(16.))
+        .h(px(16.))
+        .flex_shrink_0()
+        .rounded(px(3.))
+        .border_1()
+        .border_color(if is_active { t.primary } else { t.border })
+        .bg(if is_active { t.primary } else { t.bg_input })
+        .flex()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .text_xs()
+        .font_weight(gpui::FontWeight::BOLD)
+        .text_color(if is_active { gpui::Hsla::from(gpui::rgb(0xffffff)) } else { t.text_muted })
+        .on_click(move |ev, window, cx| {
+            cx.stop_propagation();
+            on_toggle(ev, window, cx);
+        })
+        .child(symbol)
+        .into_any_element()
+}
+
+pub fn render_error_banner(ws_clone: Entity<WorkspaceState>, err: String) -> gpui::AnyElement {
+    let t = theme();
+    let ws_err = ws_clone.clone();
+
+    div()
+        .px(px(16.))
+        .py(px(8.))
+        .bg(gpui::Hsla { h: 0.0, s: 0.7, l: 0.45, a: 0.2 })
+        .border_b_1()
+        .border_color(t.status_5xx)
+        .flex()
+        .items_center()
+        .justify_between()
+        .child(
+            div()
+                .text_xs()
+                .text_color(t.status_5xx)
+                .child(div().flex().items_center().gap(px(4.)).child(Icon::new(IconName::TriangleAlert).size(px(14.))).child(format!("Git: {}", err))),
+        )
+        .child(
+            div()
+                .id("btn-dismiss-git-error")
+                .cursor_pointer()
+                .text_xs()
+                .text_color(t.text_muted)
+                .hover(|s| s.text_color(t.text_primary))
+                .on_click(move |_, _, cx| {
+                    ws_err.update(cx, |ws, cx| {
+                        ws.git_error = None;
+                        cx.notify();
+                    });
+                })
+                .child("✕"),
+        )
+        .into_any_element()
+}
+
+pub fn render_not_a_repo_view(ws_clone: Entity<WorkspaceState>) -> gpui::AnyElement {
+    let t = theme();
+    let ws_init = ws_clone.clone();
+
+    div()
+        .size_full()
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap(px(14.))
+        .child(
+            div()
+                .text_2xl()
+                .text_color(t.text_muted)
+                .child("📦"),
+        )
+        .child(
+            div()
+                .text_base()
+                .font_weight(gpui::FontWeight::BOLD)
+                .text_color(t.text_primary)
+                .child("Not a Git Repository"),
+        )
+        .child(
+            div()
+                .max_w(px(400.))
+                .text_center()
+                .text_xs()
+                .text_color(t.text_muted)
+                .child("This workspace directory does not have Git version control initialized yet."),
+        )
+        .child(
+            div()
+                .id("btn-git-init")
+                .mt(px(8.))
+                .px(px(16.))
+                .py(px(8.))
+                .rounded(px(6.))
+                .bg(t.primary)
+                .cursor_pointer()
+                .text_xs()
+                .font_weight(gpui::FontWeight::BOLD)
+                .text_color(gpui::rgb(0xffffff))
+                .hover(|s| s.opacity(0.9))
+                .on_click(move |_, _, cx| {
+                    ws_init.update(cx, |ws, cx| {
+                        let _ = ws.git_init_repo(cx);
+                    });
+                })
+                .child(div().flex().items_center().gap(px(6.)).child(Icon::new(IconName::GitBranch).size(px(14.))).child("Initialize Git Repository")),
+        )
+        .into_any_element()
+}

@@ -1,0 +1,465 @@
+use super::common::{render_error_banner, render_not_a_repo_view};
+use super::diff_view::{render_diff_content, render_diff_view_toggle, split_diff_into_files, DiffViewMode};
+use crate::state::WorkspaceState;
+use crate::theme::theme;
+use gpui::prelude::FluentBuilder as _;
+use gpui::{
+    div, px, App, AppContext as _, Entity, InteractiveElement as _, IntoElement, ParentElement,
+    RenderOnce, StatefulInteractiveElement as _, Styled, Window,
+};
+use gpui_component::scroll::ScrollableElement as _;
+use std::collections::HashSet;
+
+#[derive(IntoElement)]
+pub struct GitHistoryModal {
+    workspace_state: Entity<WorkspaceState>,
+}
+
+impl GitHistoryModal {
+    pub fn new(workspace_state: Entity<WorkspaceState>) -> Self {
+        Self { workspace_state }
+    }
+}
+
+pub fn render_history_view(
+    ws_clone: Entity<WorkspaceState>,
+    history: Vec<restclient_core::git::GitCommitInfo>,
+    selected_commit: Option<restclient_core::git::GitCommitDetail>,
+    view_mode: DiffViewMode,
+    mode_entity: Entity<DiffViewMode>,
+    expanded_files: HashSet<String>,
+) -> gpui::AnyElement {
+    let t = theme();
+
+    div()
+        .size_full()
+        .flex()
+        // Left Column: Commit Log (rigidly fixed width: 350px)
+        .child(
+            div()
+                .w(px(350.))
+                .min_w(px(350.))
+                .max_w(px(350.))
+                .flex_shrink_0()
+                .h_full()
+                .border_r_1()
+                .border_color(t.border)
+                .bg(t.bg_sidebar)
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_y_scrollbar()
+                        .children(history.into_iter().map(|item| {
+                            let ws_sel = ws_clone.clone();
+                            let h = item.hash.clone();
+                            let is_selected = selected_commit.as_ref().map(|c| c.commit.hash == item.hash).unwrap_or(false);
+
+                            div()
+                                .id(format!("commit-item-{}", item.hash))
+                                .px(px(12.))
+                                .py(px(8.))
+                                .border_b_1()
+                                .border_color(t.border)
+                                .cursor_pointer()
+                                .when(is_selected, |s| s.bg(t.bg_hover))
+                                .hover(|s| s.bg(t.bg_hover))
+                                .on_click(move |_, _, cx| {
+                                    ws_sel.update(cx, |ws, cx| {
+                                        ws.select_git_commit(&h, cx);
+                                    });
+                                })
+                                .flex()
+                                .flex_col()
+                                .gap(px(3.))
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .child(
+                                            div()
+                                                .px(px(4.))
+                                                .py(px(1.))
+                                                .rounded(px(3.))
+                                                .bg(t.bg_card)
+                                                .border_1()
+                                                .border_color(t.border)
+                                                .text_xs()
+                                                .font_family(".SystemMonoFont")
+                                                .text_color(t.primary)
+                                                .child(item.short_hash),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(t.text_muted)
+                                                .child(item.relative_date),
+                                        ),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                            .text_color(t.text_primary)
+                                            .line_clamp(2)
+                                            .child(item.message),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(t.text_muted)
+                                            .child(format!("👤 {}", item.author_name)),
+                                    )
+                        })),
+                ),
+        )
+        // Right Column: Commit Details & Collapsible File Diffs (Flex-1)
+        .child({
+            if let Some(commit_detail) = selected_commit {
+                let parsed_diffs = split_diff_into_files(&commit_detail.diff);
+                let mut diff_map: std::collections::HashMap<String, String> = parsed_diffs.into_iter().collect();
+
+                let mut file_entries: Vec<(String, String)> = Vec::new();
+                for f in &commit_detail.changed_files {
+                    let diff = diff_map.remove(f).unwrap_or_default();
+                    file_entries.push((f.clone(), diff));
+                }
+                for (f, diff) in diff_map {
+                    file_entries.push((f, diff));
+                }
+                if file_entries.is_empty() && !commit_detail.diff.trim().is_empty() {
+                    file_entries.push(("Changes".to_string(), commit_detail.diff.clone()));
+                }
+
+                div()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .h_full()
+                    .overflow_hidden()
+                    .bg(t.bg_app)
+                    .flex()
+                    .flex_col()
+                    .child(
+                        // Header details (Without duplicate chip badges)
+                        div()
+                            .p(px(14.))
+                            .border_b_1()
+                            .border_color(t.border)
+                            .bg(t.bg_card)
+                            .flex()
+                            .flex_col()
+                            .gap(px(6.))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .gap(px(8.))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w(px(0.))
+                                            .text_sm()
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .text_color(t.text_primary)
+                                            .truncate()
+                                            .child(commit_detail.commit.message.clone()),
+                                    )
+                                    .child(render_diff_view_toggle(view_mode, mode_entity.clone())),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_wrap()
+                                    .items_center()
+                                    .gap(px(12.))
+                                    .text_xs()
+                                    .text_color(t.text_muted)
+                                    .child(format!("Commit: {}", commit_detail.commit.hash))
+                                    .child(format!("Author: {} <{}>", commit_detail.commit.author_name, commit_detail.commit.author_email))
+                                    .child(format!("Date: {}", commit_detail.commit.relative_date))
+                                    .child(format!("• {} file{}", file_entries.len(), if file_entries.len() == 1 { "" } else { "s" })),
+                            ),
+                    )
+                    .child(
+                        // Collapsible file changes (default closed)
+                        div()
+                            .flex_1()
+                            .min_h(px(0.))
+                            .overflow_y_scrollbar()
+                            .p(px(12.))
+                            .flex()
+                            .flex_col()
+                            .gap(px(8.))
+                            .when(file_entries.is_empty(), |this| {
+                                this.child(
+                                    div()
+                                        .py(px(24.))
+                                        .text_center()
+                                        .text_xs()
+                                        .text_color(t.text_muted)
+                                        .child("No file changes in this commit."),
+                                )
+                            })
+                            .children(file_entries.into_iter().map(|(file_path, file_diff)| {
+                                let is_expanded = expanded_files.contains(&file_path);
+                                let ws_toggle = ws_clone.clone();
+                                let p = file_path.clone();
+
+                                div()
+                                    .id(format!("history-file-{}", file_path))
+                                    .rounded(px(6.))
+                                    .border_1()
+                                    .border_color(t.border)
+                                    .bg(t.bg_card)
+                                    .overflow_hidden()
+                                    .child(
+                                        div()
+                                            .id(format!("btn-toggle-file-{}", file_path))
+                                            .px(px(10.))
+                                            .py(px(7.))
+                                            .bg(if is_expanded { t.bg_hover } else { t.bg_sidebar })
+                                            .hover(|s| s.bg(t.bg_hover))
+                                            .cursor_pointer()
+                                            .flex()
+                                            .items_center()
+                                            .justify_between()
+                                            .on_click(move |_, _, cx| {
+                                                ws_toggle.update(cx, |ws, cx| {
+                                                    ws.toggle_git_history_file_expansion(&p, cx);
+                                                });
+                                            })
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap(px(8.))
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(t.text_muted)
+                                                            .child(if is_expanded { "▼" } else { "▶" }),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .font_family(".SystemMonoFont")
+                                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                                            .text_color(t.text_primary)
+                                                            .child(format!("📄 {}", file_path)),
+                                                    ),
+                                            ),
+                                    )
+                                    .when(is_expanded, |this| {
+                                        this.child(
+                                            div()
+                                                .border_t_1()
+                                                .border_color(t.border)
+                                                .bg(t.bg_app)
+                                                .p(px(6.))
+                                                .child(if file_diff.trim().is_empty() {
+                                                    div()
+                                                        .p(px(8.))
+                                                        .text_xs()
+                                                        .text_color(t.text_muted)
+                                                        .child("No text changes (binary file or empty change).")
+                                                        .into_any_element()
+                                                } else {
+                                                    render_diff_content(Some(file_diff), view_mode)
+                                                }),
+                                        )
+                                    })
+                            })),
+                    )
+                    .into_any_element()
+            } else {
+                div()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .h_full()
+                    .bg(t.bg_app)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_xs()
+                    .text_color(t.text_muted)
+                    .child("Select a commit from the list to view changes.")
+                    .into_any_element()
+            }
+        })
+        .into_any_element()
+}
+
+impl RenderOnce for GitHistoryModal {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let t = theme();
+        let ws = self.workspace_state.read(cx);
+        let ws_clone = self.workspace_state.clone();
+
+        let is_repo = ws.git_status.as_ref().map(|s| s.is_repo).unwrap_or(false);
+        let branch_name = ws.git_branch.clone().unwrap_or_else(|| "main".to_string());
+        let history = ws.git_history.clone();
+        let selected_commit = ws.git_selected_commit.clone();
+        let git_error = ws.git_error.clone();
+        let expanded_files = ws.git_expanded_history_files.clone();
+
+        let view_mode_holder = window.use_keyed_state(
+            gpui::SharedString::from("git-diff-view-mode"),
+            cx,
+            |_window, cx| {
+                let st = cx.new(|_cx| DiffViewMode::Split);
+                (st, ())
+            },
+        );
+        let view_mode_entity = view_mode_holder.read(cx).0.clone();
+        let view_mode = *view_mode_entity.read(cx);
+
+        div()
+            .id("git-history-modal-overlay")
+            .absolute()
+            .inset_0()
+            .bg(gpui::Hsla { a: 0.65, ..t.bg_app })
+            .flex()
+            .items_center()
+            .justify_center()
+            .on_click({
+                let ws_s = ws_clone.clone();
+                move |_, _, cx| {
+                    ws_s.update(cx, |state, cx| {
+                        state.close_git_modal(cx);
+                    });
+                }
+            })
+            .on_key_down({
+                let ws_s = ws_clone.clone();
+                move |event, _, cx| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        ws_s.update(cx, |state, cx| {
+                            state.close_git_modal(cx);
+                        });
+                    }
+                }
+            })
+            .child(
+                div()
+                    .id("git-history-modal-dialog")
+                    .occlude()
+                    .w(px(1060.))
+                    .h(px(680.))
+                    .rounded(px(8.))
+                    .bg(t.bg_card)
+                    .border_1()
+                    .border_color(t.border)
+                    .shadow_2xl()
+                    .flex()
+                    .flex_col()
+                    .overflow_hidden()
+                    .on_key_down({
+                        let ws_s = ws_clone.clone();
+                        move |event, _, cx| {
+                            if event.keystroke.key.as_str() == "escape" {
+                                ws_s.update(cx, |state, cx| {
+                                    state.close_git_modal(cx);
+                                });
+                            }
+                        }
+                    })
+                    // Header
+                    .child(
+                        div()
+                            .h(px(46.))
+                            .px(px(16.))
+                            .border_b_1()
+                            .border_color(t.border)
+                            .bg(t.bg_titlebar)
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(10.))
+                                    .child(
+                                        div()
+                                            .text_base()
+                                            .text_color(t.primary)
+                                            .child("◷"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .text_color(t.text_primary)
+                                            .child("Git History"),
+                                    )
+                                    .when(is_repo, |this| {
+                                        this.child(
+                                            div()
+                                                .px(px(6.))
+                                                .py(px(2.))
+                                                .rounded(px(4.))
+                                                .bg(t.bg_hover)
+                                                .border_1()
+                                                .border_color(t.border)
+                                                .text_xs()
+                                                .font_family(".SystemMonoFont")
+                                                .text_color(t.text_secondary)
+                                                .child(branch_name),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(t.text_muted)
+                                                .child(format!("({} commits)", history.len())),
+                                        )
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(8.))
+                                    .child(
+                                        div()
+                                            .id("btn-git-history-close")
+                                            .px(px(8.))
+                                            .py(px(4.))
+                                            .rounded(px(4.))
+                                            .cursor_pointer()
+                                            .text_sm()
+                                            .text_color(t.text_muted)
+                                            .hover(|s| s.text_color(t.text_primary))
+                                            .on_click({
+                                                let ws_s = ws_clone.clone();
+                                                move |_, _, cx| {
+                                                    ws_s.update(cx, |state, cx| {
+                                                        state.close_git_modal(cx);
+                                                    });
+                                                }
+                                            })
+                                            .child("✕"),
+                                    ),
+                            ),
+                    )
+                    // Error banner
+                    .when_some(git_error, |this, err| {
+                        this.child(render_error_banner(ws_clone.clone(), err))
+                    })
+                    // Body
+                    .child(
+                        div()
+                            .flex_1()
+                            .overflow_hidden()
+                            .child(if !is_repo {
+                                render_not_a_repo_view(ws_clone.clone())
+                            } else {
+                                render_history_view(ws_clone.clone(), history, selected_commit, view_mode, view_mode_entity, expanded_files)
+                            }),
+                    ),
+            )
+            .into_any_element()
+    }
+}

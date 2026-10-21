@@ -11,7 +11,7 @@
 | **TD-01** | Clippy compiler error (`never_loop`) & warnings | `crates/core/src/importers/openapi.rs` | **P0 (Blocker)** | Thấp | 🟢 Đã giải quyết |
 | **TD-02** | God Object State (`WorkspaceState` > 3.300 LOC, 70+ fields) | `crates/app/src/state/workspace_state.rs` | **P0 (Critical)** | Cao | 🔴 Chưa xử lý |
 | **TD-03** | Unbounded Memory Cache ở `ResponseState` (No LRU) | `crates/app/src/state/response_state.rs` | **P1 (High)** | Trung bình | 🔴 Chưa xử lý |
-| **TD-04** | Giant Component Files (> 2.000 LOC / file) | `git_modal.rs`, `sidebar_tree.rs`, `app.rs` | **P1 (High)** | Cao | 🔴 Chưa xử lý |
+| **TD-04** | Giant Component Files (> 2.000 LOC / file) | `git_modal.rs`, `sidebar_tree.rs`, `app.rs` | **P1 (High)** | Cao | 🟢 Đã giải quyết (2026-10-21) |
 | **TD-05** | Dual-State Sync & Race condition tiềm ẩn | `crates/app/src/app.rs`, `editor_state.rs` | **P1 (High)** | Trung bình | 🔴 Chưa xử lý |
 | **TD-06** | Lạm dụng `.clone()` trong HTTP Request Pipeline | `crates/app/src/pipeline.rs` | **P2 (Medium)** | Thấp | 🟢 Đã giải quyết |
 | **TD-07** | Panics tiềm ẩn do `unwrap()` trên Mutex / Option | `crates/core/src/http/executor.rs` | **P2 (Medium)** | Thấp | 🔴 Chưa xử lý |
@@ -85,23 +85,23 @@
 
 ---
 
-### TD-04: Giant Component Files (> 2.000 LOC) (High)
+### TD-04: Giant Component Files (> 2.000 LOC) (High) - 🟢 Đã giải quyết (2026-10-21)
 
-- **Mô tả:**
+- **Mô tả ban đầu:**
   - Các file UI component có kích thước quá lớn:
-    - [`git_modal.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/components/git_modal.rs): **2.508 dòng**.
-    - [`app.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/app.rs): **2.271 dòng**.
-    - [`sidebar_tree.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/components/sidebar_tree.rs): **2.196 dòng**.
+    - `git_modal.rs`: **2.508 dòng**.
+    - `app.rs`: **2.271 dòng**.
+    - `sidebar_tree.rs`: **2.196 dòng**.
   - Các file này trộn lẫn giữa:
     - Khởi tạo sub-view GPUI element.
     - Xử lý sự kiện bàn phím/chuột.
     - Logic tính toán diff / cây thư mục / trạng thái icon.
 - **Rủi ro:** Giảm tính khả đọc, khó review PR, tăng khả năng conflict mã nguồn khi nhiều người cùng đóng góp.
-- **Giải pháp:**
-  - Chia nhỏ các view thành module con:
-    - `components/git/`: `changes_tab.rs`, `history_tab.rs`, `branches_tab.rs`, `diff_view.rs`.
-    - `components/sidebar/`: `tree_node.rs`, `context_menu.rs`, `drag_drop.rs`.
-    - `app.rs`: tách rời logic khởi tạo phím tắt (keybindings) và toolbar/layout wrappers.
+- **Kết quả giải quyết:**
+  - **`components/git/`**: Thay thế hoàn toàn `git_modal.rs` bằng 7 modules chuyên biệt (`branch_modal.rs`, `commit_modal.rs`, `common.rs`, `diff_view.rs`, `history_modal.rs`, `remotes_modal.rs`, `mod.rs`). Xoá bỏ file monolith cũ `git_modal.rs`.
+  - **`components/sidebar/`**: Thay thế hoàn toàn `sidebar_tree.rs` bằng 8 modules (`drag_drop.rs`, `example_node.rs`, `folder_node.rs`, `footer.rs`, `git_status.rs`, `item_actions.rs`, `request_node.rs`, `mod.rs`). Xoá bỏ file monolith cũ `sidebar_tree.rs`.
+  - **`app/`**: Tách `app.rs` nguyên khối thành package `crates/app/src/app/` gồm 8 modules (`actions.rs`, `auth_input.rs`, `auth_tab.rs`, `editor_pane.rs`, `modals.rs`, `subscriptions.rs`, `sync.rs`, `mod.rs`). Xoá bỏ file `app.rs`.
+  - Mọi subfile đều dưới ~650 LOC, toàn bộ 109 unit tests vượt qua 100%, không phát sinh warning mới trên clippy.
 
 ---
 
