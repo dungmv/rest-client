@@ -396,7 +396,7 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                 .when(can_commit, |s| {
                                     s.bg(t.primary)
                                         .cursor_pointer()
-                                        .text_color(gpui::rgb(0xffffff))
+                                        .text_color(t.primary_foreground)
                                         .hover(|h| h.opacity(0.9))
                                 })
                                 .when(!can_commit, |s| {

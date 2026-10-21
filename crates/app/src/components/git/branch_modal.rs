@@ -99,7 +99,7 @@ pub fn render_new_branch_view(
                         .cursor_pointer()
                         .text_xs()
                         .font_weight(gpui::FontWeight::BOLD)
-                        .text_color(gpui::rgb(0xffffff))
+                        .text_color(t.primary_foreground)
                         .hover(|s| s.opacity(0.9))
                         .on_click(move |_, window, cx| {
                             let name = inp_val.read(cx).value().trim().to_string();

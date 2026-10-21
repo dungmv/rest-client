@@ -62,7 +62,7 @@ pub fn render_checkbox(
         .cursor_pointer()
         .text_xs()
         .font_weight(gpui::FontWeight::BOLD)
-        .text_color(if is_active { gpui::Hsla::from(gpui::rgb(0xffffff)) } else { t.text_muted })
+        .text_color(if is_active { t.primary_foreground } else { t.text_muted })
         .on_click(move |ev, window, cx| {
             cx.stop_propagation();
             on_toggle(ev, window, cx);
@@ -151,7 +151,7 @@ pub fn render_not_a_repo_view(git_state: Entity<GitState>) -> gpui::AnyElement {
                 .cursor_pointer()
                 .text_xs()
                 .font_weight(gpui::FontWeight::BOLD)
-                .text_color(gpui::rgb(0xffffff))
+                .text_color(t.primary_foreground)
                 .hover(|s| s.opacity(0.9))
                 .on_click(move |_, _, cx| {
                     git_init.update(cx, |git, cx| {

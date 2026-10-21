@@ -202,7 +202,7 @@ impl RenderOnce for RenameWorkspaceModal {
                                     .cursor_pointer()
                                     .text_xs()
                                     .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .text_color(gpui::rgb(0xffffff))
+                                    .text_color(t.primary_foreground)
                                     .hover(|s| s.opacity(0.9))
                                     .on_click({
                                         let ws_c = ws_s.clone();

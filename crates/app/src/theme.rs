@@ -145,8 +145,8 @@ impl AppTheme {
             border_subtle: hex_to_hsla(0x22232f),
             border_focus: hex_to_hsla(0x3b82f6),
 
-            // Typography: crisp, high readability
-            text_primary: hex_to_hsla(0xf1f5f9),
+            // Typography: crisp, soft off-white text comfortable on dark backgrounds (Slate 200)
+            text_primary: hex_to_hsla(0xe2e8f0),
             text_secondary: hex_to_hsla(0x94a3b8),
             text_muted: hex_to_hsla(0x64748b),
             text_disabled: hex_to_hsla(0x475569),
@@ -207,8 +207,8 @@ impl AppTheme {
             border_subtle: hex_to_hsla(0xf1f5f9),
             border_focus: hex_to_hsla(0x2563eb),
 
-            // Typography: crisp dark text on light backgrounds
-            text_primary: hex_to_hsla(0x0f172a),
+            // Typography: ergonomic dark charcoal text, avoiding extreme black-on-white glare (Slate 800)
+            text_primary: hex_to_hsla(0x1e293b),
             text_secondary: hex_to_hsla(0x475569),
             text_muted: hex_to_hsla(0x64748b),
             text_disabled: hex_to_hsla(0x94a3b8),
@@ -335,11 +335,13 @@ mod tests {
         assert_eq!(current_theme_mode(), ThemeMode::Light);
         assert_eq!(current_theme_preference(), ThemePreference::Light);
         assert_eq!(theme().bg_app, LIGHT_THEME.bg_app);
+        assert_eq!(theme().text_primary, hex_to_hsla(0x1e293b));
 
         set_theme(ThemePreference::Dark, ThemeMode::Dark);
         assert_eq!(current_theme_mode(), ThemeMode::Dark);
         assert_eq!(current_theme_preference(), ThemePreference::Dark);
         assert_eq!(theme().bg_app, DARK_THEME.bg_app);
+        assert_eq!(theme().text_primary, hex_to_hsla(0xe2e8f0));
 
         set_theme(ThemePreference::System, ThemeMode::Dark);
         assert_eq!(current_theme_preference(), ThemePreference::System);

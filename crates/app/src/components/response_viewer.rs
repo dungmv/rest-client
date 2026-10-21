@@ -1152,10 +1152,10 @@ impl RenderOnce for ResponseViewer {
                                                                     .flex()
                                                                     .gap(px(4.))
                                                                     .when(cookie.secure, |this| {
-                                                                        this.child(div().px(px(4.)).rounded(px(2.)).bg(gpui::rgb(0x22c55e)).text_color(gpui::rgb(0xffffff)).text_xs().child("Secure"))
+                                                                        this.child(div().px(px(4.)).rounded(px(2.)).bg(gpui::rgb(0x22c55e)).text_color(t.primary_foreground).text_xs().child("Secure"))
                                                                     })
                                                                     .when(cookie.http_only, |this| {
-                                                                        this.child(div().px(px(4.)).rounded(px(2.)).bg(gpui::rgb(0x3b82f6)).text_color(gpui::rgb(0xffffff)).text_xs().child("HttpOnly"))
+                                                                        this.child(div().px(px(4.)).rounded(px(2.)).bg(gpui::rgb(0x3b82f6)).text_color(t.primary_foreground).text_xs().child("HttpOnly"))
                                                                     }),
                                                             ),
                                                     )

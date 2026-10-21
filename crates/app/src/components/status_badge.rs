@@ -5,11 +5,20 @@ use restclient_core::models::HttpMethod;
 #[derive(IntoElement)]
 pub struct MethodBadge {
     method: HttpMethod,
+    font_weight: gpui::FontWeight,
 }
 
 impl MethodBadge {
     pub fn new(method: HttpMethod) -> Self {
-        Self { method }
+        Self {
+            method,
+            font_weight: gpui::FontWeight::NORMAL,
+        }
+    }
+
+    pub fn font_weight(mut self, weight: gpui::FontWeight) -> Self {
+        self.font_weight = weight;
+        self
     }
 }
 
@@ -30,7 +39,7 @@ impl RenderOnce for MethodBadge {
             .bg(bg_color)
             .text_color(color)
             .text_xs()
-            .font_weight(gpui::FontWeight::BOLD)
+            .font_weight(self.font_weight)
             .child(self.method.as_str())
     }
 }
@@ -65,5 +74,19 @@ impl RenderOnce for StatusCodeBadge {
             .text_xs()
             .font_weight(gpui::FontWeight::BOLD)
             .child(format!("{}", self.status_code))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_method_badge_font_weight_default_and_builder() {
+        let badge = MethodBadge::new(HttpMethod::Get);
+        assert_eq!(badge.font_weight, gpui::FontWeight::NORMAL);
+
+        let bold_badge = badge.font_weight(gpui::FontWeight::SEMIBOLD);
+        assert_eq!(bold_badge.font_weight, gpui::FontWeight::SEMIBOLD);
     }
 }

@@ -141,7 +141,7 @@ impl RenderOnce for RequestBar {
                                     state.toggle_method_dropdown(cx);
                                 });
                             })
-                            .child(MethodBadge::new(method))
+                            .child(MethodBadge::new(method).font_weight(gpui::FontWeight::SEMIBOLD))
                             .child(
                                 div()
                                     .text_xs()
