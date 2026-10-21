@@ -18,7 +18,7 @@ use gpui_component::input::{
 };
 use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
 use gpui_component::scroll::ScrollableElement;
-use gpui_kit::assets::Assets;
+use gpui_kit::assets::AllAssets;
 use platform::default_window_options;
 use restclient_core::http::{HttpError, HttpExecutor, HttpProgress, ReqwestExecutor, ResolvedRequest};
 use restclient_core::models::{
@@ -126,7 +126,7 @@ impl AppView {
         let response_editor = cx.new(|cx| {
             let mut state = CodeEditorState::new(window, cx);
             state.set_highlighter_factory(highlighter_factory.clone(), cx);
-            state.language("json").line_number(true).folding(true)
+            state.language("json").line_number(true).folding(true).soft_wrap(false)
         });
         let request_url_textarea = cx.new(|cx| TextareaState::new(window, cx).auto_grow(1, 8));
         let request_body_editor = cx.new(|cx| {
@@ -2531,7 +2531,7 @@ fn main() {
         }
     }
 
-    let app = gpui_kit::application().with_assets(Assets);
+    let app = gpui_kit::application().with_assets(AllAssets);
 
     app.run(move |cx| {
         platform::set_dock_icon();

@@ -61,6 +61,7 @@ pub struct ResponseState {
     pub console_filter: ConsoleFilter,
     pub formatted_body: Option<FormattedResponseBody>,
     pub scroll_handle: gpui::UniformListScrollHandle,
+    pub wrap_lines: bool,
 }
 
 impl ResponseState {
@@ -82,6 +83,7 @@ impl ResponseState {
             console_filter: ConsoleFilter::All,
             formatted_body: None,
             scroll_handle: gpui::UniformListScrollHandle::new(),
+            wrap_lines: false,
         }
     }
 
@@ -279,6 +281,11 @@ impl ResponseState {
 
     pub fn toggle_timing_popover(&mut self, cx: &mut Context<Self>) {
         self.show_timing_popover = !self.show_timing_popover;
+        cx.notify();
+    }
+
+    pub fn toggle_wrap_lines(&mut self, cx: &mut Context<Self>) {
+        self.wrap_lines = !self.wrap_lines;
         cx.notify();
     }
 
@@ -511,6 +518,37 @@ mod tests {
         assert!(fmt.is_xml, "Should detect XML response");
         assert!(fmt.display_text.contains("<root>\n"));
         assert!(fmt.display_text.contains("  <user>\n"));
+    }
+
+    #[test]
+    fn test_wrap_lines_initial_and_toggle() {
+        let mut state = ResponseState::new();
+        assert!(!state.wrap_lines, "wrap_lines should default to false");
+        state.wrap_lines = true;
+        assert!(state.wrap_lines);
+    }
+
+    #[test]
+    fn test_toolbar_icons_exist_in_all_assets() {
+        use gpui::AssetSource as _;
+        use gpui_kit::assets::{AllAssets, IconName};
+
+        let assets = AllAssets;
+        let icons = [
+            IconName::TextWrap.path(),
+            IconName::Copy.path(),
+            IconName::Download.path(),
+            IconName::Save.path(),
+        ];
+
+        for icon_path in icons {
+            let res = assets.load(icon_path.as_ref());
+            assert!(
+                res.is_ok() && res.unwrap().is_some(),
+                "Asset {} must exist in AllAssets",
+                icon_path
+            );
+        }
     }
 }
 

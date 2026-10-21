@@ -10,6 +10,8 @@ use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{Editor, EditorState as CodeEditorState, Textarea, TextareaState};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::scroll::ScrollableElement as _;
+use gpui_component::Icon;
+use gpui_kit::assets::IconName;
 use restclient_core::models::HttpResponseRecord;
 use restclient_core::storage::models::{RequestExampleFile, RequestFile, RequestKvItem};
 
@@ -201,48 +203,6 @@ impl RenderOnce for ResponseViewer {
                                                 })
                                                 .child("← Live"),
                                         ),
-                                )
-                            })
-                            .when(current_resp.is_some() && !is_viewing_example && active_id.is_some(), |this| {
-                                let ws_s = self.workspace_state.clone();
-                                let c_resp = current_resp.clone().unwrap();
-                                let req_id = active_id.clone().unwrap();
-                                this.child(
-                                    div()
-                                        .id("btn-save-example")
-                                        .cursor_pointer()
-                                        .px(px(6.))
-                                        .py(px(2.))
-                                        .rounded(px(4.))
-                                        .bg(t.bg_card)
-                                        .border_1()
-                                        .border_color(t.border)
-                                        .text_xs()
-                                        .text_color(t.text_secondary)
-                                        .hover(|s| s.text_color(t.text_primary).bg(t.bg_hover))
-                                        .on_click(move |_, _, cx| {
-                                            ws_s.update(cx, |ws, cx| {
-                                                if let Some(mut req) = ws.get_request_file(&req_id) {
-                                                    let base_name = format!("{} {}", c_resp.status_code, c_resp.status_text);
-                                                    let mut name = base_name.clone();
-                                                    let mut idx = 2;
-                                                    while req.examples.iter().any(|e| e.name == name) {
-                                                        name = format!("{}-{}", base_name, idx);
-                                                        idx += 1;
-                                                    }
-                                                    let ex = RequestExampleFile {
-                                                        name,
-                                                        status: c_resp.status_code,
-                                                        headers: c_resp.headers.iter().map(|(k, v)| RequestKvItem::new(k, v)).collect(),
-                                                        body: Some(String::from_utf8_lossy(&c_resp.body).to_string()),
-                                                        extra: std::collections::BTreeMap::new(),
-                                                    };
-                                                    req.examples.push(ex);
-                                                    ws.save_request_file(&req_id, &req, cx);
-                                                }
-                                            });
-                                        })
-                                        .child("★ Save as Example"),
                                 )
                             }),
                     ),
@@ -518,6 +478,12 @@ impl RenderOnce for ResponseViewer {
                                 let rs_toggle = resp_state_clone.clone();
                                 let rs_copy = resp_state_clone.clone();
                                 let rs_save = resp_state_clone.clone();
+                                let rs_wrap = resp_state_clone.clone();
+                                let resp_ed = self.response_editor.clone();
+                                let ws_s = self.workspace_state.clone();
+                                let c_resp = current_resp.clone().unwrap();
+                                let req_id_opt = active_id.clone();
+                                let wrap_lines = resp_s.wrap_lines;
 
                                 div()
                                     .size_full()
@@ -593,21 +559,61 @@ impl RenderOnce for ResponseViewer {
                                                     .flex()
                                                     .items_center()
                                                     .gap(px(6.))
+                                                    // Toggle Wrap Line Button
+                                                    .child({
+                                                        let rs_w = rs_wrap.clone();
+                                                        let r_ed = resp_ed.clone();
+                                                        div()
+                                                            .id("btn-toggle-wrap")
+                                                            .tooltip(move |window, cx| {
+                                                                let tip = if wrap_lines { "Line Wrap: Enabled" } else { "Line Wrap: Disabled" };
+                                                                gpui_component::tooltip::Tooltip::new(tip).build(window, cx)
+                                                            })
+                                                            .px(px(6.))
+                                                            .py(px(2.))
+                                                            .rounded(px(4.))
+                                                            .border_1()
+                                                            .border_color(t.border)
+                                                            .bg(if wrap_lines { t.bg_selected } else { t.bg_card })
+                                                            .hover(|s| s.bg(t.bg_hover).text_color(if wrap_lines { t.primary } else { t.text_primary }))
+                                                            .text_xs()
+                                                            .text_color(if wrap_lines { t.primary } else { t.text_secondary })
+                                                            .cursor_pointer()
+                                                            .flex()
+                                                            .items_center()
+                                                            .justify_center()
+                                                            .on_click(move |_, window, cx| {
+                                                                rs_w.update(cx, |state, cx| {
+                                                                    state.toggle_wrap_lines(cx);
+                                                                });
+                                                                let new_wrap = rs_w.read(cx).wrap_lines;
+                                                                r_ed.update(cx, |ed, cx| {
+                                                                    ed.set_soft_wrap(new_wrap, window, cx);
+                                                                });
+                                                            })
+                                                            .child(Icon::new(IconName::TextWrap).size(px(14.)))
+                                                    })
                                                     // Copy Button
                                                     .child({
                                                         let rs_c = rs_copy.clone();
                                                         div()
                                                             .id("btn-copy-response")
+                                                            .tooltip(move |window, cx| {
+                                                                gpui_component::tooltip::Tooltip::new("Copy Response").build(window, cx)
+                                                            })
                                                             .px(px(6.))
                                                             .py(px(2.))
                                                             .rounded(px(4.))
                                                             .bg(t.bg_card)
                                                             .border_1()
                                                             .border_color(t.border)
-                                                            .hover(|s| s.bg(t.bg_hover))
+                                                            .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
                                                             .text_xs()
                                                             .text_color(t.text_secondary)
                                                             .cursor_pointer()
+                                                            .flex()
+                                                            .items_center()
+                                                            .justify_center()
                                                             .on_click(move |_, _, cx| {
                                                                 let copy_text = rs_c.read(cx).formatted_body.as_ref()
                                                                     .map(|f| f.display_text.to_string())
@@ -618,23 +624,29 @@ impl RenderOnce for ResponseViewer {
                                                                     .unwrap_or_default();
                                                                 cx.write_to_clipboard(gpui::ClipboardItem::new_string(copy_text));
                                                             })
-                                                            .child("📋 Copy")
+                                                            .child(Icon::new(IconName::Copy).size(px(14.)))
                                                     })
-                                                    // Save to File Button
+                                                    // Save to File (Download) Button
                                                     .child({
                                                         let rs_s = rs_save.clone();
                                                         div()
                                                             .id("btn-save-response")
+                                                            .tooltip(move |window, cx| {
+                                                                gpui_component::tooltip::Tooltip::new("Save to File").build(window, cx)
+                                                            })
                                                             .px(px(6.))
                                                             .py(px(2.))
                                                             .rounded(px(4.))
                                                             .bg(t.bg_card)
                                                             .border_1()
                                                             .border_color(t.border)
-                                                            .hover(|s| s.bg(t.bg_hover))
+                                                            .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
                                                             .text_xs()
                                                             .text_color(t.text_secondary)
                                                             .cursor_pointer()
+                                                            .flex()
+                                                            .items_center()
+                                                            .justify_center()
                                                             .on_click(move |_, _, cx| {
                                                                 let save_bytes = rs_s.read(cx).current_response.as_ref().map(|r| r.body.clone());
                                                                 if let Some(bytes) = save_bytes {
@@ -646,7 +658,56 @@ impl RenderOnce for ResponseViewer {
                                                                     }
                                                                 }
                                                             })
-                                                            .child("💾 Save to File")
+                                                            .child(Icon::new(IconName::Download).size(px(14.)))
+                                                    })
+                                                    // Save as Example Button
+                                                    .when(!is_viewing_example && req_id_opt.is_some(), |this| {
+                                                        let ws_s = ws_s.clone();
+                                                        let c_resp = c_resp.clone();
+                                                        let req_id = req_id_opt.unwrap();
+                                                        this.child(
+                                                            div()
+                                                                .id("btn-save-example")
+                                                                .tooltip(move |window, cx| {
+                                                                    gpui_component::tooltip::Tooltip::new("Save as Example").build(window, cx)
+                                                                })
+                                                                .cursor_pointer()
+                                                                .px(px(6.))
+                                                                .py(px(2.))
+                                                                .rounded(px(4.))
+                                                                .bg(t.bg_card)
+                                                                .border_1()
+                                                                .border_color(t.border)
+                                                                .hover(|s| s.bg(t.bg_hover).text_color(t.text_primary))
+                                                                .text_xs()
+                                                                .text_color(t.text_secondary)
+                                                                .flex()
+                                                                .items_center()
+                                                                .justify_center()
+                                                                .on_click(move |_, _, cx| {
+                                                                    ws_s.update(cx, |ws, cx| {
+                                                                        if let Some(mut req) = ws.get_request_file(&req_id) {
+                                                                            let base_name = format!("{} {}", c_resp.status_code, c_resp.status_text);
+                                                                            let mut name = base_name.clone();
+                                                                            let mut idx = 2;
+                                                                            while req.examples.iter().any(|e| e.name == name) {
+                                                                                name = format!("{}-{}", base_name, idx);
+                                                                                idx += 1;
+                                                                            }
+                                                                            let ex = RequestExampleFile {
+                                                                                name,
+                                                                                status: c_resp.status_code,
+                                                                                headers: c_resp.headers.iter().map(|(k, v)| RequestKvItem::new(k, v)).collect(),
+                                                                                body: Some(String::from_utf8_lossy(&c_resp.body).to_string()),
+                                                                                extra: std::collections::BTreeMap::new(),
+                                                                            };
+                                                                            req.examples.push(ex);
+                                                                            ws.save_request_file(&req_id, &req, cx);
+                                                                        }
+                                                                    });
+                                                                })
+                                                                .child(Icon::new(IconName::Save).size(px(14.))),
+                                                        )
                                                     }),
                                             ),
                                     )
