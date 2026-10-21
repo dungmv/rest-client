@@ -10,7 +10,8 @@ use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest_cookie_store::CookieStoreMutex;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
@@ -352,12 +353,22 @@ pub trait HttpExecutor: Send + Sync {
 
 pub struct ReqwestExecutor {
     cookie_store: Arc<CookieStoreMutex>,
+    clients: RwLock<HashMap<(bool, bool), reqwest::Client>>,
 }
 
 impl ReqwestExecutor {
     pub fn new() -> Self {
         let cookie_store = Arc::new(CookieStoreMutex::new(CookieStore::default()));
-        Self { cookie_store }
+        let mut clients = HashMap::new();
+
+        if let Ok(default_client) = Self::build_client(&cookie_store, true, true) {
+            clients.insert((true, true), default_client);
+        }
+
+        Self {
+            cookie_store,
+            clients: RwLock::new(clients),
+        }
     }
 
     pub fn cookie_store(&self) -> Arc<CookieStoreMutex> {
@@ -368,7 +379,7 @@ impl ReqwestExecutor {
         let Ok(parsed_url) = url::Url::parse(url) else {
             return Vec::new();
         };
-        let store = self.cookie_store.lock().unwrap();
+        let store = self.cookie_store.lock().unwrap_or_else(|e| e.into_inner());
         store
             .matches(&parsed_url)
             .into_iter()
@@ -377,13 +388,57 @@ impl ReqwestExecutor {
     }
 
     pub fn get_all_cookies(&self) -> Vec<String> {
-        let store = self.cookie_store.lock().unwrap();
+        let store = self.cookie_store.lock().unwrap_or_else(|e| e.into_inner());
         store.iter_any().map(|c| c.to_string()).collect()
     }
 
     pub fn clear_cookies(&self) {
-        let mut store = self.cookie_store.lock().unwrap();
+        let mut store = self.cookie_store.lock().unwrap_or_else(|e| e.into_inner());
         *store = CookieStore::default();
+    }
+
+    fn build_client(
+        cookie_store: &Arc<CookieStoreMutex>,
+        follow_redirects: bool,
+        validate_tls: bool,
+    ) -> Result<reqwest::Client, HttpError> {
+        let mut builder = reqwest::Client::builder()
+            .cookie_provider(Arc::clone(cookie_store))
+            .danger_accept_invalid_certs(!validate_tls);
+
+        if !follow_redirects {
+            builder = builder.redirect(reqwest::redirect::Policy::none());
+        }
+
+        builder.build().map_err(|e| HttpError::Network(e.to_string()))
+    }
+
+    pub(crate) fn get_client(
+        &self,
+        follow_redirects: bool,
+        validate_tls: bool,
+    ) -> Result<reqwest::Client, HttpError> {
+        let key = (follow_redirects, validate_tls);
+        {
+            let lock = self.clients.read().unwrap_or_else(|e| e.into_inner());
+            if let Some(client) = lock.get(&key) {
+                return Ok(client.clone());
+            }
+        }
+
+        let mut lock = self.clients.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(client) = lock.get(&key) {
+            return Ok(client.clone());
+        }
+
+        let client = Self::build_client(&self.cookie_store, follow_redirects, validate_tls)?;
+        lock.insert(key, client.clone());
+        Ok(client)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn cached_clients_count(&self) -> usize {
+        self.clients.read().unwrap_or_else(|e| e.into_inner()).len()
     }
 }
 
@@ -415,20 +470,13 @@ impl HttpExecutor for ReqwestExecutor {
             HttpMethod::Options => reqwest::Method::OPTIONS,
         };
 
-        let mut client_builder = reqwest::Client::builder()
-            .cookie_provider(self.cookie_store.clone())
-            .timeout(Duration::from_secs(req.settings.timeout_secs))
-            .danger_accept_invalid_certs(!req.settings.validate_tls);
-
-        if !req.settings.follow_redirects {
-            client_builder = client_builder.redirect(reqwest::redirect::Policy::none());
-        }
-
-        let client = client_builder
-            .build()
-            .map_err(|e| HttpError::Network(e.to_string()))?;
+        let client = self.get_client(req.settings.follow_redirects, req.settings.validate_tls)?;
 
         let mut request_builder = client.request(reqwest_method, &req.url);
+
+        if req.settings.timeout_secs > 0 {
+            request_builder = request_builder.timeout(Duration::from_secs(req.settings.timeout_secs));
+        }
 
         let mut header_map = HeaderMap::new();
         for (k, v) in &req.headers {
@@ -764,5 +812,78 @@ mod tests {
             &req_none_auth,
         );
         assert_eq!(resolved_auth_3, Auth::None);
+    }
+
+    #[test]
+    fn test_reqwest_executor_client_caching_and_prewarm() {
+        let executor = ReqwestExecutor::new();
+        // Default client (true, true) is pre-warmed on creation
+        assert_eq!(executor.cached_clients_count(), 1);
+
+        // Fetching existing (true, true) does not create a new client
+        let _ = executor.get_client(true, true).unwrap();
+        assert_eq!(executor.cached_clients_count(), 1);
+
+        // Fetching (false, true) creates and caches client #2
+        let _ = executor.get_client(false, true).unwrap();
+        assert_eq!(executor.cached_clients_count(), 2);
+
+        // Re-fetching (false, true) uses cached client
+        let _ = executor.get_client(false, true).unwrap();
+        assert_eq!(executor.cached_clients_count(), 2);
+
+        // Fetching (true, false) and (false, false)
+        let _ = executor.get_client(true, false).unwrap();
+        assert_eq!(executor.cached_clients_count(), 3);
+
+        let _ = executor.get_client(false, false).unwrap();
+        assert_eq!(executor.cached_clients_count(), 4);
+
+        // Re-fetching default client still succeeds
+        let _ = executor.get_client(true, true).unwrap();
+        assert_eq!(executor.cached_clients_count(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_reqwest_executor_send_local_http() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server_url = format!("http://127.0.0.1:{}/test", port);
+
+        // Spawn mock HTTP server that handles connections
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    loop {
+                        let n = match socket.read(&mut buf).await {
+                            Ok(0) => break,
+                            Ok(n) => n,
+                            Err(_) => break,
+                        };
+                        // Simple HTTP response
+                        if n > 0 {
+                            let resp = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\nConnection: keep-alive\r\n\r\nHello, World!";
+                            if socket.write_all(resp.as_bytes()).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                });
+            }
+        });
+
+        let executor = ReqwestExecutor::new();
+
+        for i in 1..=2 {
+            let item = HttpRequestItem::new(&format!("ws-{}", i), "Test Req", HttpMethod::Get, &server_url);
+            let resolved = ResolvedRequest::from_item(&item, None).unwrap();
+            let res = executor.send(resolved, None).await.expect("send request should succeed");
+            assert_eq!(res.status_code, 200);
+            assert_eq!(res.body, b"Hello, World!");
+        }
     }
 }
