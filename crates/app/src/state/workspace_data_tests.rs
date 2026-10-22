@@ -17,11 +17,26 @@ mod tests {
         assert_eq!(git.tab, GitTab::Changes);
         assert!(!git.show_modal);
         assert!(git.active_modal.is_none());
+        assert!(!git.loading);
+        assert!(!git.is_syncing);
+        assert!(git.error.is_none());
 
         git.active_modal = Some(GitActiveModal::Commit);
         git.show_modal = true;
         assert!(git.show_modal);
         assert_eq!(git.active_modal, Some(GitActiveModal::Commit));
+
+        // Test loading & syncing flag states
+        git.loading = true;
+        assert!(git.loading);
+        git.is_syncing = true;
+        assert!(git.is_syncing);
+
+        // Test error recording
+        git.error = Some("Git authentication failed".to_string());
+        assert_eq!(git.error.as_deref(), Some("Git authentication failed"));
+        git.error = None;
+        assert!(git.error.is_none());
     }
 
     #[test]

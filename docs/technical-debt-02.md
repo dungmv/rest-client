@@ -8,16 +8,16 @@
 | Mức độ | Số vấn đề |
 |--------|-----------|
 | 🔴 CRITICAL | 0 (1 đã sửa: PERF-001) |
-| 🟠 HIGH | 3 (7 đã sửa: PERF-002, PERF-003, CC-001, TD-001, TD-004, TD-002, PERF-004) |
-| 🟡 MEDIUM | 7 |
+| 🟠 HIGH | 2 (8 đã sửa: PERF-002, PERF-003, CC-001, TD-001, TD-004, TD-002, PERF-004, TD-003) |
+| 🟡 MEDIUM | 6 (1 đã sửa: CC-004) |
 | 🔵 LOW | 8 |
-| **Tổng** | **18 còn lại (8 đã sửa)** |
+| **Tổng** | **16 còn lại (10 đã sửa)** |
 
 > [!CAUTION]
 > **Top 3 ưu tiên xử lý tiếp theo:**
-> 1. **TD-003** — Git `pull/push/commit` chạy blocking trên UI thread → đóng băng app
-> 2. **SL-002** — `ResponseState` cache không có giới hạn
-> 3. **PERF-005** — `suppress_path()` spawn OS thread mới mỗi lần write file
+> 1. **SL-002** — `ResponseState` cache không có giới hạn
+> 2. **PERF-005** — `suppress_path()` spawn OS thread mới mỗi lần write file
+> 3. **PERF-006** — `sync_active_request_editors()` gọi mỗi render frame (60fps)
 
 ---
 
@@ -255,20 +255,10 @@ Fix: Batch notifications. emit một WorkspaceTreeChanged duy nhất sau bulk ch
 
 ---
 
-### CC-004 🟡 MEDIUM — `discard_file()` chạy blocking git I/O trên UI thread
-**File:** [`crates/app/src/state/git_ops.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/state/git_ops.rs#L143-L152)
+### CC-004 ✅ RESOLVED (Was 🟡 MEDIUM) — `discard_file()` chạy blocking git I/O trên UI thread
+**File:** [`crates/app/src/state/git_ops.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/state/git_ops.rs#L143-L163)
 
-```rust
-pub fn discard_file(&mut self, path: &str, cx: &mut Context<Self>) {
-    let _ = restclient_core::git::git_discard_file(&self.repo_path, path);  // BLOCKING
-    // ...
-    self.refresh_status(cx);
-}
-```
-
-```
-Fix: Spawn vào background executor như stage_file đã làm.
-```
+*Đã giải quyết*: Chuyển `discard_file` sang async task dispatch qua `cx.background_executor().spawn(...)`. Reset `selected_file` và trigger `refresh_status(cx)` khi hoàn tất mà không chặn UI thread. (Được xử lý đồng bộ cùng **TD-003**).
 
 ---
 
@@ -298,15 +288,13 @@ Fix: Hợp nhất toàn bộ thành canonical types trong `models.rs` với serd
 
 ---
 
-### TD-003 🟠 HIGH — Git operations blocking UI thread
-**File:** [`crates/app/src/state/git_ops.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/state/git_ops.rs#L154-L273)
+### TD-003 ✅ RESOLVED (Was 🟠 HIGH) — Git operations blocking UI thread
+**File:** [`crates/app/src/state/git_ops.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/state/git_ops.rs)  ·  [`crates/app/src/state/git_state.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/state/git_state.rs)
 
-`pull()`, `push()`, `commit()`, `checkout()`, `create_branch()`, `init_repo()` — tất cả gọi blocking git CLI commands đồng bộ trong UI event handler.
-
-```
-Fix: Chuyển toàn bộ git I/O sang async background tasks.
-     Hiển thị loading indicator khi operation đang chạy.
-```
+*Đã giải quyết*: Chuyển toàn bộ các thao tác Git CLI (`commit`, `pull`, `push`, `fetch`, `checkout`, `create_branch`, `init_repo`, `discard_file`, `add_remote`, `remove_remote`, `delete_branch`) sang chạy non-blocking trên thread pool nền qua `cx.background_executor().spawn(...)`.
+- Trạng thái `is_syncing` được duy trì xuyên suốt thao tác mạng (`pull`/`push`/`fetch`), hiển thị spinner xoay ở status bar footer và vô hiệu hóa popup actions.
+- Trạng thái `loading` bảo vệ các modal actions (Commit, Create Branch, Add Remote, Init Repo), hiển thị loading indicator ("Committing...", "Creating...", v.v.) và vô hiệu hóa click đúp chống race condition.
+- Giao diện ứng dụng hoàn toàn không bị đóng băng (zero beachball/freeze), duy trì 60fps khi thực hiện bất kỳ thao tác Git nào. (Giải quyết đồng thời **CC-004**).
 
 ---
 
@@ -470,7 +458,7 @@ flowchart LR
     P1 --> i5["TD-014: Fix recursive resolve_ref"]
 
     P2 --> i6["PERF-003: [RESOLVED] In-memory tree index"]
-    P2 --> i7["TD-003: Git ops → async background"]
+    P2 --> i7["TD-003: [RESOLVED] Git ops → async background"]
     P2 --> i8["PERF-005: suppress_path → async"]
     P2 --> i9["SL-002: Cap ResponseState cache"]
     P2 --> i10["PERF-006: sync → subscriptions"]

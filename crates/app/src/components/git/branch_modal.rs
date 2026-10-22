@@ -23,6 +23,7 @@ pub fn render_new_branch_view(
     git_clone: Entity<GitState>,
     current_branch: String,
     branch_input: Entity<InputState>,
+    is_loading: bool,
 ) -> gpui::AnyElement {
     let t = theme();
     let git_create = git_clone.clone();
@@ -95,29 +96,37 @@ pub fn render_new_branch_view(
                         .px(px(14.))
                         .py(px(6.))
                         .rounded(px(6.))
-                        .bg(t.primary)
-                        .cursor_pointer()
+                        .when(!is_loading, |s| {
+                            s.bg(t.primary)
+                                .cursor_pointer()
+                                .text_color(t.primary_foreground)
+                                .hover(|s| s.opacity(0.9))
+                        })
+                        .when(is_loading, |s| {
+                            s.bg(t.bg_hover)
+                                .text_color(t.text_muted)
+                        })
                         .text_xs()
                         .font_weight(gpui::FontWeight::BOLD)
-                        .text_color(t.primary_foreground)
-                        .hover(|s| s.opacity(0.9))
                         .on_click(move |_, window, cx| {
+                            if is_loading {
+                                return;
+                            }
                             let name = inp_val.read(cx).value().trim().to_string();
                             if name.is_empty() {
                                 return;
                             }
                             let git_s = git_create.clone();
                             let inp_clear = inp.clone();
+                            inp_clear.update(cx, |inp_st, cx| {
+                                inp_st.set_value("", window, cx);
+                            });
                             git_s.update(cx, |git, cx| {
-                                if git.create_branch(&name, cx).is_ok() {
-                                    inp_clear.update(cx, |inp_st, cx| {
-                                        inp_st.set_value("", window, cx);
-                                    });
-                                    git.close_modal(cx);
-                                }
+                                git.create_branch(&name, cx);
                             });
                         })
-                        .child("Create Branch"),
+                        .when(is_loading, |s| s.child("Creating..."))
+                        .when(!is_loading, |s| s.child("Create Branch")),
                 ),
         )
         .into_any_element()
@@ -126,12 +135,17 @@ pub fn render_new_branch_view(
 impl RenderOnce for GitBranchModal {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
-        let git = self.git_state.read(cx);
         let git_clone = self.git_state.clone();
 
-        let is_repo = git.status.as_ref().map(|s| s.is_repo).unwrap_or(false);
-        let current_branch = git.branch.clone().unwrap_or_else(|| "main".to_string());
-        let git_error = git.error.clone();
+        let (is_repo, current_branch, git_error, is_loading) = {
+            let git = self.git_state.read(cx);
+            (
+                git.status.as_ref().map(|s| s.is_repo).unwrap_or(false),
+                git.branch.clone().unwrap_or_else(|| "main".to_string()),
+                git.error.clone(),
+                git.loading,
+            )
+        };
 
         let branch_input_holder = window.use_keyed_state(
             gpui::SharedString::from("git-new-branch-input"),
@@ -251,9 +265,9 @@ impl RenderOnce for GitBranchModal {
                     })
                     // Body
                     .child(if !is_repo {
-                        render_not_a_repo_view(git_clone.clone())
+                        render_not_a_repo_view(git_clone.clone(), is_loading)
                     } else {
-                        render_new_branch_view(git_clone.clone(), current_branch, branch_input)
+                        render_new_branch_view(git_clone.clone(), current_branch, branch_input, is_loading)
                     }),
             )
             .into_any_element()

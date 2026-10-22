@@ -1,5 +1,6 @@
 use crate::state::GitState;
 use crate::theme::theme;
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     div, px, App, AppContext as _, Entity, InteractiveElement as _, IntoElement, ParentElement,
     StatefulInteractiveElement as _, Styled, Window,
@@ -108,7 +109,7 @@ pub fn render_error_banner(git_state: Entity<GitState>, err: String) -> gpui::An
         .into_any_element()
 }
 
-pub fn render_not_a_repo_view(git_state: Entity<GitState>) -> gpui::AnyElement {
+pub fn render_not_a_repo_view(git_state: Entity<GitState>, is_loading: bool) -> gpui::AnyElement {
     let t = theme();
     let git_init = git_state.clone();
 
@@ -147,18 +148,40 @@ pub fn render_not_a_repo_view(git_state: Entity<GitState>) -> gpui::AnyElement {
                 .px(px(16.))
                 .py(px(8.))
                 .rounded(px(6.))
-                .bg(t.primary)
-                .cursor_pointer()
+                .when(!is_loading, |s| {
+                    s.bg(t.primary)
+                        .cursor_pointer()
+                        .text_color(t.primary_foreground)
+                        .hover(|s| s.opacity(0.9))
+                })
+                .when(is_loading, |s| {
+                    s.bg(t.bg_hover)
+                        .text_color(t.text_muted)
+                })
                 .text_xs()
                 .font_weight(gpui::FontWeight::BOLD)
-                .text_color(t.primary_foreground)
-                .hover(|s| s.opacity(0.9))
                 .on_click(move |_, _, cx| {
+                    if is_loading {
+                        return;
+                    }
                     git_init.update(cx, |git, cx| {
-                        let _ = git.init_repo(cx);
+                        git.init_repo(cx);
                     });
                 })
-                .child(div().flex().items_center().gap(px(6.)).child(Icon::new(IconName::GitBranch).size(px(14.))).child("Initialize Git Repository")),
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .when(is_loading, |s| {
+                            s.child(Icon::new(IconName::RefreshCw).size(px(14.)))
+                                .child("Initializing...")
+                        })
+                        .when(!is_loading, |s| {
+                            s.child(Icon::new(IconName::GitBranch).size(px(14.)))
+                                .child("Initialize Git Repository")
+                        }),
+                ),
         )
         .into_any_element()
 }

@@ -9,6 +9,8 @@ use gpui::{
 };
 use gpui_component::input::{Input, InputState};
 use gpui_component::scroll::ScrollableElement as _;
+use gpui_component::Icon;
+use gpui_kit::assets::IconName;
 use std::collections::HashSet;
 
 #[derive(IntoElement)]
@@ -34,6 +36,7 @@ pub struct ChangesViewProps {
     pub mode_entity: Entity<DiffViewMode>,
     pub selected_staged: HashSet<String>,
     pub selected_unstaged: HashSet<String>,
+    pub is_loading: bool,
 }
 
 pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
@@ -47,6 +50,7 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
     let mode_entity = props.mode_entity;
     let selected_staged = props.selected_staged;
     let selected_unstaged = props.selected_unstaged;
+    let is_loading = props.is_loading;
 
     let staged_files = props.status_opt.as_ref().map(|s| s.staged_files.clone()).unwrap_or_default();
     let unstaged_files = props.status_opt.as_ref().map(|s| s.unstaged_files.clone()).unwrap_or_default();
@@ -384,7 +388,7 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                         .child({
                             let git_commit = git_clone.clone();
                             let inp = commit_input.clone();
-                            let can_commit = total_staged > 0;
+                            let can_commit = total_staged > 0 && !is_loading;
 
                             div()
                                 .id("btn-commit-action")
@@ -413,18 +417,28 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
                                     if msg.trim().is_empty() {
                                         return;
                                     }
-                                    let git_s = git_commit.clone();
                                     let inp_clear = inp.clone();
+                                    inp_clear.update(cx, |inp_st, cx| {
+                                        inp_st.set_value("", window, cx);
+                                    });
+                                    let git_s = git_commit.clone();
                                     git_s.update(cx, |git, cx| {
-                                        if git.commit(&msg, cx).is_ok() {
-                                            inp_clear.update(cx, |inp_st, cx| {
-                                                inp_st.set_value("", window, cx);
-                                            });
-                                            git.close_modal(cx);
-                                        }
+                                        git.commit(&msg, cx);
                                     });
                                 })
-                                .child(format!("✓ Commit Changes ({} staged)", total_staged))
+                                .when(is_loading, |s| {
+                                    s.child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(6.))
+                                            .child(Icon::new(IconName::RefreshCw).size(px(14.)))
+                                            .child("Committing..."),
+                                    )
+                                })
+                                .when(!is_loading, |s| {
+                                    s.child(format!("✓ Commit Changes ({} staged)", total_staged))
+                                })
                         }),
                 ),
         )
@@ -500,19 +514,23 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
 impl RenderOnce for GitCommitModal {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
-        let git = self.git_state.read(cx);
         let git_clone = self.git_state.clone();
         let ws_clone = self.workspace_state.clone();
 
-        let is_repo = git.status.as_ref().map(|s| s.is_repo).unwrap_or(false);
-        let branch_name = git.branch.clone().unwrap_or_else(|| "main".to_string());
-        let status_opt = git.status.clone();
-        let selected_file = git.selected_file.clone();
-        let diff_content = git.diff_content.clone();
-        let git_error = git.error.clone();
-
-        let selected_unstaged = git.selected_unstaged_files.clone();
-        let selected_staged = git.selected_staged_files.clone();
+        let (is_repo, branch_name, status_opt, selected_file, diff_content, git_error, selected_unstaged, selected_staged, is_loading) = {
+            let git = self.git_state.read(cx);
+            (
+                git.status.as_ref().map(|s| s.is_repo).unwrap_or(false),
+                git.branch.clone().unwrap_or_else(|| "main".to_string()),
+                git.status.clone(),
+                git.selected_file.clone(),
+                git.diff_content.clone(),
+                git.error.clone(),
+                git.selected_unstaged_files.clone(),
+                git.selected_staged_files.clone(),
+                git.loading,
+            )
+        };
 
         let staged_count = status_opt.as_ref().map(|s| s.staged_files.len()).unwrap_or(0);
         let unstaged_count = status_opt.as_ref().map(|s| s.unstaged_files.len()).unwrap_or(0);
@@ -680,7 +698,7 @@ impl RenderOnce for GitCommitModal {
                             .flex_1()
                             .overflow_hidden()
                             .child(if !is_repo {
-                                render_not_a_repo_view(git_clone.clone())
+                                render_not_a_repo_view(git_clone.clone(), is_loading)
                             } else {
                                 render_changes_view(ChangesViewProps {
                                     git_clone: git_clone.clone(),
@@ -693,6 +711,7 @@ impl RenderOnce for GitCommitModal {
                                     mode_entity: view_mode_entity,
                                     selected_staged,
                                     selected_unstaged,
+                                    is_loading,
                                 })
                             }),
                     ),

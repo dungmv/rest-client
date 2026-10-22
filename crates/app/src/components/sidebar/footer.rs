@@ -211,18 +211,7 @@ pub fn render_sidebar_footer(
                                             .on_click(move |_, _, cx| {
                                                 if !is_curr {
                                                     git_b.update(cx, |git, cx| {
-                                                        match git.checkout(&b_target, cx) {
-                                                            Ok(_) => {
-                                                                toast_b.update(cx, |ts, cx| {
-                                                                    ts.push_success("Git Checkout", format!("Switched to branch '{}'", b_target), cx);
-                                                                });
-                                                            }
-                                                            Err(err) => {
-                                                                toast_b.update(cx, |ts, cx| {
-                                                                    ts.push_error("Git Checkout Failed", err, cx);
-                                                                });
-                                                            }
-                                                        }
+                                                        git.checkout(&b_target, Some(toast_b.clone()), cx);
                                                     });
                                                 }
                                             }),
@@ -250,36 +239,12 @@ pub fn render_sidebar_footer(
                     m = m.item(
                         PopupMenuItem::new("Fetch")
                             .icon(IconName::CloudDownload)
+                            .disabled(is_syncing)
                             .on_click(move |_, _, cx| {
                                 let git_s = git_fetch.clone();
                                 let toast_s = toast_fetch.clone();
                                 git_s.update(cx, |git, cx| {
-                                    match git.fetch(cx) {
-                                        Ok(msg) => {
-                                            let trimmed = msg.trim();
-                                            toast_s.update(cx, |ts, cx| {
-                                                ts.push_success(
-                                                    "Git Fetch",
-                                                    if trimmed.is_empty() {
-                                                        "Fetched latest references."
-                                                            .to_string()
-                                                    } else {
-                                                        trimmed.to_string()
-                                                    },
-                                                    cx,
-                                                );
-                                            });
-                                        }
-                                        Err(e) => {
-                                            toast_s.update(cx, |ts, cx| {
-                                                ts.push_error(
-                                                    "Git Fetch Failed",
-                                                    e,
-                                                    cx,
-                                                );
-                                            });
-                                        }
-                                    }
+                                    git.fetch(Some(toast_s.clone()), cx);
                                 });
                             }),
                     );
@@ -288,44 +253,12 @@ pub fn render_sidebar_footer(
                     m = m.item(
                         PopupMenuItem::new("Pull")
                             .icon(IconName::ArrowDown)
+                            .disabled(is_syncing)
                             .on_click(move |_, _, cx| {
                                 let git_s = git_pull.clone();
                                 let toast_s = toast_pull.clone();
                                 git_s.update(cx, |git, cx| {
-                                    match git.pull(cx) {
-                                        Ok(msg) => {
-                                            let trimmed = msg.trim();
-                                            if trimmed.contains("Already up to date") {
-                                                toast_s.update(cx, |ts, cx| {
-                                                    ts.push_info(
-                                                        "Git Sync",
-                                                        "Already up to date.",
-                                                        cx,
-                                                    );
-                                                });
-                                            } else {
-                                                toast_s.update(cx, |ts, cx| {
-                                                    ts.push_success(
-                                                        "Git Pull",
-                                                        format!(
-                                                            "Successfully pulled: {}",
-                                                            trimmed
-                                                        ),
-                                                        cx,
-                                                    );
-                                                });
-                                            }
-                                        }
-                                        Err(e) => {
-                                            toast_s.update(cx, |ts, cx| {
-                                                ts.push_error(
-                                                    "Git Pull Failed",
-                                                    e,
-                                                    cx,
-                                                );
-                                            });
-                                        }
-                                    }
+                                    git.pull(Some(toast_s.clone()), cx);
                                 });
                             }),
                     );
@@ -334,36 +267,12 @@ pub fn render_sidebar_footer(
                     m = m.item(
                         PopupMenuItem::new("Push")
                             .icon(IconName::ArrowUp)
+                            .disabled(is_syncing)
                             .on_click(move |_, _, cx| {
                                 let git_s = git_push.clone();
                                 let toast_s = toast_push.clone();
                                 git_s.update(cx, |git, cx| {
-                                    match git.push(cx) {
-                                        Ok(msg) => {
-                                            let trimmed = msg.trim();
-                                            toast_s.update(cx, |ts, cx| {
-                                                ts.push_success(
-                                                    "Git Push",
-                                                    if trimmed.is_empty() {
-                                                        "Pushed commits to remote."
-                                                            .to_string()
-                                                    } else {
-                                                        trimmed.to_string()
-                                                    },
-                                                    cx,
-                                                );
-                                            });
-                                        }
-                                        Err(e) => {
-                                            toast_s.update(cx, |ts, cx| {
-                                                ts.push_error(
-                                                    "Git Push Failed",
-                                                    e,
-                                                    cx,
-                                                );
-                                            });
-                                        }
-                                    }
+                                    git.push(Some(toast_s.clone()), cx);
                                 });
                             }),
                     );

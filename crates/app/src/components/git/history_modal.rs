@@ -295,15 +295,20 @@ pub fn render_history_view(
 impl RenderOnce for GitHistoryModal {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
-        let git = self.git_state.read(cx);
         let git_clone = self.git_state.clone();
 
-        let is_repo = git.status.as_ref().map(|s| s.is_repo).unwrap_or(false);
-        let branch_name = git.branch.clone().unwrap_or_else(|| "main".to_string());
-        let history = git.history.clone();
-        let selected_commit = git.selected_commit.clone();
-        let git_error = git.error.clone();
-        let expanded_files = git.expanded_history_files.clone();
+        let (is_repo, branch_name, history, selected_commit, git_error, expanded_files, is_loading) = {
+            let git = self.git_state.read(cx);
+            (
+                git.status.as_ref().map(|s| s.is_repo).unwrap_or(false),
+                git.branch.clone().unwrap_or_else(|| "main".to_string()),
+                git.history.clone(),
+                git.selected_commit.clone(),
+                git.error.clone(),
+                git.expanded_history_files.clone(),
+                git.loading,
+            )
+        };
 
         let view_mode_holder = window.use_keyed_state(
             gpui::SharedString::from("git-diff-view-mode"),
@@ -454,7 +459,7 @@ impl RenderOnce for GitHistoryModal {
                             .flex_1()
                             .overflow_hidden()
                             .child(if !is_repo {
-                                render_not_a_repo_view(git_clone.clone())
+                                render_not_a_repo_view(git_clone.clone(), is_loading)
                             } else {
                                 render_history_view(git_clone.clone(), history, selected_commit, view_mode, view_mode_entity, expanded_files)
                             }),

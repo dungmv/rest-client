@@ -619,10 +619,3 @@ impl RenderOnce for AppTitleBar {
         bar
     }
 }
-
-fn hex_to_hsla(hex: u32) -> gpui::Hsla {
-    let r = ((hex >> 16) & 0xFF) as f32 / 255.0;
-    let g = ((hex >> 8) & 0xFF) as f32 / 255.0;
-    let b = (hex & 0xFF) as f32 / 255.0;
-    gpui::Hsla::from(gpui::Rgba { r, g, b, a: 1.0 })
-}
