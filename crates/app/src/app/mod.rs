@@ -15,6 +15,7 @@ pub use modals::*;
 pub use subscriptions::*;
 
 use crate::components::*;
+use crate::services::{HttpEngine, Runner};
 use crate::state::*;
 use crate::theme::theme;
 use gpui::*;
@@ -34,8 +35,7 @@ pub struct AppView {
     pub(crate) toast_state: Entity<ToastState>,
     pub(crate) composer_inputs: ComposerInputs,
     pub(crate) inspector_displays: InspectorDisplays,
-    pub(crate) executor: Arc<ReqwestExecutor>,
-    pub(crate) tokio_rt: Arc<tokio::runtime::Runtime>,
+    pub(crate) runner: Runner,
     pub(crate) _subscriptions: Vec<Subscription>,
 }
 
@@ -94,6 +94,15 @@ impl AppView {
                 .enable_all()
                 .build()
                 .expect("Failed to create tokio runtime"),
+        );
+        let engine = Arc::new(HttpEngine::new(executor, tokio_rt));
+        let runner = Runner::new(
+            session_state.clone(),
+            workspace_state.clone(),
+            env_state.clone(),
+            response_state.clone(),
+            toast_state.clone(),
+            engine,
         );
 
         // Select initial request from workspace if the user has saved requests
@@ -168,10 +177,13 @@ impl AppView {
             toast_state,
             composer_inputs,
             inspector_displays,
-            executor,
-            tokio_rt,
+            runner,
             _subscriptions,
         }
+    }
+
+    pub fn send_current_request(&self, cx: &mut App) {
+        self.runner.send_current_request(cx);
     }
 }
 

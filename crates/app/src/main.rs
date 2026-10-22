@@ -3,7 +3,7 @@
 
 mod app;
 mod components;
-pub mod pipeline;
+pub mod services;
 mod platform;
 pub mod settings;
 mod state;
