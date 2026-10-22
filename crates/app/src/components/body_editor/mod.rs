@@ -11,7 +11,8 @@ pub use multipart::*;
 pub use xml::*;
 
 use crate::state::{
-    EnvironmentState, PersistenceState, RequestSessionState, ToastState, WorkspaceDataState,
+    EnvironmentState, ModalState, PersistenceState, RequestSessionState, ToastState,
+    WorkspaceDataState,
 };
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
@@ -71,6 +72,7 @@ pub struct BodyEditor {
     workspace_state: Option<Entity<WorkspaceDataState>>,
     persistence_state: Option<Entity<PersistenceState>>,
     env_state: Option<Entity<EnvironmentState>>,
+    modal_state: Option<Entity<ModalState>>,
     toast_state: Option<Entity<ToastState>>,
 }
 
@@ -89,6 +91,7 @@ impl BodyEditor {
             workspace_state: None,
             persistence_state: None,
             env_state: None,
+            modal_state: None,
             toast_state: None,
         }
     }
@@ -105,6 +108,11 @@ impl BodyEditor {
 
     pub fn env_state(mut self, env: Entity<EnvironmentState>) -> Self {
         self.env_state = Some(env);
+        self
+    }
+
+    pub fn modal_state(mut self, modal: Entity<ModalState>) -> Self {
+        self.modal_state = Some(modal);
         self
     }
 
@@ -595,15 +603,20 @@ impl RenderOnce for BodyEditor {
                                 self.workspace_state.as_ref(),
                                 self.persistence_state.as_ref(),
                                 self.env_state.as_ref(),
+                                self.modal_state.as_ref(),
                             )
                         }
                         Some(RequestBody::Multipart { items }) => {
                             render_multipart_editor(
-                                &req_id_str,
+                                MultipartContext {
+                                    req_id_str: &req_id_str,
+                                    editor_state: &ed_entity,
+                                    workspace_state: self.workspace_state.as_ref(),
+                                    persistence_state: self.persistence_state.as_ref(),
+                                    env_state: self.env_state.as_ref(),
+                                    modal_state: self.modal_state.as_ref(),
+                                },
                                 items,
-                                &ed_entity,
-                                self.workspace_state.as_ref(),
-                                self.persistence_state.as_ref(),
                                 window,
                                 cx,
                             )

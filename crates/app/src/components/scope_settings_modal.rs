@@ -1,3 +1,5 @@
+use crate::components::env_autocomplete::{build_tokenized_content, detect_unclosed_env_var};
+use crate::components::env_input::render_env_input;
 use crate::components::kv_table::KvTable;
 use crate::state::{EnvironmentState, ModalState, ScopeSettingsTarget, WorkspaceDataState};
 use crate::theme::theme;
@@ -47,6 +49,7 @@ impl RenderOnce for ScopeSettingsModal {
         let t = theme();
         let ws_clone = self.workspace_state.clone();
         let modal_clone = self.modal_state.clone();
+        let env_clone = self.env_state.clone();
         let target = match &modal_clone.read(cx).scope_settings_target {
             Some(target) => target.clone(),
             None => return div().into_any_element(),
@@ -130,15 +133,18 @@ impl RenderOnce for ScopeSettingsModal {
                 };
                 let input =
                     cx.new(|cx| InputState::new(window, cx).placeholder("Token or {{token}}"));
-                input.update(cx, |s, cx| s.set_value(init_val, window, cx));
+                let content = build_tokenized_content(&init_val, env_clone.read(cx));
+                input.update(cx, |s, cx| s.set_value(content, window, cx));
 
-                let inp = input.clone();
                 let ws_s = ws_clone.clone();
                 let tgt = target.clone();
-                let sub = cx.subscribe_in(&input, window, move |_, _, ev, _, cx| {
+                let env_sub = env_clone.clone();
+                let sub = cx.subscribe_in(&input, window, move |_, inp, ev, window, cx| {
                     if let InputEvent::Change = ev {
                         let token = inp.read(cx).value().to_string();
-                        let new_auth = Auth::Bearer { token };
+                        let new_auth = Auth::Bearer {
+                            token: token.clone(),
+                        };
                         match &tgt {
                             ScopeSettingsTarget::Workspace => {
                                 let cur_h = ws_s
@@ -164,6 +170,10 @@ impl RenderOnce for ScopeSettingsModal {
                                 });
                             }
                         }
+                        if token.contains("}}") && detect_unclosed_env_var(&token).is_none() {
+                            let tokenized = build_tokenized_content(&token, env_sub.read(cx));
+                            inp.update(cx, |s, cx| s.set_value(tokenized, window, cx));
+                        }
                     }
                 });
                 (input, sub)
@@ -180,12 +190,13 @@ impl RenderOnce for ScopeSettingsModal {
                     _ => String::new(),
                 };
                 let input = cx.new(|cx| InputState::new(window, cx).placeholder("Username"));
-                input.update(cx, |s, cx| s.set_value(init_val, window, cx));
+                let content = build_tokenized_content(&init_val, env_clone.read(cx));
+                input.update(cx, |s, cx| s.set_value(content, window, cx));
 
-                let inp = input.clone();
                 let ws_s = ws_clone.clone();
                 let tgt = target.clone();
-                let sub = cx.subscribe_in(&input, window, move |_, _, ev, _, cx| {
+                let env_sub = env_clone.clone();
+                let sub = cx.subscribe_in(&input, window, move |_, inp, ev, window, cx| {
                     if let InputEvent::Change = ev {
                         let u = inp.read(cx).value().to_string();
                         let p = match &tgt {
@@ -207,7 +218,7 @@ impl RenderOnce for ScopeSettingsModal {
                             },
                         };
                         let new_auth = Auth::Basic {
-                            username: u,
+                            username: u.clone(),
                             password: p,
                         };
                         match &tgt {
@@ -235,6 +246,10 @@ impl RenderOnce for ScopeSettingsModal {
                                 });
                             }
                         }
+                        if u.contains("}}") && detect_unclosed_env_var(&u).is_none() {
+                            let tokenized = build_tokenized_content(&u, env_sub.read(cx));
+                            inp.update(cx, |s, cx| s.set_value(tokenized, window, cx));
+                        }
                     }
                 });
                 (input, sub)
@@ -251,12 +266,13 @@ impl RenderOnce for ScopeSettingsModal {
                     _ => String::new(),
                 };
                 let input = cx.new(|cx| InputState::new(window, cx).placeholder("Password"));
-                input.update(cx, |s, cx| s.set_value(init_val, window, cx));
+                let content = build_tokenized_content(&init_val, env_clone.read(cx));
+                input.update(cx, |s, cx| s.set_value(content, window, cx));
 
-                let inp = input.clone();
                 let ws_s = ws_clone.clone();
                 let tgt = target.clone();
-                let sub = cx.subscribe_in(&input, window, move |_, _, ev, _, cx| {
+                let env_sub = env_clone.clone();
+                let sub = cx.subscribe_in(&input, window, move |_, inp, ev, window, cx| {
                     if let InputEvent::Change = ev {
                         let p = inp.read(cx).value().to_string();
                         let u = match &tgt {
@@ -279,7 +295,7 @@ impl RenderOnce for ScopeSettingsModal {
                         };
                         let new_auth = Auth::Basic {
                             username: u,
-                            password: p,
+                            password: p.clone(),
                         };
                         match &tgt {
                             ScopeSettingsTarget::Workspace => {
@@ -306,6 +322,10 @@ impl RenderOnce for ScopeSettingsModal {
                                 });
                             }
                         }
+                        if p.contains("}}") && detect_unclosed_env_var(&p).is_none() {
+                            let tokenized = build_tokenized_content(&p, env_sub.read(cx));
+                            inp.update(cx, |s, cx| s.set_value(tokenized, window, cx));
+                        }
                     }
                 });
                 (input, sub)
@@ -322,12 +342,13 @@ impl RenderOnce for ScopeSettingsModal {
                     _ => ("X-API-Key".to_string(), String::new()),
                 };
                 let input = cx.new(|cx| InputState::new(window, cx).placeholder("Key"));
-                input.update(cx, |s, cx| s.set_value(init_k, window, cx));
+                let content = build_tokenized_content(&init_k, env_clone.read(cx));
+                input.update(cx, |s, cx| s.set_value(content, window, cx));
 
-                let inp = input.clone();
                 let ws_s = ws_clone.clone();
                 let tgt = target.clone();
-                let sub = cx.subscribe_in(&input, window, move |_, _, ev, _, cx| {
+                let env_sub = env_clone.clone();
+                let sub = cx.subscribe_in(&input, window, move |_, inp, ev, window, cx| {
                     if let InputEvent::Change = ev {
                         let k = inp.read(cx).value().to_string();
                         let (v, in_h) = match &tgt {
@@ -353,7 +374,7 @@ impl RenderOnce for ScopeSettingsModal {
                             },
                         };
                         let new_auth = Auth::ApiKey {
-                            key: k,
+                            key: k.clone(),
                             value: v,
                             in_header: in_h,
                         };
@@ -382,6 +403,10 @@ impl RenderOnce for ScopeSettingsModal {
                                 });
                             }
                         }
+                        if k.contains("}}") && detect_unclosed_env_var(&k).is_none() {
+                            let tokenized = build_tokenized_content(&k, env_sub.read(cx));
+                            inp.update(cx, |s, cx| s.set_value(tokenized, window, cx));
+                        }
                     }
                 });
                 (input, sub)
@@ -398,12 +423,13 @@ impl RenderOnce for ScopeSettingsModal {
                     _ => ("X-API-Key".to_string(), String::new()),
                 };
                 let input = cx.new(|cx| InputState::new(window, cx).placeholder("Value"));
-                input.update(cx, |s, cx| s.set_value(init_v, window, cx));
+                let content = build_tokenized_content(&init_v, env_clone.read(cx));
+                input.update(cx, |s, cx| s.set_value(content, window, cx));
 
-                let inp = input.clone();
                 let ws_s = ws_clone.clone();
                 let tgt = target.clone();
-                let sub = cx.subscribe_in(&input, window, move |_, _, ev, _, cx| {
+                let env_sub = env_clone.clone();
+                let sub = cx.subscribe_in(&input, window, move |_, inp, ev, window, cx| {
                     if let InputEvent::Change = ev {
                         let v = inp.read(cx).value().to_string();
                         let (k, in_h) = match &tgt {
@@ -430,7 +456,7 @@ impl RenderOnce for ScopeSettingsModal {
                         };
                         let new_auth = Auth::ApiKey {
                             key: k,
-                            value: v,
+                            value: v.clone(),
                             in_header: in_h,
                         };
                         match &tgt {
@@ -457,6 +483,10 @@ impl RenderOnce for ScopeSettingsModal {
                                     state.save_folder_scope_settings(fid, cur_h, new_auth, cx)
                                 });
                             }
+                        }
+                        if v.contains("}}") && detect_unclosed_env_var(&v).is_none() {
+                            let tokenized = build_tokenized_content(&v, env_sub.read(cx));
+                            inp.update(cx, |s, cx| s.set_value(tokenized, window, cx));
                         }
                     }
                 });
@@ -874,6 +904,22 @@ impl RenderOnce for ScopeSettingsModal {
                                                         })
                                                 }
                                                 Auth::Bearer { .. } => {
+                                                    let ws_s = ws_clone.clone();
+                                                    let tgt = target.clone();
+                                                    let on_bearer_update = move |v: String, _window: &mut Window, cx: &mut App| {
+                                                        let new_auth = Auth::Bearer { token: v };
+                                                        match &tgt {
+                                                            ScopeSettingsTarget::Workspace => {
+                                                                let cur_h = ws_s.read(cx).active_workspace.as_ref().map(|w| w.headers.clone()).unwrap_or_default();
+                                                                ws_s.update(cx, |s, cx| s.save_workspace_scope_settings(cur_h, new_auth, cx));
+                                                            }
+                                                            ScopeSettingsTarget::Folder(fid) => {
+                                                                let cur_h = ws_s.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| f.headers.clone()).unwrap_or_default();
+                                                                ws_s.update(cx, |s, cx| s.save_folder_scope_settings(fid, cur_h, new_auth, cx));
+                                                            }
+                                                        }
+                                                    };
+
                                                     div()
                                                         .flex()
                                                         .items_center()
@@ -889,23 +935,70 @@ impl RenderOnce for ScopeSettingsModal {
                                                         .child(
                                                             div()
                                                                 .flex_1()
-                                                                .h(px(28.))
-                                                                .px(px(6.))
-                                                                .rounded(px(4.))
-                                                                .bg(t.bg_input)
-                                                                .border_1()
-                                                                .border_color(t.border)
-                                                                .flex()
-                                                                .items_center()
-                                                                .child(
-                                                                    Input::new(&bearer_input)
-                                                                        .appearance(false)
-                                                                        .bordered(false)
-                                                                        .focus_bordered(false),
-                                                                ),
+                                                                .child(render_env_input(
+                                                                    "scope-auth-bearer-token",
+                                                                    &bearer_input,
+                                                                    Some(&self.env_state),
+                                                                    Some(&self.modal_state),
+                                                                    window,
+                                                                    cx,
+                                                                    on_bearer_update,
+                                                                )),
                                                         )
                                                 }
                                                 Auth::Basic { .. } => {
+                                                    let ws_s_u = ws_clone.clone();
+                                                    let tgt_u = target.clone();
+                                                    let on_user_update = move |u: String, _window: &mut Window, cx: &mut App| {
+                                                        let pass = match &tgt_u {
+                                                            ScopeSettingsTarget::Workspace => match &ws_s_u.read(cx).workspace_meta.auth {
+                                                                Auth::Basic { password, .. } => password.clone(),
+                                                                _ => String::new(),
+                                                            },
+                                                            ScopeSettingsTarget::Folder(fid) => match ws_s_u.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| &f.auth) {
+                                                                Some(Auth::Basic { password, .. }) => password.clone(),
+                                                                _ => String::new(),
+                                                            },
+                                                        };
+                                                        let new_auth = Auth::Basic { username: u, password: pass };
+                                                        match &tgt_u {
+                                                            ScopeSettingsTarget::Workspace => {
+                                                                let cur_h = ws_s_u.read(cx).active_workspace.as_ref().map(|w| w.headers.clone()).unwrap_or_default();
+                                                                ws_s_u.update(cx, |s, cx| s.save_workspace_scope_settings(cur_h, new_auth, cx));
+                                                            }
+                                                            ScopeSettingsTarget::Folder(fid) => {
+                                                                let cur_h = ws_s_u.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| f.headers.clone()).unwrap_or_default();
+                                                                ws_s_u.update(cx, |s, cx| s.save_folder_scope_settings(fid, cur_h, new_auth, cx));
+                                                            }
+                                                        }
+                                                    };
+
+                                                    let ws_s_p = ws_clone.clone();
+                                                    let tgt_p = target.clone();
+                                                    let on_pass_update = move |p: String, _window: &mut Window, cx: &mut App| {
+                                                        let user = match &tgt_p {
+                                                            ScopeSettingsTarget::Workspace => match &ws_s_p.read(cx).workspace_meta.auth {
+                                                                Auth::Basic { username, .. } => username.clone(),
+                                                                _ => String::new(),
+                                                            },
+                                                            ScopeSettingsTarget::Folder(fid) => match ws_s_p.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| &f.auth) {
+                                                                Some(Auth::Basic { username, .. }) => username.clone(),
+                                                                _ => String::new(),
+                                                            },
+                                                        };
+                                                        let new_auth = Auth::Basic { username: user, password: p };
+                                                        match &tgt_p {
+                                                            ScopeSettingsTarget::Workspace => {
+                                                                let cur_h = ws_s_p.read(cx).active_workspace.as_ref().map(|w| w.headers.clone()).unwrap_or_default();
+                                                                ws_s_p.update(cx, |s, cx| s.save_workspace_scope_settings(cur_h, new_auth, cx));
+                                                            }
+                                                            ScopeSettingsTarget::Folder(fid) => {
+                                                                let cur_h = ws_s_p.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| f.headers.clone()).unwrap_or_default();
+                                                                ws_s_p.update(cx, |s, cx| s.save_folder_scope_settings(fid, cur_h, new_auth, cx));
+                                                            }
+                                                        }
+                                                    };
+
                                                     div()
                                                         .flex()
                                                         .flex_col()
@@ -926,20 +1019,15 @@ impl RenderOnce for ScopeSettingsModal {
                                                                 .child(
                                                                     div()
                                                                         .flex_1()
-                                                                        .h(px(28.))
-                                                                        .px(px(6.))
-                                                                        .rounded(px(4.))
-                                                                        .bg(t.bg_input)
-                                                                        .border_1()
-                                                                        .border_color(t.border)
-                                                                        .flex()
-                                                                        .items_center()
-                                                                        .child(
-                                                                            Input::new(&basic_user_input)
-                                                                                .appearance(false)
-                                                                                .bordered(false)
-                                                                                .focus_bordered(false),
-                                                                        ),
+                                                                        .child(render_env_input(
+                                                                            "scope-auth-basic-user",
+                                                                            &basic_user_input,
+                                                                            Some(&self.env_state),
+                                                                            Some(&self.modal_state),
+                                                                            window,
+                                                                            cx,
+                                                                            on_user_update,
+                                                                        )),
                                                                 ),
                                                         )
                                                         .child(
@@ -958,24 +1046,71 @@ impl RenderOnce for ScopeSettingsModal {
                                                                 .child(
                                                                     div()
                                                                         .flex_1()
-                                                                        .h(px(28.))
-                                                                        .px(px(6.))
-                                                                        .rounded(px(4.))
-                                                                        .bg(t.bg_input)
-                                                                        .border_1()
-                                                                        .border_color(t.border)
-                                                                        .flex()
-                                                                        .items_center()
-                                                                        .child(
-                                                                            Input::new(&basic_pass_input)
-                                                                                .appearance(false)
-                                                                                .bordered(false)
-                                                                                .focus_bordered(false),
-                                                                        ),
+                                                                        .child(render_env_input(
+                                                                            "scope-auth-basic-pass",
+                                                                            &basic_pass_input,
+                                                                            Some(&self.env_state),
+                                                                            Some(&self.modal_state),
+                                                                            window,
+                                                                            cx,
+                                                                            on_pass_update,
+                                                                        )),
                                                                 ),
                                                         )
                                                 }
                                                 Auth::ApiKey { in_header, .. } => {
+                                                    let ws_s_k = ws_clone.clone();
+                                                    let tgt_k = target.clone();
+                                                    let on_api_key_update = move |k: String, _window: &mut Window, cx: &mut App| {
+                                                        let (v, in_h) = match &tgt_k {
+                                                            ScopeSettingsTarget::Workspace => match &ws_s_k.read(cx).workspace_meta.auth {
+                                                                Auth::ApiKey { value, in_header, .. } => (value.clone(), *in_header),
+                                                                _ => (String::new(), true),
+                                                            },
+                                                            ScopeSettingsTarget::Folder(fid) => match ws_s_k.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| &f.auth) {
+                                                                Some(Auth::ApiKey { value, in_header, .. }) => (value.clone(), *in_header),
+                                                                _ => (String::new(), true),
+                                                            },
+                                                        };
+                                                        let new_auth = Auth::ApiKey { key: k, value: v, in_header: in_h };
+                                                        match &tgt_k {
+                                                            ScopeSettingsTarget::Workspace => {
+                                                                let cur_h = ws_s_k.read(cx).active_workspace.as_ref().map(|w| w.headers.clone()).unwrap_or_default();
+                                                                ws_s_k.update(cx, |s, cx| s.save_workspace_scope_settings(cur_h, new_auth, cx));
+                                                            }
+                                                            ScopeSettingsTarget::Folder(fid) => {
+                                                                let cur_h = ws_s_k.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| f.headers.clone()).unwrap_or_default();
+                                                                ws_s_k.update(cx, |s, cx| s.save_folder_scope_settings(fid, cur_h, new_auth, cx));
+                                                            }
+                                                        }
+                                                    };
+
+                                                    let ws_s_v = ws_clone.clone();
+                                                    let tgt_v = target.clone();
+                                                    let on_api_val_update = move |v: String, _window: &mut Window, cx: &mut App| {
+                                                        let (k, in_h) = match &tgt_v {
+                                                            ScopeSettingsTarget::Workspace => match &ws_s_v.read(cx).workspace_meta.auth {
+                                                                Auth::ApiKey { key, in_header, .. } => (key.clone(), *in_header),
+                                                                _ => ("X-API-Key".to_string(), true),
+                                                            },
+                                                            ScopeSettingsTarget::Folder(fid) => match ws_s_v.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| &f.auth) {
+                                                                Some(Auth::ApiKey { key, in_header, .. }) => (key.clone(), *in_header),
+                                                                _ => ("X-API-Key".to_string(), true),
+                                                            },
+                                                        };
+                                                        let new_auth = Auth::ApiKey { key: k, value: v, in_header: in_h };
+                                                        match &tgt_v {
+                                                            ScopeSettingsTarget::Workspace => {
+                                                                let cur_h = ws_s_v.read(cx).active_workspace.as_ref().map(|w| w.headers.clone()).unwrap_or_default();
+                                                                ws_s_v.update(cx, |s, cx| s.save_workspace_scope_settings(cur_h, new_auth, cx));
+                                                            }
+                                                            ScopeSettingsTarget::Folder(fid) => {
+                                                                let cur_h = ws_s_v.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| f.headers.clone()).unwrap_or_default();
+                                                                ws_s_v.update(cx, |s, cx| s.save_folder_scope_settings(fid, cur_h, new_auth, cx));
+                                                            }
+                                                        }
+                                                    };
+
                                                     div()
                                                         .flex()
                                                         .flex_col()
@@ -996,20 +1131,15 @@ impl RenderOnce for ScopeSettingsModal {
                                                                 .child(
                                                                     div()
                                                                         .flex_1()
-                                                                        .h(px(28.))
-                                                                        .px(px(6.))
-                                                                        .rounded(px(4.))
-                                                                        .bg(t.bg_input)
-                                                                        .border_1()
-                                                                        .border_color(t.border)
-                                                                        .flex()
-                                                                        .items_center()
-                                                                        .child(
-                                                                            Input::new(&api_key_input)
-                                                                                .appearance(false)
-                                                                                .bordered(false)
-                                                                                .focus_bordered(false),
-                                                                        ),
+                                                                        .child(render_env_input(
+                                                                            "scope-auth-apikey-key",
+                                                                            &api_key_input,
+                                                                            Some(&self.env_state),
+                                                                            Some(&self.modal_state),
+                                                                            window,
+                                                                            cx,
+                                                                            on_api_key_update,
+                                                                        )),
                                                                 ),
                                                         )
                                                         .child(
@@ -1028,20 +1158,15 @@ impl RenderOnce for ScopeSettingsModal {
                                                                 .child(
                                                                     div()
                                                                         .flex_1()
-                                                                        .h(px(28.))
-                                                                        .px(px(6.))
-                                                                        .rounded(px(4.))
-                                                                        .bg(t.bg_input)
-                                                                        .border_1()
-                                                                        .border_color(t.border)
-                                                                        .flex()
-                                                                        .items_center()
-                                                                        .child(
-                                                                            Input::new(&api_val_input)
-                                                                                .appearance(false)
-                                                                                .bordered(false)
-                                                                                .focus_bordered(false),
-                                                                        ),
+                                                                        .child(render_env_input(
+                                                                            "scope-auth-apikey-val",
+                                                                            &api_val_input,
+                                                                            Some(&self.env_state),
+                                                                            Some(&self.modal_state),
+                                                                            window,
+                                                                            cx,
+                                                                            on_api_val_update,
+                                                                        )),
                                                                 ),
                                                         )
                                                         .child(

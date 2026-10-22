@@ -292,6 +292,7 @@ impl AppView {
                         .workspace_state(ws_entity.clone())
                         .persistence_state(self.state.persistence.clone())
                         .env_state(self.state.env.clone())
+                        .modal_state(self.state.modal.clone())
                         .toast_state(self.state.toast.clone()),
                     ),
                     RequestTabKind::Params => {

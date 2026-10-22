@@ -7,16 +7,16 @@ use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     deferred, div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
-    StatefulInteractiveElement as _, Styled, Window,
+    SharedString, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::input::{Input, InputState};
 use gpui_component::scroll::ScrollableElement as _;
 
-pub fn render_auth_input<F>(
-    input_id: &'static str,
+pub fn render_env_input<F>(
+    input_id: impl Into<SharedString>,
     input_state: &Entity<InputState>,
-    env_state: &Entity<EnvironmentState>,
-    modal_state: &Entity<ModalState>,
+    env_state: Option<&Entity<EnvironmentState>>,
+    modal_state: Option<&Entity<ModalState>>,
     window: &mut Window,
     cx: &mut App,
     on_update: F,
@@ -24,33 +24,39 @@ pub fn render_auth_input<F>(
 where
     F: 'static + Clone + Fn(String, &mut Window, &mut App),
 {
+    let input_id: SharedString = input_id.into();
     let t = theme();
     let current_val = input_state.read(cx).value().to_string();
 
     let (completion_candidates, unclosed) = if current_val.contains("{{") {
-        let env = env_state.read(cx);
-        let unclosed = detect_unclosed_env_var(&current_val);
-        let candidates = unclosed
-            .as_ref()
-            .map(|(_, _, q)| get_env_completions(env, q))
-            .unwrap_or_default();
-        (candidates, unclosed)
+        if let Some(env_ent) = env_state {
+            let env = env_ent.read(cx);
+            let unclosed = detect_unclosed_env_var(&current_val);
+            let candidates = unclosed
+                .as_ref()
+                .map(|(_, _, q)| get_env_completions(env, q))
+                .unwrap_or_default();
+            (candidates, unclosed)
+        } else {
+            (Vec::new(), None)
+        }
     } else {
         (Vec::new(), None)
     };
     let show_autocomplete = !completion_candidates.is_empty();
 
     let hover_token_state = window.use_keyed_state(
-        gpui::SharedString::from(format!("hover-auth-{}", input_id)),
+        SharedString::from(format!("hover-env-{}", input_id)),
         cx,
         |_window, _cx| None::<(String, gpui::Bounds<gpui::Pixels>)>,
     );
     let hovered_token = hover_token_state.read(cx).clone();
 
-    let env_for_token = env_state.clone();
-    let modal_for_click = modal_state.clone();
-    let env_for_hover = env_state.clone();
+    let env_for_token = env_state.cloned();
+    let modal_for_click = modal_state.cloned();
+    let env_for_hover = env_state.cloned();
     let h_token = hover_token_state.clone();
+    let inp_id_for_tok = input_id.clone();
 
     div()
         .relative()
@@ -68,7 +74,7 @@ where
                 .items_center()
                 .child(
                     Input::new(input_state)
-                        .id(input_id)
+                        .id(input_id.clone())
                         .appearance(false)
                         .bordered(false)
                         .focus_bordered(false)
@@ -77,15 +83,20 @@ where
                         .font_family(".SystemMonoFont")
                         .token(move |token_ctx, _window, cx| {
                             let var_name = token_ctx.token().id().to_string();
-                            let env = env_for_token.read(cx);
-                            let (_val, scope, is_res) = get_variable_details(env, &var_name);
+                            let (scope, is_res) = if let Some(env_ent) = &env_for_token {
+                                let env = env_ent.read(cx);
+                                let (_val, sc, res) = get_variable_details(env, &var_name);
+                                (sc, res)
+                            } else {
+                                ("Missing".to_string(), false)
+                            };
                             let (_kind, color, bg_tint) =
                                 get_variable_kind_and_color(&scope, is_res);
 
                             div()
-                                .id(gpui::SharedString::from(format!(
+                                .id(SharedString::from(format!(
                                     "{}-tok-{}",
-                                    input_id, var_name
+                                    inp_id_for_tok, var_name
                                 )))
                                 .flex()
                                 .items_center()
@@ -113,15 +124,21 @@ where
                             });
                         })
                         .on_token_click(move |_, _window, cx| {
-                            modal_for_click.update(cx, |st, cx| {
-                                st.toggle_env_modal(cx);
-                            });
+                            if let Some(modal) = &modal_for_click {
+                                modal.update(cx, |st, cx| {
+                                    st.toggle_env_modal(cx);
+                                });
+                            }
                         }),
                 ),
         )
         .when_some(hovered_token, |this, (var_name, _bounds)| {
-            let env = env_for_hover.read(cx);
-            let (val, scope, is_res) = get_variable_details(env, &var_name);
+            let (val, scope, is_res) = if let Some(env_ent) = &env_for_hover {
+                let env = env_ent.read(cx);
+                get_variable_details(env, &var_name)
+            } else {
+                ("Missing variable".to_string(), "Missing".to_string(), false)
+            };
             let (_kind, color, bg_tint) = get_variable_kind_and_color(&scope, is_res);
 
             this.child(
@@ -196,7 +213,7 @@ where
                 .unwrap_or((0, 0));
             let current_text = current_val.clone();
             let inp_target = input_state.clone();
-            let env_target = env_state.clone();
+            let env_target = env_state.cloned();
             let on_up = on_update.clone();
 
             this.child(
@@ -261,7 +278,7 @@ where
                                         get_variable_kind_and_color(&cand_scope, true);
 
                                     div()
-                                        .id(gpui::SharedString::from(format!(
+                                        .id(SharedString::from(format!(
                                             "{}-cand-{}",
                                             input_id, cand.name
                                         )))
@@ -283,9 +300,13 @@ where
                                                     start_idx..end_idx,
                                                     &format!("{{{{{}}}}}", cand_name),
                                                 );
-                                                let content = {
-                                                    let env = env_c.read(cx);
+                                                let content = if let Some(env_ent) = &env_c {
+                                                    let env = env_ent.read(cx);
                                                     build_tokenized_content(&new_text, env)
+                                                } else {
+                                                    gpui_component::input::InputContent::new(
+                                                        &new_text,
+                                                    )
                                                 };
                                                 inp_c.update(cx, |inp, cx| {
                                                     inp.set_value(content, window, cx);

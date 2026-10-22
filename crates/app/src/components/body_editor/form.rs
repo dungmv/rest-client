@@ -1,6 +1,8 @@
 use super::persist_active_request_without_redraw;
 use crate::components::kv_table::KvTable;
-use crate::state::{EnvironmentState, PersistenceState, RequestSessionState, WorkspaceDataState};
+use crate::state::{
+    EnvironmentState, ModalState, PersistenceState, RequestSessionState, WorkspaceDataState,
+};
 use gpui::{div, AnyElement, Entity, IntoElement, ParentElement, Styled};
 use gpui_component::scroll::ScrollableElement as _;
 use restclient_core::models::KeyValuePair;
@@ -12,6 +14,7 @@ pub fn render_form_editor(
     workspace_state: Option<&Entity<WorkspaceDataState>>,
     persistence_state: Option<&Entity<PersistenceState>>,
     env_state: Option<&Entity<EnvironmentState>>,
+    modal_state: Option<&Entity<ModalState>>,
 ) -> AnyElement {
     let pairs = pairs.to_vec();
     let ed_up = editor_state.clone();
@@ -75,7 +78,8 @@ pub fn render_form_editor(
                     });
                 },
             )
-            .optional_env_state(env_state.cloned()),
+            .optional_env_state(env_state.cloned())
+            .optional_modal_state(modal_state.cloned()),
         )
         .into_any_element()
 }

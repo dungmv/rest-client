@@ -25,8 +25,6 @@ struct KvRowInputHolder {
 struct RowEnvData {
     key_vars: Vec<(String, String, String, bool)>,
     val_vars: Vec<(String, String, String, bool)>,
-    key_completions: Option<(usize, usize, Vec<EnvVarCandidate>)>,
-    val_completions: Option<(usize, usize, Vec<EnvVarCandidate>)>,
 }
 
 #[allow(clippy::type_complexity)]
@@ -74,6 +72,11 @@ impl KvTable {
         self.modal_state = Some(modal);
         self
     }
+
+    pub fn optional_modal_state(mut self, modal: Option<Entity<ModalState>>) -> Self {
+        self.modal_state = modal;
+        self
+    }
 }
 
 impl RenderOnce for KvTable {
@@ -115,26 +118,7 @@ impl RenderOnce for KvTable {
                         vec![]
                     };
 
-                    let key_completions = if pair.key.contains("{{") {
-                        detect_unclosed_env_var(&pair.key)
-                            .map(|(pos, end, q)| (pos, end, get_env_completions(env, &q)))
-                    } else {
-                        None
-                    };
-
-                    let val_completions = if pair.value.contains("{{") {
-                        detect_unclosed_env_var(&pair.value)
-                            .map(|(pos, end, q)| (pos, end, get_env_completions(env, &q)))
-                    } else {
-                        None
-                    };
-
-                    RowEnvData {
-                        key_vars,
-                        val_vars,
-                        key_completions,
-                        val_completions,
-                    }
+                    RowEnvData { key_vars, val_vars }
                 })
                 .collect()
         } else {
@@ -142,8 +126,6 @@ impl RenderOnce for KvTable {
                 .map(|_| RowEnvData {
                     key_vars: vec![],
                     val_vars: vec![],
-                    key_completions: None,
-                    val_completions: None,
                 })
                 .collect()
         };
@@ -182,8 +164,6 @@ impl RenderOnce for KvTable {
                 let row_env = row_env_info.get(idx).cloned().unwrap_or_else(|| RowEnvData {
                     key_vars: vec![],
                     val_vars: vec![],
-                    key_completions: None,
-                    val_completions: None,
                 });
 
                 let on_up_k = on_update.clone();
@@ -218,21 +198,35 @@ impl RenderOnce for KvTable {
 
                         let k_in_1 = key_input.clone();
                         let v_in_1 = val_input.clone();
-                        let sub1 = cx.subscribe_in(&key_input, window, move |_, _, event, window, cx| {
+                        let env_sub_k = env_for_init.clone();
+                        let sub1 = cx.subscribe_in(&key_input, window, move |_, inp, event, window, cx| {
                             if let InputEvent::Change = event {
                                 let k = k_in_1.read(cx).value().to_string();
                                 let v = v_in_1.read(cx).value().to_string();
-                                on_up_k(idx, k, v, true, window, cx);
+                                on_up_k(idx, k.clone(), v, true, window, cx);
+                                if k.contains("}}") && detect_unclosed_env_var(&k).is_none() {
+                                    if let Some(env_m) = &env_sub_k {
+                                        let tokenized = build_tokenized_content(&k, env_m.read(cx));
+                                        inp.update(cx, |i, cx| i.set_value(tokenized, window, cx));
+                                    }
+                                }
                             }
                         });
 
                         let k_in_2 = key_input.clone();
                         let v_in_2 = val_input.clone();
-                        let sub2 = cx.subscribe_in(&val_input, window, move |_, _, event, window, cx| {
+                        let env_sub_v = env_for_init.clone();
+                        let sub2 = cx.subscribe_in(&val_input, window, move |_, inp, event, window, cx| {
                             if let InputEvent::Change = event {
                                 let k = k_in_2.read(cx).value().to_string();
                                 let v = v_in_2.read(cx).value().to_string();
-                                on_up_v(idx, k, v, true, window, cx);
+                                on_up_v(idx, k, v.clone(), true, window, cx);
+                                if v.contains("}}") && detect_unclosed_env_var(&v).is_none() {
+                                    if let Some(env_m) = &env_sub_v {
+                                        let tokenized = build_tokenized_content(&v, env_m.read(cx));
+                                        inp.update(cx, |i, cx| i.set_value(tokenized, window, cx));
+                                    }
+                                }
                             }
                         });
 
@@ -247,6 +241,33 @@ impl RenderOnce for KvTable {
                 let (key_input, val_input) = {
                     let h = row_holder.read(cx);
                     (h.key_input.clone(), h.val_input.clone())
+                };
+
+                let cur_k_val = key_input.read(cx).value().to_string();
+                let cur_v_val = val_input.read(cx).value().to_string();
+
+                let live_key_completions = if let Some(env_m) = &self.env_state {
+                    if cur_k_val.contains("{{") {
+                        let env = env_m.read(cx);
+                        detect_unclosed_env_var(&cur_k_val)
+                            .map(|(pos, end, q)| (pos, end, get_env_completions(env, &q)))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                let live_val_completions = if let Some(env_m) = &self.env_state {
+                    if cur_v_val.contains("{{") {
+                        let env = env_m.read(cx);
+                        detect_unclosed_env_var(&cur_v_val)
+                            .map(|(pos, end, q)| (pos, end, get_env_completions(env, &q)))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
                 };
 
                 let hover_k_state = window.use_keyed_state(
@@ -433,13 +454,13 @@ impl RenderOnce for KvTable {
                                 )
                             })
                             // Floating Autocomplete Menu for Key
-                            .when_some(row_env.key_completions.clone(), |this, (start_pos, end_pos, completions)| {
+                            .when_some(live_key_completions, |this, (start_pos, end_pos, completions)| {
                                 if completions.is_empty() {
                                     return this;
                                 }
                                 let key_input_c = key_input.clone();
-                                let cur_k = key_val.clone();
-                                let cur_v = val_val.clone();
+                                let cur_k = cur_k_val.clone();
+                                let cur_v = cur_v_val.clone();
                                 let on_up_c = on_update.clone();
                                 let env_k_c = env_clone.clone();
 
@@ -678,13 +699,13 @@ impl RenderOnce for KvTable {
                                 )
                             })
                             // Floating Autocomplete Menu for Value
-                            .when_some(row_env.val_completions.clone(), |this, (start_pos, end_pos, completions)| {
+                            .when_some(live_val_completions, |this, (start_pos, end_pos, completions)| {
                                 if completions.is_empty() {
                                     return this;
                                 }
                                 let val_input_c = val_input.clone();
-                                let cur_k = key_val.clone();
-                                let cur_v = val_val.clone();
+                                let cur_k = cur_k_val.clone();
+                                let cur_v = cur_v_val.clone();
                                 let on_up_c = on_update.clone();
                                 let env_v_c = env_clone.clone();
 

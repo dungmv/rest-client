@@ -1,5 +1,4 @@
 pub mod actions;
-pub mod auth_input;
 pub mod auth_tab;
 pub mod composer_inputs;
 pub mod inspector_displays;

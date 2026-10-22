@@ -1,4 +1,4 @@
-use super::auth_input::render_auth_input;
+use crate::components::env_input::render_env_input;
 use crate::state::{EnvironmentState, ModalState, RequestSessionState, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::{div, px, App, Div, Entity, ParentElement, Styled, Window};
@@ -226,11 +226,11 @@ pub fn render_auth_tab(
                                 .text_color(t.text_secondary)
                                 .child("Token:"),
                         )
-                        .child(div().w_full().max_w(px(400.)).child(render_auth_input(
+                        .child(div().w_full().max_w(px(400.)).child(render_env_input(
                             "auth-bearer-token-input",
                             inputs.bearer_token_input,
-                            env_state,
-                            modal_state,
+                            Some(env_state),
+                            Some(modal_state),
                             window,
                             cx,
                             move |new_token, _window, cx| {
@@ -271,11 +271,11 @@ pub fn render_auth_tab(
                                         .text_color(t.text_secondary)
                                         .child("Username:"),
                                 )
-                                .child(div().w_full().max_w(px(400.)).child(render_auth_input(
+                                .child(div().w_full().max_w(px(400.)).child(render_env_input(
                                     "auth-basic-user-input",
                                     inputs.basic_user_input,
-                                    env_state,
-                                    modal_state,
+                                    Some(env_state),
+                                    Some(modal_state),
                                     window,
                                     cx,
                                     move |new_user, _window, cx| {
@@ -304,11 +304,11 @@ pub fn render_auth_tab(
                                         .text_color(t.text_secondary)
                                         .child("Password:"),
                                 )
-                                .child(div().w_full().max_w(px(400.)).child(render_auth_input(
+                                .child(div().w_full().max_w(px(400.)).child(render_env_input(
                                     "auth-basic-pass-input",
                                     inputs.basic_pass_input,
-                                    env_state,
-                                    modal_state,
+                                    Some(env_state),
+                                    Some(modal_state),
                                     window,
                                     cx,
                                     move |new_pass, _window, cx| {
@@ -361,11 +361,11 @@ pub fn render_auth_tab(
                                         .text_color(t.text_secondary)
                                         .child("Key:"),
                                 )
-                                .child(div().w_full().max_w(px(400.)).child(render_auth_input(
+                                .child(div().w_full().max_w(px(400.)).child(render_env_input(
                                     "auth-apikey-key-input",
                                     inputs.apikey_key_input,
-                                    env_state,
-                                    modal_state,
+                                    Some(env_state),
+                                    Some(modal_state),
                                     window,
                                     cx,
                                     move |new_key, _window, cx| {
@@ -394,11 +394,11 @@ pub fn render_auth_tab(
                                         .text_color(t.text_secondary)
                                         .child("Value:"),
                                 )
-                                .child(div().w_full().max_w(px(400.)).child(render_auth_input(
+                                .child(div().w_full().max_w(px(400.)).child(render_env_input(
                                     "auth-apikey-val-input",
                                     inputs.apikey_val_input,
-                                    env_state,
-                                    modal_state,
+                                    Some(env_state),
+                                    Some(modal_state),
                                     window,
                                     cx,
                                     move |new_val, _window, cx| {
