@@ -93,6 +93,26 @@ mod tests {
     }
 
     #[test]
+    fn test_sidebar_renaming_state_accessors() {
+        let sidebar = SidebarState::new();
+        assert!(sidebar.renaming_request.is_none());
+        assert!(sidebar.renaming_folder.is_none());
+        assert!(sidebar.renaming_env.is_none());
+        assert!(sidebar.renaming_example.is_none());
+        assert!(sidebar.renaming_workspace.is_none());
+
+        assert!(sidebar.renaming_request_id().is_none());
+        assert!(sidebar.rename_input().is_none());
+        assert!(sidebar.renaming_folder_id().is_none());
+        assert!(sidebar.rename_folder_input().is_none());
+        assert!(sidebar.renaming_env_id().is_none());
+        assert!(sidebar.rename_env_input().is_none());
+        assert!(sidebar.renaming_example().is_none());
+        assert!(sidebar.rename_example_input().is_none());
+        assert!(sidebar.rename_workspace_input().is_none());
+    }
+
+    #[test]
     fn test_effective_environment_override() {
         let mut global = Environment::new("default", "Globals");
         global.variables.push(EnvironmentVariable {

@@ -9,9 +9,9 @@
 |--------|-----------|
 | 🔴 CRITICAL | 0 (1 đã sửa: PERF-001) |
 | 🟠 HIGH | 2 (8 đã sửa: PERF-002, PERF-003, CC-001, TD-001, TD-004, TD-002, PERF-004, TD-003) |
-| 🟡 MEDIUM | 6 (1 đã sửa: CC-004) |
+| 🟡 MEDIUM | 5 (2 đã sửa: CC-004, SL-004) |
 | 🔵 LOW | 8 |
-| **Tổng** | **16 còn lại (10 đã sửa)** |
+| **Tổng** | **15 còn lại (11 đã sửa)** |
 
 > [!CAUTION]
 > **Top 3 ưu tiên xử lý tiếp theo:**
@@ -58,15 +58,14 @@ Gợi ý: Chỉ lưu ID, tra cứu on-demand từ WorkspaceDataState.
 
 ---
 
-### SL-004 🟡 MEDIUM — `SidebarState` lặp pattern rename 5 lần (15 fields)
-**File:** [`crates/app/src/state/sidebar_state.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/state/sidebar_state.rs#L6-L28)
+### SL-004 ✅ RESOLVED (Was 🟡 MEDIUM) — `SidebarState` lặp pattern rename 5 lần (15 fields)
+**File:** [`crates/app/src/state/sidebar_state.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/state/sidebar_state.rs)
 
-Năm bộ triple `(renaming_X_id, rename_X_input, rename_X_subscription)` cho request / folder / environment / example / workspace — cùng một pattern lặp lại 5 lần = 15 fields.
-
-```
-Gợi ý: struct RenamingState<T> { id: Option<T>, input: Option<Entity<InputState>>,
-        subscription: Option<Subscription> } — giảm 15 fields → 5.
-```
+*Đã giải quyết*: Định nghĩa struct generic `RenamingState<T> { pub id: T, pub input: Entity<InputState>, pub subscription: gpui::Subscription }`.
+- Thay thế toàn bộ 14 trường Option rời rạc thành 5 trường `Option<RenamingState<T>>` cho request, folder, env, example, workspace.
+- Loại bỏ hoàn toàn nguy cơ inconsistent state (không bao giờ có chuyện input tồn tại nhưng ID lại None hoặc subscription bị rò rỉ).
+- `cancel_renaming_*` và `cancel_any_renaming` nay dọn dẹp state sạch sẽ và tự động drop Subscription qua `Option::take`.
+- Cung cấp các accessor methods (`renaming_request_id()`, `rename_input()`, v.v.) giúp các view components tiêu thụ dữ liệu an toàn và tiện lợi.
 
 ---
 
@@ -123,16 +122,10 @@ Gợi ý: Giữ Box<HttpResponseRecord> xuyên suốt, hoặc dùng Arc<HttpResp
 
 ---
 
-### PERF-004 🟠 HIGH — [RESOLVED] `effective_environment()` clone toàn bộ variables mỗi request
+### PERF-004 ✅ RESOLVED (Was 🟠 HIGH) — `effective_environment()` clone toàn bộ variables mỗi request
 **File:** [`crates/app/src/state/environment_state.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/state/environment_state.rs#L93-L111)
 
-Trước đây mỗi lần render UI (`request_bar`, `kv_table`, autocomplete) hoặc gửi request qua `pipeline`, hàm `effective_environment()` đều chạy linear scan $O(M \times N)$ và deep clone toàn bộ danh sách biến String.
-
-```
-Fix: Caching Arc<Environment> trong EnvironmentState và tự động invalidate khi có cập nhật môi trường.
-     Tối ưu thuật toán merge variables từ O(N^2) xuống O(N) bằng hash map index.
-     Các UI components và HTTP pipeline mượn trực tiếp &Environment từ Arc với chi phí O(1), zero allocation.
-```
+*Đã giải quyết*: Caching `Arc<Environment>` trong `EnvironmentState` và tự động invalidate khi có cập nhật môi trường. Tối ưu thuật toán merge variables từ $O(N^2)$ xuống $O(N)$ bằng hash map index. Các UI components và HTTP pipeline mượn trực tiếp `&Environment` từ `Arc` với chi phí $O(1)$, zero allocation.
 
 ---
 
@@ -264,27 +257,17 @@ Fix: Batch notifications. emit một WorkspaceTreeChanged duy nhất sau bulk ch
 
 ## 4. General Technical Debt
 
-### TD-001 🟠 HIGH — [RESOLVED] Dead code: toàn bộ `FsStorage` (JSON-based, legacy)
+### TD-001 ✅ RESOLVED (Was 🟠 HIGH) — Dead code: toàn bộ `FsStorage` (JSON-based, legacy)
 **File:** [`crates/core/src/storage/fs.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/storage/fs.rs)
 
-`FsStorage` dùng JSON, layout workspace cũ — không được reference từ bất kỳ active code path nào (~400 dòng dead code thuần túy).
-
-```
-Fix: Đã xóa fs.rs và loại bỏ toàn bộ export liên quan trong storage/mod.rs.
-```
+*Đã giải quyết*: Đã xóa `fs.rs` và loại bỏ toàn bộ export liên quan trong `storage/mod.rs` (~400 dòng dead code thuần túy).
 
 ---
 
-### TD-002 🟠 HIGH — [RESOLVED] Duplicate type hierarchy: domain model ↔ storage model
+### TD-002 ✅ RESOLVED (Was 🟠 HIGH) — Duplicate type hierarchy: domain model ↔ storage model
 **Files:** [`core/src/models.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/models.rs) vs [`storage/models.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/storage/models.rs)
 
-Trước đây bị nhân đôi toàn bộ các model: `Auth` ↔ `RequestAuth`, `RequestBody` ↔ `RequestBodyFile`, `RequestSettings` ↔ `RequestSettingsFile`, `ScriptConfig` ↔ `RequestScriptFile`, `KeyValuePair` ↔ `RequestKvItem`, `MultipartItem` ↔ `MultipartItemFile` kèm theo hàng trăm dòng bidirectional `From<>` boilerplate.
-
-```
-Fix: Hợp nhất toàn bộ thành canonical types trong `models.rs` với serde tag/rename tương thích hoàn hảo.
-     Xóa bỏ các struct/enum duplicate và toàn bộ boilerplate `From<>`.
-     `RequestFile` và `HttpRequestItem` chia sẻ 100% cùng các kiểu dữ liệu, loại bỏ hoàn toàn các bước convert `.into()`.
-```
+*Đã giải quyết*: Hợp nhất toàn bộ thành canonical types trong `models.rs` với serde tag/rename tương thích hoàn hảo. Xóa bỏ các struct/enum duplicate và toàn bộ boilerplate `From<>`. `RequestFile` và `HttpRequestItem` chia sẻ 100% cùng các kiểu dữ liệu, loại bỏ hoàn toàn các bước convert `.into()`.
 
 ---
 
@@ -298,16 +281,10 @@ Fix: Hợp nhất toàn bộ thành canonical types trong `models.rs` với serd
 
 ---
 
-### TD-004 🟠 HIGH — [RESOLVED] Global `#![allow(dead_code, clippy::type_complexity)]`
+### TD-004 ✅ RESOLVED (Was 🟠 HIGH) — Global `#![allow(dead_code, clippy::type_complexity)]`
 **File:** [`crates/app/src/main.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/main.rs#L1)
 
-Trước đây suppress **toàn bộ** dead code warning và type complexity warning trên cả crate `app`, làm dead code và type phức tạp tích lũy vô hình.
-
-```
-Fix: Đã xóa global allow. Xóa code chết thật sự (detect_git_branch, optional_modal_state).
-     Tạo type alias HighlighterFactory và thêm scoped #[allow] tại các GPUI callback/view models cụ thể.
-     Workspace hiện compile hoàn toàn sạch với 0 warning.
-```
+*Đã giải quyết*: Đã xóa global allow. Xóa code chết thật sự (`detect_git_branch`, `optional_modal_state`). Tạo type alias `HighlighterFactory` và thêm scoped `#[allow]` tại các GPUI callback/view models cụ thể. Workspace compile hoàn toàn sạch với 0 warning.
 
 ---
 
@@ -465,6 +442,6 @@ flowchart LR
 
     P3 --> i11["SL-001: Tách AppView God Struct"]
     P3 --> i12["TD-002: [RESOLVED] Unified type hierarchy"]
-    P3 --> i13["SL-004: RenamingState generic"]
+    P3 --> i13["SL-004: [RESOLVED] RenamingState generic"]
     P3 --> i14["TD-017: Split body_editor.rs"]
 ```

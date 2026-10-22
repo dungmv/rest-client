@@ -3,26 +3,23 @@ use gpui::{px, AppContext, Context, Entity, Pixels, Window};
 use gpui_component::input::InputState;
 use std::collections::HashSet;
 
+pub struct RenamingState<T> {
+    pub id: T,
+    pub input: Entity<InputState>,
+    pub subscription: gpui::Subscription,
+}
+
 pub struct SidebarState {
     pub filter_query: String,
     pub sidebar_collapsed: bool,
     pub sidebar_width: Pixels,
     pub collapsed_folders: HashSet<String>,
     pub collapsed_requests: HashSet<String>,
-    pub renaming_request_id: Option<String>,
-    pub rename_input: Option<Entity<InputState>>,
-    pub rename_subscription: Option<gpui::Subscription>,
-    pub renaming_folder_id: Option<String>,
-    pub rename_folder_input: Option<Entity<InputState>>,
-    pub rename_folder_subscription: Option<gpui::Subscription>,
-    pub renaming_env_id: Option<String>,
-    pub rename_env_input: Option<Entity<InputState>>,
-    pub rename_env_subscription: Option<gpui::Subscription>,
-    pub renaming_example: Option<(String, String)>,
-    pub rename_example_input: Option<Entity<InputState>>,
-    pub rename_example_subscription: Option<gpui::Subscription>,
-    pub rename_workspace_input: Option<Entity<InputState>>,
-    pub rename_workspace_subscription: Option<gpui::Subscription>,
+    pub renaming_request: Option<RenamingState<String>>,
+    pub renaming_folder: Option<RenamingState<String>>,
+    pub renaming_env: Option<RenamingState<String>>,
+    pub renaming_example: Option<RenamingState<(String, String)>>,
+    pub renaming_workspace: Option<RenamingState<String>>,
     pub nav_history: Vec<String>,
     pub nav_index: usize,
 }
@@ -35,20 +32,11 @@ impl Default for SidebarState {
             sidebar_width: px(260.),
             collapsed_folders: HashSet::new(),
             collapsed_requests: HashSet::new(),
-            renaming_request_id: None,
-            rename_input: None,
-            rename_subscription: None,
-            renaming_folder_id: None,
-            rename_folder_input: None,
-            rename_folder_subscription: None,
-            renaming_env_id: None,
-            rename_env_input: None,
-            rename_env_subscription: None,
+            renaming_request: None,
+            renaming_folder: None,
+            renaming_env: None,
             renaming_example: None,
-            rename_example_input: None,
-            rename_example_subscription: None,
-            rename_workspace_input: None,
-            rename_workspace_subscription: None,
+            renaming_workspace: None,
             nav_history: Vec::new(),
             nav_index: 0,
         }
@@ -161,9 +149,11 @@ impl SidebarState {
             }
         });
 
-        self.renaming_request_id = Some(req_id);
-        self.rename_input = Some(input);
-        self.rename_subscription = Some(sub);
+        self.renaming_request = Some(RenamingState {
+            id: req_id,
+            input,
+            subscription: sub,
+        });
         cx.notify();
     }
 
@@ -202,9 +192,11 @@ impl SidebarState {
             }
         });
 
-        self.renaming_folder_id = Some(folder_id);
-        self.rename_folder_input = Some(input);
-        self.rename_folder_subscription = Some(sub);
+        self.renaming_folder = Some(RenamingState {
+            id: folder_id,
+            input,
+            subscription: sub,
+        });
         cx.notify();
     }
 
@@ -244,9 +236,11 @@ impl SidebarState {
             }
         });
 
-        self.renaming_example = Some((req_id, example_name));
-        self.rename_example_input = Some(input);
-        self.rename_example_subscription = Some(sub);
+        self.renaming_example = Some(RenamingState {
+            id: (req_id, example_name),
+            input,
+            subscription: sub,
+        });
         cx.notify();
     }
 
@@ -261,7 +255,7 @@ impl SidebarState {
 
         let input = cx.new(|cx| {
             let mut s = InputState::new(window, cx);
-            s.set_value(curr_name, window, cx);
+            s.set_value(curr_name.clone(), window, cx);
             s.select_all(window, cx);
             s.focus(window, cx);
             s
@@ -280,8 +274,11 @@ impl SidebarState {
             }
         });
 
-        self.rename_workspace_input = Some(input);
-        self.rename_workspace_subscription = Some(sub);
+        self.renaming_workspace = Some(RenamingState {
+            id: curr_name,
+            input,
+            subscription: sub,
+        });
         cx.notify();
     }
 
@@ -320,77 +317,100 @@ impl SidebarState {
             }
         });
 
-        self.renaming_env_id = Some(env_id);
-        self.rename_env_input = Some(input);
-        self.rename_env_subscription = Some(sub);
+        self.renaming_env = Some(RenamingState {
+            id: env_id,
+            input,
+            subscription: sub,
+        });
         cx.notify();
     }
 
+    pub fn renaming_request_id(&self) -> Option<&str> {
+        self.renaming_request.as_ref().map(|r| r.id.as_str())
+    }
+
+    pub fn rename_input(&self) -> Option<&Entity<InputState>> {
+        self.renaming_request.as_ref().map(|r| &r.input)
+    }
+
+    pub fn renaming_folder_id(&self) -> Option<&str> {
+        self.renaming_folder.as_ref().map(|r| r.id.as_str())
+    }
+
+    pub fn rename_folder_input(&self) -> Option<&Entity<InputState>> {
+        self.renaming_folder.as_ref().map(|r| &r.input)
+    }
+
+    pub fn renaming_env_id(&self) -> Option<&str> {
+        self.renaming_env.as_ref().map(|r| r.id.as_str())
+    }
+
+    pub fn rename_env_input(&self) -> Option<&Entity<InputState>> {
+        self.renaming_env.as_ref().map(|r| &r.input)
+    }
+
+    pub fn renaming_example(&self) -> Option<&(String, String)> {
+        self.renaming_example.as_ref().map(|r| &r.id)
+    }
+
+    pub fn rename_example_input(&self) -> Option<&Entity<InputState>> {
+        self.renaming_example.as_ref().map(|r| &r.input)
+    }
+
+    pub fn rename_workspace_input(&self) -> Option<&Entity<InputState>> {
+        self.renaming_workspace.as_ref().map(|r| &r.input)
+    }
+
     pub fn cancel_renaming_request(&mut self, cx: &mut Context<Self>) {
-        if self.renaming_request_id.is_some() {
-            self.renaming_request_id = None;
-            self.rename_input = None;
-            self.rename_subscription = None;
+        if self.renaming_request.take().is_some() {
             cx.notify();
         }
     }
 
     pub fn cancel_renaming_folder(&mut self, cx: &mut Context<Self>) {
-        if self.renaming_folder_id.is_some() {
-            self.renaming_folder_id = None;
-            self.rename_folder_input = None;
-            self.rename_folder_subscription = None;
+        if self.renaming_folder.take().is_some() {
             cx.notify();
         }
     }
 
     pub fn cancel_renaming_environment(&mut self, cx: &mut Context<Self>) {
-        if self.renaming_env_id.is_some() {
-            self.renaming_env_id = None;
-            self.rename_env_input = None;
-            self.rename_env_subscription = None;
+        if self.renaming_env.take().is_some() {
             cx.notify();
         }
     }
 
     pub fn cancel_renaming_example(&mut self, cx: &mut Context<Self>) {
-        if self.renaming_example.is_some() {
-            self.renaming_example = None;
-            self.rename_example_input = None;
-            self.rename_example_subscription = None;
+        if self.renaming_example.take().is_some() {
             cx.notify();
         }
     }
 
     pub fn cancel_renaming_workspace(&mut self, cx: &mut Context<Self>) {
-        if self.rename_workspace_input.is_some() {
-            self.rename_workspace_input = None;
-            self.rename_workspace_subscription = None;
+        if self.renaming_workspace.take().is_some() {
             cx.notify();
         }
     }
 
     pub fn cancel_any_renaming(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.renaming_request_id.is_some() {
-            self.cancel_renaming_request(cx);
-            return true;
+        let mut cancelled = false;
+        if self.renaming_request.take().is_some() {
+            cancelled = true;
         }
-        if self.renaming_folder_id.is_some() {
-            self.cancel_renaming_folder(cx);
-            return true;
+        if self.renaming_folder.take().is_some() {
+            cancelled = true;
         }
-        if self.renaming_env_id.is_some() {
-            self.cancel_renaming_environment(cx);
-            return true;
+        if self.renaming_env.take().is_some() {
+            cancelled = true;
         }
-        if self.renaming_example.is_some() {
-            self.cancel_renaming_example(cx);
-            return true;
+        if self.renaming_example.take().is_some() {
+            cancelled = true;
         }
-        if self.rename_workspace_input.is_some() {
-            self.cancel_renaming_workspace(cx);
-            return true;
+        if self.renaming_workspace.take().is_some() {
+            cancelled = true;
         }
-        false
+        if cancelled {
+            cx.notify();
+        }
+        cancelled
     }
 }

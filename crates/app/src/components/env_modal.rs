@@ -51,8 +51,8 @@ impl RenderOnce for EnvironmentModal {
         let ws_clone = self.env_state.clone();
         let modal_clone = self.modal_state.clone();
         let sidebar_clone = self.sidebar_state.clone();
-        let renaming_env_id = sidebar.renaming_env_id.clone();
-        let rename_env_input = sidebar.rename_env_input.clone();
+        let renaming_env_id = sidebar.renaming_env_id().map(ToString::to_string);
+        let rename_env_input = sidebar.rename_env_input().cloned();
 
         let is_global_selected = selected_id == "globals";
         let active_custom_env = envs.iter().find(|e| e.id == selected_id).cloned();
