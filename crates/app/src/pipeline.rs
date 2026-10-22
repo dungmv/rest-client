@@ -20,7 +20,7 @@ pub enum HttpSendEvent {
 
 impl AppView {
     pub fn send_current_request(&self, cx: &mut Context<Self>) {
-        let ed_entity = self.editor_state.clone();
+        let ed_entity = self.session_state.clone();
         let executor = self.executor.clone();
         let rt = self.tokio_rt.clone();
 
@@ -186,7 +186,7 @@ impl AppView {
                     this.update(cx, |this, cx| {
                         match event {
                             HttpSendEvent::Progress(text) => {
-                                this.editor_state.update(cx, |ed, cx| {
+                                this.session_state.update(cx, |ed, cx| {
                                     ed.update_progress(text, cx);
                                 });
                             }
@@ -241,7 +241,7 @@ impl AppView {
                                 }
 
                                 if let Some(err) = &post_output.error {
-                                    this.editor_state.update(cx, |ed, cx| {
+                                    this.session_state.update(cx, |ed, cx| {
                                         ed.set_script_error(Some(err.clone()), cx);
                                     });
                                 }
@@ -260,17 +260,17 @@ impl AppView {
                                     resp.set_response_for_request(req_id.clone(), record, cx);
                                 });
 
-                                this.editor_state.update(cx, |ed, cx| {
+                                this.session_state.update(cx, |ed, cx| {
                                     ed.stop_sending(cx);
                                 });
                             }
                             HttpSendEvent::Cancelled => {
-                                this.editor_state.update(cx, |ed, cx| {
+                                this.session_state.update(cx, |ed, cx| {
                                     ed.stop_sending(cx);
                                 });
                             }
                             HttpSendEvent::Error(err_msg) => {
-                                this.editor_state.update(cx, |ed, cx| {
+                                this.session_state.update(cx, |ed, cx| {
                                     ed.stop_sending(cx);
                                 });
                                 this.toast_state.update(cx, |ts, cx| {

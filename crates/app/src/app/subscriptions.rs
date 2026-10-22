@@ -398,7 +398,7 @@ pub fn setup_app_subscriptions(
     let mut last_workspace_path = workspace_state.read(cx).workspace_path.clone();
     subscriptions.push(cx.observe_in(workspace_state, window, move |this, ws, window, cx| {
         this.composer_inputs.sync_active_request_editors(
-            &this.editor_state,
+            &this.session_state,
             &ws,
             &this.env_state,
             window,

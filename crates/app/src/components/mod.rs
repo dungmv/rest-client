@@ -7,7 +7,7 @@ pub mod env_autocomplete;
 pub mod env_modal;
 pub mod kv_table;
 pub mod request_bar;
-pub mod response_viewer;
+pub mod response_inspector;
 pub mod sidebar;
 pub mod status_badge;
 pub mod script_editor;
@@ -29,7 +29,10 @@ pub use env_autocomplete::*;
 pub use env_modal::*;
 pub use kv_table::*;
 pub use request_bar::*;
-pub use response_viewer::*;
+pub mod response_viewer {
+    pub use super::response_inspector::*;
+}
+pub use response_inspector::*;
 pub use script_editor::*;
 pub use settings_modal::*;
 pub use sidebar::*;

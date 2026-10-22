@@ -13,7 +13,9 @@ pub enum RequestTabKind {
     Tests,
 }
 
-pub struct EditorState {
+pub type EditorState = RequestSessionState;
+
+pub struct RequestSessionState {
     pub active_request_id: Option<String>,
     pub active_tab_kind: RequestTabKind,
     pub is_sending: bool,
@@ -30,7 +32,7 @@ pub struct EditorState {
     input_refresh_task: Option<Task<()>>,
 }
 
-impl EditorState {
+impl RequestSessionState {
     pub fn new() -> Self {
         Self {
             active_request_id: Some("scratch".to_string()),

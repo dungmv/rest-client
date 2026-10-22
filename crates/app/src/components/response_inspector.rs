@@ -15,8 +15,11 @@ use gpui_kit::assets::IconName;
 use restclient_core::models::HttpResponseRecord;
 use restclient_core::storage::models::{RequestExampleFile, RequestFile, RequestKvItem};
 
+#[allow(dead_code)]
+pub type ResponseViewer = ResponseInspector;
+
 #[derive(IntoElement)]
-pub struct ResponseViewer {
+pub struct ResponseInspector {
     workspace_state: Entity<WorkspaceState>,
     editor_state: Entity<EditorState>,
     response_state: Entity<ResponseState>,
@@ -25,7 +28,7 @@ pub struct ResponseViewer {
     request_body_editor: Entity<CodeEditorState>,
 }
 
-impl ResponseViewer {
+impl ResponseInspector {
     pub fn new(
         workspace_state: Entity<WorkspaceState>,
         editor_state: Entity<EditorState>,
@@ -45,7 +48,7 @@ impl ResponseViewer {
     }
 }
 
-impl RenderOnce for ResponseViewer {
+impl RenderOnce for ResponseInspector {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = theme();
         let resp_s = self.response_state.read(cx);

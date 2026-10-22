@@ -14,17 +14,17 @@ use gpui_kit::assets::IconName;
 use restclient_core::models::{Auth, HttpMethod};
 
 impl AppView {
-    pub(crate) fn render_editor_pane(
+    pub(crate) fn render_request_composer(
         &self,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let t = theme();
-        let active_tab_kind = self.editor_state.read(cx).active_tab_kind;
-        let method_dropdown_open = self.editor_state.read(cx).method_dropdown_open;
-        let req_id_str = self.editor_state.read(cx).active_request_id().to_string();
+        let active_tab_kind = self.session_state.read(cx).active_tab_kind;
+        let method_dropdown_open = self.session_state.read(cx).method_dropdown_open;
+        let req_id_str = self.session_state.read(cx).active_request_id().to_string();
         let ws_entity = self.workspace_state.clone();
-        let ed_entity = self.editor_state.clone();
+        let ed_entity = self.session_state.clone();
         let per_entity = self.persistence_state.clone();
         let env_entity = self.env_state.clone();
         let app_view_entity = cx.entity().clone();
@@ -463,7 +463,7 @@ impl AppView {
                             &self.workspace_state,
                             &self.env_state,
                             &self.modal_state,
-                            &self.editor_state,
+                            &self.session_state,
                             AuthTabInputs {
                                 bearer_token_input: &self.composer_inputs.bearer_token_input,
                                 basic_user_input: &self.composer_inputs.basic_user_input,

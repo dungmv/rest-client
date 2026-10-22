@@ -2,9 +2,9 @@ pub mod actions;
 pub mod auth_input;
 pub mod auth_tab;
 pub mod composer_inputs;
-pub mod editor_pane;
 pub mod inspector_displays;
 pub mod modals;
+pub mod request_composer;
 pub mod subscriptions;
 pub mod sync;
 
@@ -29,7 +29,7 @@ pub struct AppView {
     pub(crate) sidebar_state: Entity<SidebarState>,
     pub(crate) modal_state: Entity<ModalState>,
     pub(crate) git_state: Entity<GitState>,
-    pub(crate) editor_state: Entity<EditorState>,
+    pub(crate) session_state: Entity<RequestSessionState>,
     pub(crate) response_state: Entity<ResponseState>,
     pub(crate) toast_state: Entity<ToastState>,
     pub(crate) composer_inputs: ComposerInputs,
@@ -61,7 +61,7 @@ impl AppView {
         let sidebar_state = cx.new(|_| SidebarState::new());
         let modal_state = cx.new(|_| ModalState::new());
         let git_state = cx.new(|_| GitState::new(ws_dir));
-        let editor_state = cx.new(|_| EditorState::new());
+        let session_state = cx.new(|_| RequestSessionState::new());
         let response_state = cx.new(|_| ResponseState::new());
         let toast_state = cx.new(|_| ToastState::new());
 
@@ -109,11 +109,11 @@ impl AppView {
             (req, ws_read.store.clone())
         };
         if let Some(req) = &initial_req {
-            editor_state.update(cx, |ed, cx| {
+            session_state.update(cx, |ed, cx| {
                 ed.set_active_request_id(&req.id, cx);
             });
             composer_inputs.sync_active_request_editors(
-                &editor_state,
+                &session_state,
                 &workspace_state,
                 &env_state,
                 window,
@@ -136,7 +136,7 @@ impl AppView {
                 modal_state: &modal_state,
                 sidebar_state: &sidebar_state,
                 git_state: &git_state,
-                editor_state: &editor_state,
+                editor_state: &session_state,
                 response_state: &response_state,
                 toast_state: &toast_state,
                 composer_inputs: &composer_inputs,
@@ -163,7 +163,7 @@ impl AppView {
             sidebar_state,
             modal_state,
             git_state,
-            editor_state,
+            session_state,
             response_state,
             toast_state,
             composer_inputs,
@@ -187,16 +187,16 @@ impl Render for AppView {
         let sidebar_entity = self.sidebar_state.clone();
         let modal_entity = self.modal_state.clone();
         let git_entity = self.git_state.clone();
-        let ed_entity = self.editor_state.clone();
+        let session_entity = self.session_state.clone();
         let resp_entity = self.response_state.clone();
         let toast_entity = self.toast_state.clone();
         let app_view_entity = cx.entity().clone();
 
-        let editor_pane = self.render_editor_pane(window, cx);
+        let composer_pane = self.render_request_composer(window, cx);
 
-        let response_pane = ResponseViewer::new(
+        let response_pane = ResponseInspector::new(
             ws_entity.clone(),
-            ed_entity.clone(),
+            session_entity.clone(),
             resp_entity.clone(),
             self.inspector_displays.response_editor.clone(),
             self.inspector_displays.request_url_textarea.clone(),
@@ -206,13 +206,13 @@ impl Render for AppView {
         let split_pane = if is_vertical_split {
             div().size_full().child(
                 v_resizable("inner-vertical-split")
-                    .child(resizable_panel().child(editor_pane))
+                    .child(resizable_panel().child(composer_pane))
                     .child(resizable_panel().child(response_pane)),
             )
         } else {
             div().size_full().child(
                 h_resizable("inner-horizontal-split")
-                    .child(resizable_panel().child(editor_pane))
+                    .child(resizable_panel().child(composer_pane))
                     .child(resizable_panel().child(response_pane)),
             )
         };
@@ -233,7 +233,7 @@ impl Render for AppView {
                             sidebar_entity.clone(),
                             modal_entity.clone(),
                             git_entity.clone(),
-                            ed_entity.clone(),
+                            session_entity.clone(),
                             resp_entity.clone(),
                             toast_entity.clone(),
                         )),
@@ -310,10 +310,10 @@ impl Render for AppView {
             })
             .on_action({
                 let sb_c = sidebar_entity.clone();
-                let ed_c = ed_entity.clone();
+                let session_c = session_entity.clone();
                 move |_: &NavigateBack, _, cx| {
                     if let Some(req_id) = sb_c.update(cx, |sb, _| sb.navigate_back()) {
-                        ed_c.update(cx, |ed, cx| {
+                        session_c.update(cx, |ed, cx| {
                             ed.set_active_request_id(&req_id, cx);
                         });
                     }
@@ -321,10 +321,10 @@ impl Render for AppView {
             })
             .on_action({
                 let sb_c = sidebar_entity.clone();
-                let ed_c = ed_entity.clone();
+                let session_c = session_entity.clone();
                 move |_: &NavigateForward, _, cx| {
                     if let Some(req_id) = sb_c.update(cx, |sb, _| sb.navigate_forward()) {
-                        ed_c.update(cx, |ed, cx| {
+                        session_c.update(cx, |ed, cx| {
                             ed.set_active_request_id(&req_id, cx);
                         });
                     }
@@ -366,7 +366,7 @@ impl Render for AppView {
                 self.env_state.clone(),
                 modal_entity.clone(),
                 sidebar_entity.clone(),
-                ed_entity.clone(),
+                session_entity.clone(),
                 resp_entity.clone(),
             ))
             // Main workspace content area
@@ -387,7 +387,7 @@ impl Render for AppView {
             &modal_entity,
             &sidebar_entity,
             &git_entity,
-            &ed_entity,
+            &session_entity,
             &toast_entity,
             move |_, cx| {
                 send_view.update(cx, |view, cx| {
