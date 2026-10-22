@@ -24,15 +24,7 @@ use restclient_core::http::ReqwestExecutor;
 use std::sync::Arc;
 
 pub struct AppView {
-    pub(crate) workspace_state: Entity<WorkspaceDataState>,
-    pub(crate) env_state: Entity<EnvironmentState>,
-    pub(crate) persistence_state: Entity<PersistenceState>,
-    pub(crate) sidebar_state: Entity<SidebarState>,
-    pub(crate) modal_state: Entity<ModalState>,
-    pub(crate) git_state: Entity<GitState>,
-    pub(crate) session_state: Entity<RequestSessionState>,
-    pub(crate) response_state: Entity<ResponseState>,
-    pub(crate) toast_state: Entity<ToastState>,
+    pub(crate) state: AppState,
     pub(crate) composer_inputs: ComposerInputs,
     pub(crate) inspector_displays: InspectorDisplays,
     pub(crate) runner: Runner,
@@ -41,29 +33,7 @@ pub struct AppView {
 
 impl AppView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let workspace_state = cx.new(|_| WorkspaceDataState::new());
-        let (ws_dir, ws_store, ws_name) = {
-            let ws = workspace_state.read(cx);
-            (
-                ws.workspace_path.clone(),
-                ws.store.clone(),
-                ws.active_workspace.as_ref().map(|w| w.name.clone()).unwrap_or_else(|| "Workspace".to_string()),
-            )
-        };
-        let persistence_state = cx.new(|_| PersistenceState::new(ws_store.clone(), ws_dir.clone()));
-        let initial_active_env = persistence_state.read(cx).local_state.active_environment.clone();
-        let env_state = cx.new(|_| EnvironmentState::new(ws_store.clone(), ws_name, initial_active_env));
-
-        persistence_state.update(cx, |p, cx| {
-            p.start_watcher(workspace_state.clone(), env_state.clone(), cx);
-        });
-
-        let sidebar_state = cx.new(|_| SidebarState::new());
-        let modal_state = cx.new(|_| ModalState::new());
-        let git_state = cx.new(|_| GitState::new(ws_dir));
-        let session_state = cx.new(|_| RequestSessionState::new());
-        let response_state = cx.new(|_| ResponseState::new());
-        let toast_state = cx.new(|_| ToastState::new());
+        let state = AppState::new(cx);
 
         type HighlighterFactory = std::rc::Rc<
             dyn Fn(&str) -> Option<Box<dyn gpui_component::input::InputHighlighter>>,
@@ -82,7 +52,7 @@ impl AppView {
 
         let mut composer_inputs = ComposerInputs::new(
             window,
-            env_state.clone(),
+            state.env.clone(),
             highlighter_factory.clone(),
             cx,
         );
@@ -97,18 +67,18 @@ impl AppView {
         );
         let engine = Arc::new(HttpEngine::new(executor, tokio_rt));
         let runner = Runner::new(
-            session_state.clone(),
-            workspace_state.clone(),
-            env_state.clone(),
-            response_state.clone(),
-            toast_state.clone(),
+            state.session.clone(),
+            state.workspace.clone(),
+            state.env.clone(),
+            state.response.clone(),
+            state.toast.clone(),
             engine,
         );
 
         // Select initial request from workspace if the user has saved requests
         let (initial_req, ws_store) = {
-            let ws_read = workspace_state.read(cx);
-            let per_read = persistence_state.read(cx);
+            let ws_read = state.workspace.read(cx);
+            let per_read = state.persistence.read(cx);
             let req = per_read
                 .local_state
                 .active_request
@@ -118,36 +88,36 @@ impl AppView {
             (req, ws_read.store.clone())
         };
         if let Some(req) = &initial_req {
-            session_state.update(cx, |ed, cx| {
+            state.session.update(cx, |ed, cx| {
                 ed.set_active_request_id(&req.id, cx);
             });
             composer_inputs.sync_active_request_editors(
-                &session_state,
-                &workspace_state,
-                &env_state,
+                &state.session,
+                &state.workspace,
+                &state.env,
                 window,
                 cx,
             );
             let req_id = req.id.clone();
-            response_state.update(cx, |resp, cx| {
+            state.response.update(cx, |resp, cx| {
                 resp.load_for_request(&req_id, ws_store.as_ref(), cx);
             });
-            inspector_displays.sync_response_editor(&response_state, window, cx);
-            inspector_displays.sync_sent_request_preview(&response_state, window, cx);
+            inspector_displays.sync_response_editor(&state.response, window, cx);
+            inspector_displays.sync_sent_request_preview(&state.response, window, cx);
         }
 
         // Set up subscriptions:
         let _subscriptions = setup_app_subscriptions(
             SubscriptionTargets {
-                workspace_state: &workspace_state,
-                env_state: &env_state,
-                persistence_state: &persistence_state,
-                modal_state: &modal_state,
-                sidebar_state: &sidebar_state,
-                git_state: &git_state,
-                editor_state: &session_state,
-                response_state: &response_state,
-                toast_state: &toast_state,
+                workspace_state: &state.workspace,
+                env_state: &state.env,
+                persistence_state: &state.persistence,
+                modal_state: &state.modal,
+                sidebar_state: &state.sidebar,
+                git_state: &state.git,
+                editor_state: &state.session,
+                response_state: &state.response,
+                toast_state: &state.toast,
                 composer_inputs: &composer_inputs,
             },
             initial_req.as_ref(),
@@ -155,8 +125,8 @@ impl AppView {
             cx,
         );
 
-        if git_state.read(cx).tracked_warning {
-            toast_state.update(cx, |t, cx| {
+        if state.git.read(cx).tracked_warning {
+            state.toast.update(cx, |t, cx| {
                 t.push_error(
                     "Security Warning",
                     "A git repository was detected with .local/ or *.loc tracked in git. Secrets or response tokens may leak!",
@@ -166,15 +136,7 @@ impl AppView {
         }
 
         Self {
-            workspace_state,
-            env_state,
-            persistence_state,
-            sidebar_state,
-            modal_state,
-            git_state,
-            session_state,
-            response_state,
-            toast_state,
+            state,
             composer_inputs,
             inspector_displays,
             runner,
@@ -191,17 +153,17 @@ impl Render for AppView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme();
 
-        let sidebar_collapsed = self.sidebar_state.read(cx).sidebar_collapsed;
-        let sidebar_width = self.sidebar_state.read(cx).sidebar_width;
-        let is_vertical_split = self.modal_state.read(cx).split_layout_vertical;
+        let sidebar_collapsed = self.state.sidebar.read(cx).sidebar_collapsed;
+        let sidebar_width = self.state.sidebar.read(cx).sidebar_width;
+        let is_vertical_split = self.state.modal.read(cx).split_layout_vertical;
 
-        let ws_entity = self.workspace_state.clone();
-        let sidebar_entity = self.sidebar_state.clone();
-        let modal_entity = self.modal_state.clone();
-        let git_entity = self.git_state.clone();
-        let session_entity = self.session_state.clone();
-        let resp_entity = self.response_state.clone();
-        let toast_entity = self.toast_state.clone();
+        let ws_entity = self.state.workspace.clone();
+        let sidebar_entity = self.state.sidebar.clone();
+        let modal_entity = self.state.modal.clone();
+        let git_entity = self.state.git.clone();
+        let session_entity = self.state.session.clone();
+        let resp_entity = self.state.response.clone();
+        let toast_entity = self.state.toast.clone();
         let app_view_entity = cx.entity().clone();
 
         let composer_pane = self.render_request_composer(window, cx);
@@ -241,7 +203,7 @@ impl Render for AppView {
                         .size_range(px(200.)..px(480.))
                         .child(SidebarTree::new(
                             ws_entity.clone(),
-                            self.persistence_state.clone(),
+                            self.state.persistence.clone(),
                             sidebar_entity.clone(),
                             modal_entity.clone(),
                             git_entity.clone(),
@@ -375,7 +337,7 @@ impl Render for AppView {
             // Custom Title Bar
             .child(AppTitleBar::new(
                 ws_entity.clone(),
-                self.env_state.clone(),
+                self.state.env.clone(),
                 modal_entity.clone(),
                 sidebar_entity.clone(),
                 session_entity.clone(),
@@ -394,8 +356,8 @@ impl Render for AppView {
         attach_modal_overlays(
             root,
             &ws_entity,
-            &self.env_state,
-            &self.persistence_state,
+            &self.state.env,
+            &self.state.persistence,
             &modal_entity,
             &sidebar_entity,
             &git_entity,

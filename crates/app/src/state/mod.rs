@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+pub mod app_state;
 pub mod environment_state;
 pub mod git_ops;
 pub mod git_state;
@@ -14,6 +15,7 @@ pub mod workspace_data_state;
 #[cfg(test)]
 pub mod workspace_data_tests;
 
+pub use app_state::*;
 pub use environment_state::*;
 pub use git_state::*;
 pub use modal_state::*;

@@ -20,13 +20,13 @@ impl AppView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let t = theme();
-        let active_tab_kind = self.session_state.read(cx).active_tab_kind;
-        let method_dropdown_open = self.session_state.read(cx).method_dropdown_open;
-        let req_id_str = self.session_state.read(cx).active_request_id().to_string();
-        let ws_entity = self.workspace_state.clone();
-        let ed_entity = self.session_state.clone();
-        let per_entity = self.persistence_state.clone();
-        let env_entity = self.env_state.clone();
+        let active_tab_kind = self.state.session.read(cx).active_tab_kind;
+        let method_dropdown_open = self.state.session.read(cx).method_dropdown_open;
+        let req_id_str = self.state.session.read(cx).active_request_id().to_string();
+        let ws_entity = self.state.workspace.clone();
+        let ed_entity = self.state.session.clone();
+        let per_entity = self.state.persistence.clone();
+        let env_entity = self.state.env.clone();
         let app_view_entity = cx.entity().clone();
 
         let ws_read = ws_entity.read(cx);
@@ -189,8 +189,8 @@ impl AppView {
                 let view_handle = app_view_entity.clone();
                 RequestBar::new(
                     ws_entity.clone(),
-                    self.env_state.clone(),
-                    self.modal_state.clone(),
+                    self.state.env.clone(),
+                    self.state.modal.clone(),
                     ed_entity.clone(),
                     self.composer_inputs.url_input.clone(),
                     move |_, cx| {
@@ -290,9 +290,9 @@ impl AppView {
                             self.composer_inputs.raw_textarea.clone(),
                         )
                         .workspace_state(ws_entity.clone())
-                        .persistence_state(self.persistence_state.clone())
-                        .env_state(self.env_state.clone())
-                        .toast_state(self.toast_state.clone()),
+                        .persistence_state(self.state.persistence.clone())
+                        .env_state(self.state.env.clone())
+                        .toast_state(self.state.toast.clone()),
                     ),
                     RequestTabKind::Params => {
                         let params = ws_read
@@ -301,7 +301,7 @@ impl AppView {
                             .unwrap_or_default();
                         let ed_up = ed_entity.clone();
                         let ws_up = ws_entity.clone();
-                        let per_up = self.persistence_state.clone();
+                        let per_up = self.state.persistence.clone();
                         let ed_add = ed_entity.clone();
                         let ws_add = ws_entity.clone();
                         let ed_del = ed_entity.clone();
@@ -345,8 +345,8 @@ impl AppView {
                                     });
                                 },
                             )
-                            .env_state(self.env_state.clone())
-                            .modal_state(self.modal_state.clone()),
+                            .env_state(self.state.env.clone())
+                            .modal_state(self.state.modal.clone()),
                         )
                     }
                     RequestTabKind::Headers => {
@@ -373,7 +373,7 @@ impl AppView {
                         };
                         let ed_up = ed_entity.clone();
                         let ws_up = ws_entity.clone();
-                        let per_up = self.persistence_state.clone();
+                        let per_up = self.state.persistence.clone();
                         let ed_add = ed_entity.clone();
                         let ws_add = ws_entity.clone();
                         let ed_del = ed_entity.clone();
@@ -444,8 +444,8 @@ impl AppView {
                                             });
                                         },
                                     )
-                                    .env_state(self.env_state.clone())
-                                    .modal_state(self.modal_state.clone()),
+                                    .env_state(self.state.env.clone())
+                                    .modal_state(self.state.modal.clone()),
                                 ),
                             )
                     }
@@ -460,10 +460,10 @@ impl AppView {
                         render_auth_tab(
                             &auth,
                             folder_id.as_deref(),
-                            &self.workspace_state,
-                            &self.env_state,
-                            &self.modal_state,
-                            &self.session_state,
+                            &self.state.workspace,
+                            &self.state.env,
+                            &self.state.modal,
+                            &self.state.session,
                             AuthTabInputs {
                                 bearer_token_input: &self.composer_inputs.bearer_token_input,
                                 basic_user_input: &self.composer_inputs.basic_user_input,

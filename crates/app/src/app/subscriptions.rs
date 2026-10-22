@@ -76,7 +76,7 @@ pub fn setup_app_subscriptions(
                                 ed.bump_body_version(cx);
                             });
                             save_active_request_without_redraw(&ed_url, &per_url, &ws_url, cx);
-                            this.toast_state.update(cx, |t, cx| {
+                            this.state.toast.update(cx, |t, cx| {
                                 t.push_success(
                                     "cURL Imported",
                                     format!("Parsed {} request to {}", method_name, target_url),
@@ -88,7 +88,7 @@ pub fn setup_app_subscriptions(
                         Err(e) => {
                             if val.lines().count() > 1 || val.contains(" -") || val.contains(" --")
                             {
-                                this.toast_state.update(cx, |t, cx| {
+                                this.state.toast.update(cx, |t, cx| {
                                     t.push_error(
                                         "cURL Parse Error",
                                         format!("Failed to parse cURL: {}", e),
@@ -364,8 +364,8 @@ pub fn setup_app_subscriptions(
     subscriptions.push(cx.observe_in(editor_state, window, move |this, ed, window, cx| {
         this.composer_inputs.sync_active_request_editors(
             &ed,
-            &this.workspace_state,
-            &this.env_state,
+            &this.state.workspace,
+            &this.state.env,
             window,
             cx,
         );
@@ -398,9 +398,9 @@ pub fn setup_app_subscriptions(
     let mut last_workspace_path = workspace_state.read(cx).workspace_path.clone();
     subscriptions.push(cx.observe_in(workspace_state, window, move |this, ws, window, cx| {
         this.composer_inputs.sync_active_request_editors(
-            &this.session_state,
+            &this.state.session,
             &ws,
-            &this.env_state,
+            &this.state.env,
             window,
             cx,
         );
