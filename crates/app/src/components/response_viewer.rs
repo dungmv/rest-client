@@ -681,7 +681,6 @@ impl RenderOnce for ResponseViewer {
                                                                                 status: c_resp.status_code,
                                                                                 headers: c_resp.headers.iter().map(|(k, v)| RequestKvItem::new(k, v)).collect(),
                                                                                 body: Some(String::from_utf8_lossy(&c_resp.body).to_string()),
-                                                                                extra: std::collections::BTreeMap::new(),
                                                                             };
                                                                             req.examples.push(ex);
                                                                             ws.save_request_file(&req_id, &req, cx);

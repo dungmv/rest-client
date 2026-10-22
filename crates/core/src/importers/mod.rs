@@ -11,7 +11,7 @@ use crate::storage::models::{EnvVarFile, EnvironmentFile, RequestFile};
 use crate::storage::slug::slugify;
 use crate::storage::WorkspaceStore;
 use anyhow::{anyhow, Result};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 pub fn parse_content(content: &str, format: ImportFormat) -> Result<ImportResult> {
     match format {
@@ -121,7 +121,6 @@ pub fn apply_import_to_workspace(
             body: req.body.clone(),
             settings: Default::default(),
             script: req.script.clone(),
-            extra: BTreeMap::new(),
             examples: req.examples.clone(),
         };
 
@@ -147,10 +146,8 @@ pub fn apply_import_to_workspace(
                         value: Some(v.initial_value.clone()),
                         secret: false,
                         enabled: true,
-                        extra: BTreeMap::new(),
                     })
                     .collect(),
-                extra: BTreeMap::new(),
             };
 
             if let Err(e) = store.save_environment(&env_slug, &env_file) {

@@ -7,7 +7,7 @@ use crate::models::{
 use crate::storage::models::{RequestExampleFile, RequestKvItem};
 use anyhow::{anyhow, Result};
 use serde_json::{json, Map, Value};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::str::FromStr;
 
 pub fn parse_openapi(content: &str) -> Result<ImportResult> {
@@ -200,7 +200,6 @@ pub fn parse_openapi(content: &str) -> Result<ImportResult> {
                     key: p_name,
                     value: sample_val,
                     description: p_desc,
-                    extra: Default::default(),
                 };
 
                 match p_in {
@@ -630,7 +629,6 @@ fn extract_response_examples(root: &Value, op_obj: &Map<String, Value>) -> Vec<R
                 status: status_code,
                 headers: sample_headers,
                 body: sample_body,
-                extra: BTreeMap::new(),
             });
         }
     }

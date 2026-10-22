@@ -7,7 +7,6 @@ use crate::models::{
 use crate::storage::models::{RequestExampleFile, RequestKvItem};
 use anyhow::{anyhow, Result};
 use serde_json::Value;
-use std::collections::BTreeMap;
 use std::str::FromStr;
 
 pub fn parse_postman(content: &str) -> Result<ImportResult> {
@@ -187,7 +186,6 @@ fn parse_single_request(
                     key: key.to_string(),
                     value: val.to_string(),
                     description: desc,
-                    extra: Default::default(),
                 });
             }
         }
@@ -230,7 +228,6 @@ fn parse_single_request(
                 status,
                 headers: resp_headers,
                 body: resp_body,
-                extra: BTreeMap::new(),
             });
         }
     }
@@ -282,7 +279,6 @@ fn extract_url_and_params(url_val: Option<&Value>) -> (String, Vec<KeyValuePair>
                     key: k.to_string(),
                     value: v.to_string(),
                     description: desc,
-                    extra: Default::default(),
                 });
             }
         }
@@ -391,7 +387,6 @@ fn extract_postman_body(body_val: Option<&Value>) -> RequestBody {
                             key: k.to_string(),
                             value: v.to_string(),
                             description: desc,
-                            extra: Default::default(),
                         });
                     }
                 }
@@ -456,7 +451,6 @@ fn extract_postman_scripts(event_val: Option<&Value>) -> Option<ScriptConfig> {
         Some(ScriptConfig {
             pre_request,
             post_response,
-            extra: Default::default(),
         })
     } else {
         None

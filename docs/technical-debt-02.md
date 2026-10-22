@@ -9,9 +9,9 @@
 |--------|-----------|
 | 🔴 CRITICAL | 0 (1 đã sửa: PERF-001) |
 | 🟠 HIGH | 2 (8 đã sửa: PERF-002, PERF-003, CC-001, TD-001, TD-004, TD-002, PERF-004, TD-003) |
-| 🟡 MEDIUM | 5 (2 đã sửa: CC-004, SL-004) |
+| 🟡 MEDIUM | 3 (4 đã sửa: CC-004, SL-004, SL-005, SL-006) |
 | 🔵 LOW | 8 |
-| **Tổng** | **15 còn lại (11 đã sửa)** |
+| **Tổng** | **13 còn lại (13 đã sửa)** |
 
 > [!CAUTION]
 > **Top 3 ưu tiên xử lý tiếp theo:**
@@ -69,26 +69,23 @@ Gợi ý: Chỉ lưu ID, tra cứu on-demand từ WorkspaceDataState.
 
 ---
 
-### SL-005 🟡 MEDIUM — `BTreeMap extra` trên tất cả 9 storage struct
-**File:** [`crates/core/src/storage/models.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/storage/models.rs)
+### SL-005 ✅ RESOLVED (Was 🟡 MEDIUM) — `BTreeMap extra` trên tất cả 9 storage struct
+**File:** [`crates/core/src/storage/models.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/storage/models.rs)  ·  [`crates/core/src/models.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/models.rs)
 
-Mỗi file struct (`RequestFile`, `FolderFile`, `WorkspaceMeta`...) có `#[serde(flatten)] extra: BTreeMap<String, serde_yaml::Value>`. Mỗi lần deserialize tạo thêm một BTreeMap, ngăn compile-time schema validation, cho phép hidden fields tích lũy ngầm.
-
-```
-Gợi ý: Xóa khi schema ổn định. Dùng #[serde(deny_unknown_fields)]
-        để bắt lỗi tại parse time thay vì nuốt chúng.
-```
+*Đã giải quyết*: Xóa bỏ hoàn toàn trường `extra: BTreeMap<String, serde_yaml::Value>` trên toàn bộ 9 struct model/storage (`WorkspaceMeta`, `FolderFile`, `RequestExampleFile`, `RequestFile`, `EnvVarFile`, `EnvironmentFile`, `KeyValuePair`, `RequestSettings`, `ScriptConfig`).
+- Đặt thuộc tính `#[serde(deny_unknown_fields)]` trên toàn bộ 9 struct để bắt lỗi schema validation ngay tại parse time thay vì âm thầm nuốt các trường lạ.
+- Loại bỏ toàn bộ boilerplate khởi tạo `extra` trong importers (OpenAPI, Postman), file operations, filesystem storage, HTTP executor và unit tests.
+- Bổ sung unit test `test_deny_unknown_fields_on_storage_models` đảm bảo parser tự động từ chối các file YAML chứa trường không xác định.
 
 ---
 
-### SL-006 🟡 MEDIUM — `HttpResponseRecord` boxing rồi unbox ngay lập tức
+### SL-006 ✅ RESOLVED (Was 🟡 MEDIUM) — `HttpResponseRecord` boxing rồi unbox ngay lập tức
 **File:** [`crates/core/src/models.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/models.rs#L507-L525)  ·  [`crates/app/src/pipeline.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/pipeline.rs#L248)
 
-Struct được boxing tại `pipeline.rs:248` nhưng lập tức unbox với `*record` — phủ nhận hoàn toàn mục đích boxing.
-
-```
-Gợi ý: Giữ Box<HttpResponseRecord> xuyên suốt, hoặc dùng Arc<HttpResponseRecord>.
-```
+*Đã giải quyết*: Thay thế hoàn toàn cơ chế `Box<HttpResponseRecord>` và unbox qua dereference `*record` bằng `Arc<HttpResponseRecord>` xuyên suốt luồng pipeline và application state.
+- `HttpSendEvent::Success(Arc<HttpResponseRecord>, PostResponseOutput)`: `HttpResponseRecord` được chuẩn bị và gói vào `Arc` ngay tại background task (bao gồm cả việc gắn `test_results` và `console_logs`), giảm tải CPU cho main UI thread.
+- `ResponseState` (`current_response`, `previous_response`, `session_responses`, `previous_responses`) nay lưu trữ trực tiếp `Arc<HttpResponseRecord>`, giúp việc gán state, caching và truy xuất O(1) chỉ là atomic pointer clone, triệt tiêu hoàn toàn chi phí sao chép buffer `body: Vec<u8>`.
+- Khắc phục triệt để chi phí clone response body dung lượng lớn tại `response_viewer.rs` trên mỗi frame render (60fps).
 
 ---
 

@@ -13,7 +13,7 @@ use crate::app::AppView;
 #[derive(Debug)]
 pub enum HttpSendEvent {
     Progress(String),
-    Success(Box<HttpResponseRecord>, PostResponseOutput),
+    Success(std::sync::Arc<HttpResponseRecord>, PostResponseOutput),
     Cancelled,
     Error(String),
 }
@@ -142,6 +142,7 @@ impl AppView {
         });
 
         let eff_env_for_post = mutated_env.map(std::sync::Arc::new).or(Some(cached_env));
+        let pre_console_entries = pre_output.console_entries.clone();
         // Spawn background HTTP send task on tokio runtime
         rt.spawn(async move {
             tokio::select! {
@@ -160,7 +161,11 @@ impl AppView {
                             };
 
                             record.test_results = post_output.test_results.clone();
-                            let _ = send_event_tx.send(HttpSendEvent::Success(Box::new(record), post_output));
+                            let mut combined_console_logs = pre_console_entries;
+                            combined_console_logs.extend(post_output.console_entries.clone());
+                            record.console_logs = combined_console_logs;
+
+                            let _ = send_event_tx.send(HttpSendEvent::Success(std::sync::Arc::new(record), post_output));
                         }
                         Err(HttpError::Cancelled) => {
                             let _ = send_event_tx.send(HttpSendEvent::Cancelled);
@@ -240,12 +245,7 @@ impl AppView {
                                     });
                                 }
 
-                                let mut combined_console_logs = pre_output.console_entries.clone();
-                                combined_console_logs.extend(post_output.console_entries.clone());
-                                let mut final_record = *record;
-                                final_record.console_logs = combined_console_logs.clone();
-
-                                let loc_file = restclient_core::storage::models::LocFile::from_record(&final_record);
+                                let loc_file = restclient_core::storage::models::LocFile::from_record(&record);
                                 this.workspace_state.update(cx, |ws, cx| {
                                     if let Some(r) = ws.requests.iter_mut().find(|r| r.id == req_id) {
                                         r.last_status_code = Some(status);
@@ -255,8 +255,8 @@ impl AppView {
                                 });
 
                                 this.response_state.update(cx, |resp, cx| {
-                                    resp.set_test_results(post_output.test_results, combined_console_logs, cx);
-                                    resp.set_response_for_request(req_id.clone(), final_record, cx);
+                                    resp.set_test_results(post_output.test_results, record.console_logs.clone(), cx);
+                                    resp.set_response_for_request(req_id.clone(), record, cx);
                                 });
 
                                 this.editor_state.update(cx, |ed, cx| {

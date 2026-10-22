@@ -45,10 +45,10 @@ pub enum ResponseViewMode {
 }
 
 pub struct ResponseState {
-    pub current_response: Option<HttpResponseRecord>,
-    pub previous_response: Option<HttpResponseRecord>,
-    pub session_responses: HashMap<String, HttpResponseRecord>,
-    pub previous_responses: HashMap<String, HttpResponseRecord>,
+    pub current_response: Option<Arc<HttpResponseRecord>>,
+    pub previous_response: Option<Arc<HttpResponseRecord>>,
+    pub session_responses: HashMap<String, Arc<HttpResponseRecord>>,
+    pub previous_responses: HashMap<String, Arc<HttpResponseRecord>>,
     pub active_example_name: Option<String>,
     pub active_tab: ResponseTabKind,
     pub view_mode: ResponseViewMode,
@@ -99,7 +99,7 @@ impl ResponseState {
             self.current_response = Some(cached);
             self.previous_response = self.previous_responses.get(req_id).cloned();
         } else if let Ok(Some(loc)) = store.load_response_cache(req_id) {
-            let record = loc.to_record(req_id);
+            let record = Arc::new(loc.to_record(req_id));
             self.test_results = record.test_results.clone();
             self.console_logs = record.console_logs.clone();
             self.session_responses.insert(req_id.to_string(), record.clone());
@@ -145,7 +145,7 @@ impl ResponseState {
     pub fn set_response_for_request(
         &mut self,
         req_id: String,
-        response: HttpResponseRecord,
+        response: Arc<HttpResponseRecord>,
         cx: &mut Context<Self>,
     ) {
         self.active_example_name = None;
@@ -205,7 +205,7 @@ impl ResponseState {
             console_logs: Vec::new(),
             created_at: chrono::Utc::now(),
         };
-        self.current_response = Some(record);
+        self.current_response = Some(Arc::new(record));
         self.scroll_handle = gpui::UniformListScrollHandle::new();
         self.refresh_formatted_body();
     }
@@ -272,7 +272,7 @@ impl ResponseState {
 
     pub fn set_response(
         &mut self,
-        response: Option<HttpResponseRecord>,
+        response: Option<Arc<HttpResponseRecord>>,
         cx: &mut Context<Self>,
     ) {
         if let Some(r) = &response {
@@ -398,8 +398,9 @@ mod tests {
             created_at: chrono::Utc::now(),
         };
 
-        state.session_responses.insert("req-1".to_string(), rec.clone());
-        state.current_response = Some(rec);
+        let arc_rec = Arc::new(rec);
+        state.session_responses.insert("req-1".to_string(), arc_rec.clone());
+        state.current_response = Some(arc_rec);
         state.show_timing_popover = true;
         state.active_example_name = Some("example-1".to_string());
         state.refresh_formatted_body();
@@ -495,7 +496,7 @@ mod tests {
             created_at: chrono::Utc::now(),
         };
 
-        state.current_response = Some(rec);
+        state.current_response = Some(Arc::new(rec));
         state.refresh_formatted_body();
 
         let fmt = state.formatted_body.as_ref().expect("formatted body should be present");
@@ -572,7 +573,7 @@ mod tests {
             created_at: chrono::Utc::now(),
         };
 
-        state.current_response = Some(record);
+        state.current_response = Some(Arc::new(record));
         state.view_mode = ResponseViewMode::Pretty;
         state.refresh_formatted_body();
 
@@ -621,7 +622,6 @@ mod tests {
             status: 200,
             headers: vec![],
             body: Some(r#"{"message":"hello"}"#.to_string()),
-            extra: std::collections::BTreeMap::new(),
         };
 
         state.view_example_internal(&ex);

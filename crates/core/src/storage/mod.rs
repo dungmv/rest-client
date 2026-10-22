@@ -16,16 +16,8 @@ mod tests {
     use super::*;
     use crate::models::HttpMethod;
     use crate::storage::serialize::to_yaml_string;
-    use std::collections::BTreeMap;
-
     #[test]
-    fn test_byte_identical_roundtrip_request_and_unknown_keys() {
-        let mut extra = BTreeMap::new();
-        extra.insert(
-            "custom_metadata".to_string(),
-            serde_yaml::Value::String("hello-future".to_string()),
-        );
-
+    fn test_byte_identical_roundtrip_request() {
         let req = RequestFile {
             name: "Login".to_string(),
             method: HttpMethod::Post,
@@ -35,14 +27,12 @@ mod tests {
                 value: "1".to_string(),
                 enabled: false,
                 description: None,
-                extra: BTreeMap::new(),
             }],
             headers: vec![RequestKvItem {
                 key: "Content-Type".to_string(),
                 value: "application/json".to_string(),
                 enabled: true,
                 description: None,
-                extra: BTreeMap::new(),
             }],
             auth: RequestAuth::Bearer {
                 token: "token123".to_string(),
@@ -54,14 +44,11 @@ mod tests {
                 timeout_ms: 30000,
                 follow_redirects: true,
                 validate_tls: true,
-                extra: BTreeMap::new(),
             },
             script: Some(RequestScriptFile {
                 pre_request: None,
                 post_response: Some("if (res.status === 200) { env.token = res.body.token }".to_string()),
-                extra: BTreeMap::new(),
             }),
-            extra,
             examples: vec![RequestExampleFile {
                 name: "Success".to_string(),
                 status: 200,
@@ -70,10 +57,8 @@ mod tests {
                     value: "application/json".to_string(),
                     enabled: true,
                     description: None,
-                    extra: BTreeMap::new(),
                 }],
                 body: Some("{\"token\": \"abc\"}".to_string()),
-                extra: BTreeMap::new(),
             }],
         };
 
@@ -86,14 +71,12 @@ mod tests {
 
         // Check key order: examples must be last!
         let examples_pos = yaml_1.find("examples:").expect("examples must be in yaml");
-        let custom_pos = yaml_1.find("custom_metadata:").expect("custom_metadata must be preserved");
-        assert!(custom_pos < examples_pos, "Unknown keys must come before examples");
         let name_pos = yaml_1.find("name:").unwrap();
-        assert!(name_pos < custom_pos);
+        assert!(name_pos < examples_pos);
 
         // 2. Deserialize
         let req_deser: RequestFile = serde_yaml::from_str(&yaml_1).unwrap();
-        assert_eq!(req_deser.extra.get("custom_metadata").unwrap(), "hello-future");
+        assert_eq!(req_deser.name, "Login");
 
         // 3. Serialize again: Must be byte-identical!
         let yaml_2 = to_yaml_string(&req_deser).unwrap();
@@ -101,10 +84,27 @@ mod tests {
     }
 
     #[test]
+    fn test_deny_unknown_fields_on_storage_models() {
+        let invalid_req = "name: Test\nmethod: GET\nurl: http://localhost\nunknown_field: 123\n";
+        let res_req = serde_yaml::from_str::<RequestFile>(invalid_req);
+        assert!(res_req.is_err(), "RequestFile must reject unknown fields");
+
+        let invalid_ws = "name: WS\nunknown_ws_key: foo\n";
+        let res_ws = serde_yaml::from_str::<WorkspaceMeta>(invalid_ws);
+        assert!(res_ws.is_err(), "WorkspaceMeta must reject unknown fields");
+
+        let invalid_folder = "name: Folder\nunknown_folder_key: bar\n";
+        let res_folder = serde_yaml::from_str::<FolderFile>(invalid_folder);
+        assert!(res_folder.is_err(), "FolderFile must reject unknown fields");
+
+        let invalid_env = "variables: []\nunknown_env_key: baz\n";
+        let res_env = serde_yaml::from_str::<EnvironmentFile>(invalid_env);
+        assert!(res_env.is_err(), "EnvironmentFile must reject unknown fields");
+    }
+
+    #[test]
     fn test_byte_identical_roundtrip_environment_and_folder() {
         // Environment
-        let mut extra = BTreeMap::new();
-        extra.insert("tag".to_string(), serde_yaml::Value::String("qa".to_string()));
         let env = EnvironmentFile {
             variables: vec![
                 EnvVarFile {
@@ -112,17 +112,14 @@ mod tests {
                     value: Some("http://localhost:8002".to_string()),
                     secret: false,
                     enabled: true,
-                    extra: BTreeMap::new(),
                 },
                 EnvVarFile {
                     name: "token".to_string(),
                     value: None,
                     secret: true,
                     enabled: true,
-                    extra: BTreeMap::new(),
                 },
             ],
-            extra,
         };
 
         let env_yaml_1 = to_yaml_string(&env).unwrap();
@@ -136,7 +133,6 @@ mod tests {
             order: vec!["login".to_string(), "refresh".to_string(), "logout".to_string()],
             headers: Vec::new(),
             auth: RequestAuth::Inherit,
-            extra: BTreeMap::new(),
         };
         let f_yaml_1 = to_yaml_string(&folder).unwrap();
         let f_deser: FolderFile = serde_yaml::from_str(&f_yaml_1).unwrap();
@@ -188,17 +184,14 @@ mod tests {
                     value: Some("public_123".to_string()),
                     secret: false,
                     enabled: true,
-                    extra: BTreeMap::new(),
                 },
                 EnvVarFile {
                     name: "secret_var".to_string(),
                     value: Some("super_secret_value".to_string()),
                     secret: true,
                     enabled: true,
-                    extra: BTreeMap::new(),
                 },
             ],
-            extra: BTreeMap::new(),
         };
 
         store.save_environment("prod", &env_file).unwrap();

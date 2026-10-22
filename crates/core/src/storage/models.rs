@@ -15,6 +15,7 @@ fn default_version() -> u32 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WorkspaceMeta {
     #[serde(default = "default_version")]
     pub version: u32,
@@ -25,8 +26,6 @@ pub struct WorkspaceMeta {
     pub headers: Vec<KeyValuePair>,
     #[serde(default, skip_serializing_if = "Auth::is_none")]
     pub auth: Auth,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 impl Default for WorkspaceMeta {
@@ -37,12 +36,12 @@ impl Default for WorkspaceMeta {
             default_environment: Some("local".to_string()),
             headers: Vec::new(),
             auth: Auth::None,
-            extra: BTreeMap::new(),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct FolderFile {
     pub name: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -51,8 +50,6 @@ pub struct FolderFile {
     pub headers: Vec<KeyValuePair>,
     #[serde(default, skip_serializing_if = "Auth::is_inherit")]
     pub auth: Auth,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 pub type RequestKvItem = KeyValuePair;
@@ -63,6 +60,7 @@ pub type RequestSettingsFile = RequestSettings;
 pub type RequestScriptFile = ScriptConfig;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RequestExampleFile {
     pub name: String,
     pub status: u16,
@@ -70,8 +68,6 @@ pub struct RequestExampleFile {
     pub headers: Vec<RequestKvItem>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 /// Request YAML model:
@@ -85,9 +81,9 @@ pub struct RequestExampleFile {
 /// 7. body
 /// 8. settings
 /// 9. script
-/// 10. extra (unknown keys preserved)
-/// 11. examples (ALWAYS last)
+/// 10. examples (ALWAYS last)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RequestFile {
     pub name: String,
     pub method: HttpMethod,
@@ -104,8 +100,6 @@ pub struct RequestFile {
     pub settings: RequestSettingsFile,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub script: Option<RequestScriptFile>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub examples: Vec<RequestExampleFile>,
 }
@@ -122,7 +116,6 @@ impl Default for RequestFile {
             body: RequestBodyFile::None,
             settings: RequestSettingsFile::default(),
             script: None,
-            extra: BTreeMap::new(),
             examples: Vec::new(),
         }
     }
@@ -170,6 +163,7 @@ impl RequestFile {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EnvVarFile {
     #[serde(alias = "key")]
     pub name: String,
@@ -179,16 +173,13 @@ pub struct EnvVarFile {
     pub secret: bool,
     #[serde(default = "default_true")]
     pub enabled: bool,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct EnvironmentFile {
     #[serde(default)]
     pub variables: Vec<EnvVarFile>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 impl EnvironmentFile {
@@ -229,7 +220,6 @@ impl EnvironmentFile {
                     value: None,
                     secret: true,
                     enabled: true,
-                    extra: BTreeMap::new(),
                 });
                 if !v.current_value.is_empty() {
                     secrets.insert(v.key.clone(), v.current_value.clone());
@@ -245,7 +235,6 @@ impl EnvironmentFile {
                     value: Some(v.initial_value.clone()),
                     secret: false,
                     enabled: true,
-                    extra: BTreeMap::new(),
                 });
                 if !v.current_value.is_empty() {
                     secrets.insert(v.key.clone(), v.current_value.clone());

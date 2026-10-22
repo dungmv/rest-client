@@ -747,7 +747,6 @@ mod tests {
                 key: "disabled".to_string(),
                 value: "val".to_string(),
                 description: None,
-                extra: Default::default(),
             },
             KeyValuePair::new("limit", "25"),
         ];

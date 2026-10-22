@@ -227,14 +227,12 @@ mod tests {
             status: 200,
             headers: Vec::new(),
             body: Some("{}".to_string()),
-            extra: std::collections::BTreeMap::new(),
         });
         req_file.examples.push(restclient_core::storage::models::RequestExampleFile {
             name: "Error".to_string(),
             status: 400,
             headers: Vec::new(),
             body: Some("{}".to_string()),
-            extra: std::collections::BTreeMap::new(),
         });
         store.write_request(&rel_path, &req_file).unwrap();
 

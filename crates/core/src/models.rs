@@ -1,6 +1,5 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "UPPERCASE")]
@@ -53,6 +52,7 @@ impl std::str::FromStr for HttpMethod {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct KeyValuePair {
     #[serde(rename = "name", alias = "key")]
     pub key: String,
@@ -62,8 +62,6 @@ pub struct KeyValuePair {
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(default, flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 fn default_true() -> bool {
@@ -77,7 +75,6 @@ impl KeyValuePair {
             key: key.into(),
             value: value.into(),
             description: None,
-            extra: BTreeMap::new(),
         }
     }
 }
@@ -242,6 +239,7 @@ fn default_timeout_ms() -> u64 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RequestSettings {
     #[serde(default = "default_timeout_ms", alias = "timeout_secs")]
     pub timeout_ms: u64,
@@ -249,8 +247,6 @@ pub struct RequestSettings {
     pub follow_redirects: bool,
     #[serde(default = "default_true")]
     pub validate_tls: bool,
-    #[serde(default, flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 impl Default for RequestSettings {
@@ -259,7 +255,6 @@ impl Default for RequestSettings {
             timeout_ms: default_timeout_ms(),
             follow_redirects: true,
             validate_tls: true,
-            extra: BTreeMap::new(),
         }
     }
 }
@@ -275,13 +270,12 @@ impl RequestSettings {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ScriptConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pre_request: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub post_response: Option<String>,
-    #[serde(default, flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

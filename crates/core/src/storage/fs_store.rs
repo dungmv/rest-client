@@ -11,7 +11,7 @@ use crate::storage::serialize::{atomic_write_str, to_yaml_string, with_retry};
 use crate::storage::slug::loc_path_for_yaml;
 use crate::storage::traits::WorkspaceStore;
 use anyhow::{Context, Result};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -86,7 +86,6 @@ impl FsWorkspaceStore {
                 order: Vec::new(),
                 headers: Vec::new(),
                 auth: RequestAuth::Inherit,
-                extra: BTreeMap::new(),
             })
         } else {
             FolderFile {
@@ -94,7 +93,6 @@ impl FsWorkspaceStore {
                 order: Vec::new(),
                 headers: Vec::new(),
                 auth: RequestAuth::Inherit,
-                extra: BTreeMap::new(),
             }
         };
 
@@ -238,7 +236,6 @@ impl WorkspaceStore for FsWorkspaceStore {
             default_environment: Some("local".to_string()),
             headers: Vec::new(),
             auth: RequestAuth::None,
-            extra: BTreeMap::new(),
         };
         self.save_workspace_meta(&meta)?;
 
@@ -442,7 +439,6 @@ impl WorkspaceStore for FsWorkspaceStore {
                 order: Vec::new(),
                 headers: Vec::new(),
                 auth: RequestAuth::Inherit,
-                extra: BTreeMap::new(),
             });
         }
         let raw = std::fs::read_to_string(&meta_file)?;

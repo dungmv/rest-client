@@ -239,7 +239,6 @@ pub fn create_group(
         order: Vec::new(),
         headers: Vec::new(),
         auth: crate::storage::models::RequestAuth::Inherit,
-        extra: std::collections::BTreeMap::new(),
     };
     let content = to_yaml_string(&folder_meta)?;
     atomic_write_str(&group_dir.join("_folder.yaml"), &content)?;
@@ -379,7 +378,6 @@ pub fn reorder_folder(
             order: Vec::new(),
             headers: Vec::new(),
             auth: crate::storage::models::RequestAuth::Inherit,
-            extra: std::collections::BTreeMap::new(),
         }
     };
 
