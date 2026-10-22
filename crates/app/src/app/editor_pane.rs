@@ -192,7 +192,7 @@ impl AppView {
                     self.env_state.clone(),
                     self.modal_state.clone(),
                     ed_entity.clone(),
-                    self.url_input.clone(),
+                    self.composer_inputs.url_input.clone(),
                     move |_, cx| {
                         view_handle.update(cx, |view, cx| {
                             view.send_current_request(cx);
@@ -285,9 +285,9 @@ impl AppView {
                     RequestTabKind::Body => div().size_full().child(
                         BodyEditor::new(
                             ed_entity.clone(),
-                            self.json_editor.clone(),
-                            self.xml_editor.clone(),
-                            self.raw_textarea.clone(),
+                            self.composer_inputs.json_editor.clone(),
+                            self.composer_inputs.xml_editor.clone(),
+                            self.composer_inputs.raw_textarea.clone(),
                         )
                         .workspace_state(ws_entity.clone())
                         .persistence_state(self.persistence_state.clone())
@@ -465,21 +465,21 @@ impl AppView {
                             &self.modal_state,
                             &self.editor_state,
                             AuthTabInputs {
-                                bearer_token_input: &self.bearer_token_input,
-                                basic_user_input: &self.basic_user_input,
-                                basic_pass_input: &self.basic_pass_input,
-                                apikey_key_input: &self.apikey_key_input,
-                                apikey_val_input: &self.apikey_val_input,
+                                bearer_token_input: &self.composer_inputs.bearer_token_input,
+                                basic_user_input: &self.composer_inputs.basic_user_input,
+                                basic_pass_input: &self.composer_inputs.basic_pass_input,
+                                apikey_key_input: &self.composer_inputs.apikey_key_input,
+                                apikey_val_input: &self.composer_inputs.apikey_val_input,
                             },
                             window,
                             cx,
                         )
                     }
                     RequestTabKind::PreRequestScript => {
-                        let pre_txt = self.pre_script_editor.clone();
+                        let pre_txt = self.composer_inputs.pre_script_editor.clone();
                         let script_err = ed_entity.read(cx).script_error.clone();
                         div().size_full().child(ScriptEditor::new(
-                            self.pre_script_editor.clone(),
+                            self.composer_inputs.pre_script_editor.clone(),
                             ScriptEditorKind::PreRequest,
                             script_err,
                             move |snippet, window, cx| {
@@ -498,10 +498,10 @@ impl AppView {
                         ))
                     }
                     RequestTabKind::Tests => {
-                        let test_txt = self.test_script_editor.clone();
+                        let test_txt = self.composer_inputs.test_script_editor.clone();
                         let script_err = ed_entity.read(cx).script_error.clone();
                         div().size_full().child(ScriptEditor::new(
-                            self.test_script_editor.clone(),
+                            self.composer_inputs.test_script_editor.clone(),
                             ScriptEditorKind::Tests,
                             script_err,
                             move |snippet, window, cx| {

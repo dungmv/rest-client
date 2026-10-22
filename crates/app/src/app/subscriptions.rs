@@ -1,3 +1,4 @@
+use super::composer_inputs::ComposerInputs;
 use super::sync::save_active_request_without_redraw;
 use super::AppView;
 use crate::state::{
@@ -5,9 +6,7 @@ use crate::state::{
     SidebarState, ToastState, WorkspaceDataState,
 };
 use gpui::*;
-use gpui_component::input::{
-    EditorState as CodeEditorState, InputEvent, InputState, TextareaState,
-};
+use gpui_component::input::InputEvent;
 use restclient_core::models::{Auth, HttpRequestItem, RequestBody};
 
 pub struct SubscriptionTargets<'a> {
@@ -21,17 +20,7 @@ pub struct SubscriptionTargets<'a> {
     pub response_state: &'a Entity<ResponseState>,
     #[allow(dead_code)]
     pub toast_state: &'a Entity<ToastState>,
-    pub url_input: &'a Entity<InputState>,
-    pub json_editor: &'a Entity<CodeEditorState>,
-    pub xml_editor: &'a Entity<CodeEditorState>,
-    pub raw_textarea: &'a Entity<TextareaState>,
-    pub bearer_token_input: &'a Entity<InputState>,
-    pub basic_user_input: &'a Entity<InputState>,
-    pub basic_pass_input: &'a Entity<InputState>,
-    pub apikey_key_input: &'a Entity<InputState>,
-    pub apikey_val_input: &'a Entity<InputState>,
-    pub pre_script_editor: &'a Entity<CodeEditorState>,
-    pub test_script_editor: &'a Entity<CodeEditorState>,
+    pub composer_inputs: &'a ComposerInputs,
 }
 
 pub fn setup_app_subscriptions(
@@ -45,17 +34,17 @@ pub fn setup_app_subscriptions(
     let editor_state = targets.editor_state;
     let workspace_state = targets.workspace_state;
     let persistence_state = targets.persistence_state;
-    let url_input = targets.url_input;
-    let json_editor = targets.json_editor;
-    let xml_editor = targets.xml_editor;
-    let raw_textarea = targets.raw_textarea;
-    let bearer_token_input = targets.bearer_token_input;
-    let basic_user_input = targets.basic_user_input;
-    let basic_pass_input = targets.basic_pass_input;
-    let apikey_key_input = targets.apikey_key_input;
-    let apikey_val_input = targets.apikey_val_input;
-    let pre_script_editor = targets.pre_script_editor;
-    let test_script_editor = targets.test_script_editor;
+    let url_input = &targets.composer_inputs.url_input;
+    let json_editor = &targets.composer_inputs.json_editor;
+    let xml_editor = &targets.composer_inputs.xml_editor;
+    let raw_textarea = &targets.composer_inputs.raw_textarea;
+    let bearer_token_input = &targets.composer_inputs.bearer_token_input;
+    let basic_user_input = &targets.composer_inputs.basic_user_input;
+    let basic_pass_input = &targets.composer_inputs.basic_pass_input;
+    let apikey_key_input = &targets.composer_inputs.apikey_key_input;
+    let apikey_val_input = &targets.composer_inputs.apikey_val_input;
+    let pre_script_editor = &targets.composer_inputs.pre_script_editor;
+    let test_script_editor = &targets.composer_inputs.test_script_editor;
     let response_state = targets.response_state;
 
     // 1. Subscribe to URL input change

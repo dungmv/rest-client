@@ -1,6 +1,7 @@
 pub mod actions;
 pub mod auth_input;
 pub mod auth_tab;
+pub mod composer_inputs;
 pub mod editor_pane;
 pub mod inspector_displays;
 pub mod modals;
@@ -8,6 +9,7 @@ pub mod subscriptions;
 pub mod sync;
 
 pub use actions::*;
+pub use composer_inputs::*;
 pub use inspector_displays::*;
 pub use modals::*;
 pub use subscriptions::*;
@@ -16,10 +18,8 @@ use crate::components::*;
 use crate::state::*;
 use crate::theme::theme;
 use gpui::*;
-use gpui_component::input::{EditorState as CodeEditorState, InputState, TextareaState};
 use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
 use restclient_core::http::ReqwestExecutor;
-use restclient_core::models::{Auth, RequestBody};
 use std::sync::Arc;
 
 pub struct AppView {
@@ -32,23 +32,10 @@ pub struct AppView {
     pub(crate) editor_state: Entity<EditorState>,
     pub(crate) response_state: Entity<ResponseState>,
     pub(crate) toast_state: Entity<ToastState>,
-    pub(crate) url_input: Entity<InputState>,
-    pub(crate) json_editor: Entity<CodeEditorState>,
-    pub(crate) xml_editor: Entity<CodeEditorState>,
-    pub(crate) raw_textarea: Entity<TextareaState>,
+    pub(crate) composer_inputs: ComposerInputs,
     pub(crate) inspector_displays: InspectorDisplays,
-    pub(crate) pre_script_editor: Entity<CodeEditorState>,
-    pub(crate) test_script_editor: Entity<CodeEditorState>,
-    pub(crate) bearer_token_input: Entity<InputState>,
-    pub(crate) basic_user_input: Entity<InputState>,
-    pub(crate) basic_pass_input: Entity<InputState>,
-    pub(crate) apikey_key_input: Entity<InputState>,
-    pub(crate) apikey_val_input: Entity<InputState>,
     pub(crate) executor: Arc<ReqwestExecutor>,
     pub(crate) tokio_rt: Arc<tokio::runtime::Runtime>,
-    pub(crate) last_synced_request_id: Option<String>,
-    pub(crate) last_synced_request_version: usize,
-    pub(crate) last_synced_body_version: usize,
     pub(crate) _subscriptions: Vec<Subscription>,
 }
 
@@ -78,11 +65,6 @@ impl AppView {
         let response_state = cx.new(|_| ResponseState::new());
         let toast_state = cx.new(|_| ToastState::new());
 
-        let url_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("Enter request URL (e.g. https://httpbin.org/get)")
-        });
-
         type HighlighterFactory = std::rc::Rc<
             dyn Fn(&str) -> Option<Box<dyn gpui_component::input::InputHighlighter>>,
         >;
@@ -98,66 +80,13 @@ impl AppView {
             _ => None,
         });
 
-        let json_editor = cx.new(|cx| {
-            let mut state = CodeEditorState::new(window, cx);
-            state.set_highlighter_factory(highlighter_factory.clone(), cx);
-            state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
-                crate::components::env_autocomplete::EnvCompletionProvider::new(
-                    env_state.clone(),
-                ),
-            ));
-            state.language("json").line_number(true).folding(true)
-        });
-        let xml_editor = cx.new(|cx| {
-            let mut state = CodeEditorState::new(window, cx);
-            state.set_highlighter_factory(highlighter_factory.clone(), cx);
-            state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
-                crate::components::env_autocomplete::EnvCompletionProvider::new(
-                    env_state.clone(),
-                ),
-            ));
-            state.language("xml").line_number(true).folding(true)
-        });
-        let raw_textarea = cx.new(|cx| TextareaState::new(window, cx));
-        let inspector_displays = InspectorDisplays::new(window, highlighter_factory.clone(), cx);
-        let pre_script_editor = cx.new(|cx| {
-            let mut state = CodeEditorState::new(window, cx);
-            state.set_highlighter_factory(highlighter_factory.clone(), cx);
-            state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
-                ScriptCompletionProvider::with_environment(
-                    ScriptEditorKind::PreRequest,
-                    env_state.clone(),
-                ),
-            ));
-            state
-                .language("javascript")
-                .line_number(true)
-                .folding(true)
-        });
-        let test_script_editor = cx.new(|cx| {
-            let mut state = CodeEditorState::new(window, cx);
-            state.set_highlighter_factory(highlighter_factory.clone(), cx);
-            state.lsp_mut().completion_provider = Some(std::rc::Rc::new(
-                ScriptCompletionProvider::with_environment(
-                    ScriptEditorKind::Tests,
-                    env_state.clone(),
-                ),
-            ));
-            state
-                .language("javascript")
-                .line_number(true)
-                .folding(true)
-        });
-
-        let bearer_token_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Enter Bearer token..."));
-        let basic_user_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Username..."));
-        let basic_pass_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Password..."));
-        let apikey_key_input = cx.new(|cx| InputState::new(window, cx).placeholder("X-API-Key"));
-        let apikey_val_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("API key value..."));
+        let mut composer_inputs = ComposerInputs::new(
+            window,
+            env_state.clone(),
+            highlighter_factory.clone(),
+            cx,
+        );
+        let inspector_displays = InspectorDisplays::new(window, highlighter_factory, cx);
 
         let executor = Arc::new(ReqwestExecutor::new());
         let tokio_rt = Arc::new(
@@ -183,108 +112,13 @@ impl AppView {
             editor_state.update(cx, |ed, cx| {
                 ed.set_active_request_id(&req.id, cx);
             });
-
-            let req_url = req.url.clone();
-            let tokenized_url = {
-                let env = env_state.read(cx);
-                crate::components::env_autocomplete::build_tokenized_content(&req_url, env)
-            };
-            url_input.update(cx, |inp, cx| {
-                inp.set_value(tokenized_url, window, cx);
-            });
-
-            if let RequestBody::Json { content: json_content } = &req.body {
-                json_editor.update(cx, |txt, cx| {
-                    txt.set_value(json_content.clone(), window, cx);
-                });
-            } else if let RequestBody::Raw {
-                content,
-                content_type,
-            } = &req.body
-            {
-                if content_type == "application/xml" || content_type == "text/xml" {
-                    xml_editor.update(cx, |txt, cx| {
-                        txt.set_value(content.clone(), window, cx);
-                    });
-                }
-                raw_textarea.update(cx, |txt, cx| {
-                    txt.set_value(content.clone(), window, cx);
-                });
-            }
-
-            if let Some(script) = &req.script {
-                if let Some(pre) = &script.pre_request {
-                    pre_script_editor.update(cx, |txt, cx| {
-                        txt.set_value(pre.clone(), window, cx);
-                    });
-                }
-                if let Some(post) = &script.post_response {
-                    test_script_editor.update(cx, |txt, cx| {
-                        txt.set_value(post.clone(), window, cx);
-                    });
-                }
-            }
-
-            let env_for_auth = env_state.clone();
-            match &req.auth {
-                Auth::Bearer { token } => {
-                    let env_m = env_for_auth.clone();
-                    bearer_token_input.update(cx, |inp, cx| {
-                        let env = env_m.read(cx);
-                        inp.set_value(
-                            crate::components::env_autocomplete::build_tokenized_content(token, env),
-                            window,
-                            cx,
-                        );
-                    });
-                }
-                Auth::Basic { username, password } => {
-                    let env_u = env_for_auth.clone();
-                    let env_p = env_for_auth.clone();
-                    basic_user_input.update(cx, |inp, cx| {
-                        let env = env_u.read(cx);
-                        inp.set_value(
-                            crate::components::env_autocomplete::build_tokenized_content(
-                                username, env,
-                            ),
-                            window,
-                            cx,
-                        );
-                    });
-                    basic_pass_input.update(cx, |inp, cx| {
-                        let env = env_p.read(cx);
-                        inp.set_value(
-                            crate::components::env_autocomplete::build_tokenized_content(
-                                password, env,
-                            ),
-                            window,
-                            cx,
-                        );
-                    });
-                }
-                Auth::ApiKey { key, value, .. } => {
-                    let env_k = env_for_auth.clone();
-                    let env_v = env_for_auth.clone();
-                    apikey_key_input.update(cx, |inp, cx| {
-                        let env = env_k.read(cx);
-                        inp.set_value(
-                            crate::components::env_autocomplete::build_tokenized_content(key, env),
-                            window,
-                            cx,
-                        );
-                    });
-                    apikey_val_input.update(cx, |inp, cx| {
-                        let env = env_v.read(cx);
-                        inp.set_value(
-                            crate::components::env_autocomplete::build_tokenized_content(value, env),
-                            window,
-                            cx,
-                        );
-                    });
-                }
-                Auth::Inherit | Auth::None => {}
-            }
-
+            composer_inputs.sync_active_request_editors(
+                &editor_state,
+                &workspace_state,
+                &env_state,
+                window,
+                cx,
+            );
             let req_id = req.id.clone();
             response_state.update(cx, |resp, cx| {
                 resp.load_for_request(&req_id, ws_store.as_ref(), cx);
@@ -303,25 +137,12 @@ impl AppView {
                 editor_state: &editor_state,
                 response_state: &response_state,
                 toast_state: &toast_state,
-                url_input: &url_input,
-                json_editor: &json_editor,
-                xml_editor: &xml_editor,
-                raw_textarea: &raw_textarea,
-                bearer_token_input: &bearer_token_input,
-                basic_user_input: &basic_user_input,
-                basic_pass_input: &basic_pass_input,
-                apikey_key_input: &apikey_key_input,
-                apikey_val_input: &apikey_val_input,
-                pre_script_editor: &pre_script_editor,
-                test_script_editor: &test_script_editor,
+                composer_inputs: &composer_inputs,
             },
             initial_req.as_ref(),
             window,
             cx,
         );
-
-        let last_synced_request_id = initial_req.as_ref().map(|r| r.id.clone());
-        let last_synced_body_version = editor_state.read(cx).body_version;
 
         if git_state.read(cx).tracked_warning {
             toast_state.update(cx, |t, cx| {
@@ -343,23 +164,10 @@ impl AppView {
             editor_state,
             response_state,
             toast_state,
-            url_input,
-            json_editor,
-            xml_editor,
-            raw_textarea,
+            composer_inputs,
             inspector_displays,
-            pre_script_editor,
-            test_script_editor,
-            bearer_token_input,
-            basic_user_input,
-            basic_pass_input,
-            apikey_key_input,
-            apikey_val_input,
             executor,
             tokio_rt,
-            last_synced_request_id,
-            last_synced_request_version: 0,
-            last_synced_body_version,
             _subscriptions,
         }
     }
@@ -374,7 +182,13 @@ impl Render for AppView {
         let is_vertical_split = self.modal_state.read(cx).split_layout_vertical;
 
         // Synchronize active request fields into InputState / TextareaState when switched or body version changed
-        self.sync_active_request_editors(window, cx);
+        self.composer_inputs.sync_active_request_editors(
+            &self.editor_state,
+            &self.workspace_state,
+            &self.env_state,
+            window,
+            cx,
+        );
 
         // Synchronize response_editor with ResponseState's formatted_body
         self.inspector_displays.sync_response_editor(&self.response_state, window, cx);
