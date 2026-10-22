@@ -2,11 +2,13 @@ pub mod actions;
 pub mod auth_input;
 pub mod auth_tab;
 pub mod editor_pane;
+pub mod inspector_displays;
 pub mod modals;
 pub mod subscriptions;
 pub mod sync;
 
 pub use actions::*;
+pub use inspector_displays::*;
 pub use modals::*;
 pub use subscriptions::*;
 
@@ -34,9 +36,7 @@ pub struct AppView {
     pub(crate) json_editor: Entity<CodeEditorState>,
     pub(crate) xml_editor: Entity<CodeEditorState>,
     pub(crate) raw_textarea: Entity<TextareaState>,
-    pub(crate) response_editor: Entity<CodeEditorState>,
-    pub(crate) request_url_textarea: Entity<TextareaState>,
-    pub(crate) request_body_editor: Entity<CodeEditorState>,
+    pub(crate) inspector_displays: InspectorDisplays,
     pub(crate) pre_script_editor: Entity<CodeEditorState>,
     pub(crate) test_script_editor: Entity<CodeEditorState>,
     pub(crate) bearer_token_input: Entity<InputState>,
@@ -49,9 +49,6 @@ pub struct AppView {
     pub(crate) last_synced_request_id: Option<String>,
     pub(crate) last_synced_request_version: usize,
     pub(crate) last_synced_body_version: usize,
-    pub(crate) last_synced_response_id: Option<String>,
-    pub(crate) last_synced_response_view_mode: Option<ResponseViewMode>,
-    pub(crate) last_synced_example_name: Option<String>,
     pub(crate) _subscriptions: Vec<Subscription>,
 }
 
@@ -122,21 +119,7 @@ impl AppView {
             state.language("xml").line_number(true).folding(true)
         });
         let raw_textarea = cx.new(|cx| TextareaState::new(window, cx));
-        let response_editor = cx.new(|cx| {
-            let mut state = CodeEditorState::new(window, cx);
-            state.set_highlighter_factory(highlighter_factory.clone(), cx);
-            state
-                .language("json")
-                .line_number(true)
-                .folding(true)
-                .soft_wrap(false)
-        });
-        let request_url_textarea = cx.new(|cx| TextareaState::new(window, cx).auto_grow(1, 8));
-        let request_body_editor = cx.new(|cx| {
-            let mut state = CodeEditorState::new(window, cx);
-            state.set_highlighter_factory(highlighter_factory.clone(), cx);
-            state.language("json").line_number(true).folding(false)
-        });
+        let inspector_displays = InspectorDisplays::new(window, highlighter_factory.clone(), cx);
         let pre_script_editor = cx.new(|cx| {
             let mut state = CodeEditorState::new(window, cx);
             state.set_highlighter_factory(highlighter_factory.clone(), cx);
@@ -364,9 +347,7 @@ impl AppView {
             json_editor,
             xml_editor,
             raw_textarea,
-            response_editor,
-            request_url_textarea,
-            request_body_editor,
+            inspector_displays,
             pre_script_editor,
             test_script_editor,
             bearer_token_input,
@@ -379,9 +360,6 @@ impl AppView {
             last_synced_request_id,
             last_synced_request_version: 0,
             last_synced_body_version,
-            last_synced_response_id: None,
-            last_synced_response_view_mode: None,
-            last_synced_example_name: None,
             _subscriptions,
         }
     }
@@ -399,10 +377,10 @@ impl Render for AppView {
         self.sync_active_request_editors(window, cx);
 
         // Synchronize response_editor with ResponseState's formatted_body
-        self.sync_response_editor(window, cx);
+        self.inspector_displays.sync_response_editor(&self.response_state, window, cx);
 
         // Synchronize request_url_textarea and request_body_editor with RequestSent
-        self.sync_sent_request_preview(window, cx);
+        self.inspector_displays.sync_sent_request_preview(&self.response_state, window, cx);
 
         let ws_entity = self.workspace_state.clone();
         let sidebar_entity = self.sidebar_state.clone();
@@ -419,9 +397,9 @@ impl Render for AppView {
             ws_entity.clone(),
             ed_entity.clone(),
             resp_entity.clone(),
-            self.response_editor.clone(),
-            self.request_url_textarea.clone(),
-            self.request_body_editor.clone(),
+            self.inspector_displays.response_editor.clone(),
+            self.inspector_displays.request_url_textarea.clone(),
+            self.inspector_displays.request_body_editor.clone(),
         );
 
         let split_pane = if is_vertical_split {
