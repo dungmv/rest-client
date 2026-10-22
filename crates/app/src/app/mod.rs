@@ -168,7 +168,6 @@ impl Render for AppView {
             session_entity.clone(),
             resp_entity.clone(),
             self.inspector_displays.response_editor.clone(),
-            self.inspector_displays.request_url_textarea.clone(),
             self.inspector_displays.request_body_editor.clone(),
         );
 

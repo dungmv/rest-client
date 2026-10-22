@@ -411,6 +411,7 @@ pub fn setup_app_subscriptions(
     let ed_sync = editor_state.clone();
     let resp_sync = response_state.clone();
     let per_sync = persistence_state.clone();
+    let git_sync = targets.git_state.clone();
     let mut last_workspace_path = workspace_state.read(cx).workspace_path.clone();
     subscriptions.push(
         cx.observe_in(workspace_state, window, move |this, ws, window, cx| {
@@ -424,7 +425,10 @@ pub fn setup_app_subscriptions(
 
             let current_ws_path = ws.read(cx).workspace_path.clone();
             if current_ws_path != last_workspace_path {
-                last_workspace_path = current_ws_path;
+                last_workspace_path = current_ws_path.clone();
+                git_sync.update(cx, |git, cx| {
+                    git.set_repo_path(current_ws_path, cx);
+                });
                 let (next_id, ws_store) = {
                     let ws_ref = ws.read(cx);
                     let per_ref = per_sync.read(cx);

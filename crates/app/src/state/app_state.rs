@@ -41,6 +41,9 @@ impl AppState {
         let sidebar = cx.new(|_| SidebarState::new());
         let modal = cx.new(|_| ModalState::new());
         let git = cx.new(|_| GitState::new(ws_dir));
+        git.update(cx, |g, cx| {
+            g.refresh_status(cx);
+        });
         let session = cx.new(|_| RequestSessionState::new());
         let response = cx.new(|_| ResponseState::new());
         let toast = cx.new(|_| ToastState::new());

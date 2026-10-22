@@ -186,6 +186,45 @@ pub fn find_git_root(start_path: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Quickly detect if path is inside a Git repository without spawning git child process.
+/// Inspects `.git` directory and reads `.git/HEAD` if present.
+pub fn detect_git_repo_fast(start_path: &Path) -> Option<(PathBuf, Option<String>)> {
+    let root = find_git_root(start_path)?;
+    let git_dir = root.join(".git");
+    let head_path = if git_dir.is_file() {
+        // Submodule or worktree: gitdir: <path>
+        if let Ok(content) = std::fs::read_to_string(&git_dir) {
+            if let Some(target) = content.trim().strip_prefix("gitdir:") {
+                let p = PathBuf::from(target.trim());
+                let real_git_dir = if p.is_relative() { root.join(p) } else { p };
+                real_git_dir.join("HEAD")
+            } else {
+                git_dir.join("HEAD")
+            }
+        } else {
+            git_dir.join("HEAD")
+        }
+    } else {
+        git_dir.join("HEAD")
+    };
+
+    let branch = if let Ok(content) = std::fs::read_to_string(&head_path) {
+        let trimmed = content.trim();
+        if let Some(ref_path) = trimmed.strip_prefix("ref: refs/heads/") {
+            Some(ref_path.to_string())
+        } else if trimmed.len() >= 7 && !trimmed.contains(' ') {
+            // Detached HEAD: show short hash
+            Some(trimmed[..7.min(trimmed.len())].to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    Some((root, branch))
+}
+
 /// Parse git status --porcelain=v1 -b
 pub fn git_status(repo_dir: &Path) -> Result<GitStatusResult> {
     let root = match find_git_root(repo_dir) {
@@ -217,12 +256,20 @@ pub fn git_status(repo_dir: &Path) -> Result<GitStatusResult> {
         }
 
         // Branch header line: ## main...origin/main [ahead 1, behind 2]
+        // or: ## No commits yet on main
+        // or: ## Initial commit on main
         if let Some(stripped) = line.strip_prefix("##") {
             let branch_line = stripped.trim();
-            if let Some(branch_part) = branch_line.split("...").next() {
-                let name = branch_part.split_whitespace().next().unwrap_or("HEAD");
-                res.branch = name.to_string();
-            }
+            let branch_name = if let Some(b) = branch_line.strip_prefix("No commits yet on ") {
+                b.trim()
+            } else if let Some(b) = branch_line.strip_prefix("Initial commit on ") {
+                b.trim()
+            } else if let Some(branch_part) = branch_line.split("...").next() {
+                branch_part.split_whitespace().next().unwrap_or("HEAD")
+            } else {
+                "HEAD"
+            };
+            res.branch = branch_name.to_string();
 
             if branch_line.contains("...") {
                 let after_dots = branch_line.split("...").nth(1).unwrap_or("");
@@ -802,6 +849,19 @@ mod tests {
         assert!(git_remove_remote(&temp_dir, "origin").is_ok());
         let remotes = git_get_remotes(&temp_dir).unwrap();
         assert!(remotes.is_empty());
+
+        // 13. detect_git_repo_fast
+        let fast = detect_git_repo_fast(&temp_dir);
+        assert!(fast.is_some());
+        let (root, branch) = fast.unwrap();
+        assert_eq!(root, temp_dir);
+        assert!(branch.is_some());
+
+        // Non-repo path
+        let non_repo = std::env::temp_dir().join(format!("non_repo_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&non_repo);
+        assert!(detect_git_repo_fast(&non_repo).is_none());
+        let _ = std::fs::remove_dir_all(&non_repo);
 
         // Cleanup
         let _ = std::fs::remove_dir_all(&temp_dir);

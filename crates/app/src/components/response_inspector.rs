@@ -9,9 +9,10 @@ use gpui::{
     ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
-use gpui_component::input::{Editor, EditorState as CodeEditorState, Textarea, TextareaState};
+use gpui_component::input::{Editor, EditorState as CodeEditorState};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::scroll::ScrollableElement as _;
+use gpui_component::text::TextView;
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
 use restclient_core::models::HttpResponseRecord;
@@ -23,7 +24,6 @@ pub struct ResponseInspector {
     editor_state: Entity<RequestSessionState>,
     response_state: Entity<ResponseState>,
     response_editor: Entity<CodeEditorState>,
-    request_url_textarea: Entity<TextareaState>,
     request_body_editor: Entity<CodeEditorState>,
 }
 
@@ -33,7 +33,6 @@ impl ResponseInspector {
         editor_state: Entity<RequestSessionState>,
         response_state: Entity<ResponseState>,
         response_editor: Entity<CodeEditorState>,
-        request_url_textarea: Entity<TextareaState>,
         request_body_editor: Entity<CodeEditorState>,
     ) -> Self {
         Self {
@@ -41,7 +40,6 @@ impl ResponseInspector {
             editor_state,
             response_state,
             response_editor,
-            request_url_textarea,
             request_body_editor,
         }
     }
@@ -907,18 +905,24 @@ impl RenderOnce for ResponseInspector {
                                         .into_any_element()
                                 } else if let Some(resp) = &current_resp {
                                     if let Some(sent) = &resp.request_sent {
-                                        let sent_url_copy = sent.url.clone();
-                                        let mut curl_cmd = format!("curl -X {} '{}'", sent.method.as_str(), sent.url);
-                                        for (k, v) in &sent.headers {
-                                            curl_cmd.push_str(&format!(" \\\n  -H '{}: {}'", k, v.replace('\'', "'\\''")));
-                                        }
-                                        if let Some(b) = &sent.body_preview {
-                                            if !b.is_empty() {
-                                                curl_cmd.push_str(&format!(" \\\n  --data '{}'", b.replace('\'', "'\\''")));
-                                            }
-                                        }
-
-                                        let headers_all_text = sent.headers.iter().map(|(k, v)| format!("{}: {}", k, v)).collect::<Vec<_>>().join("\n");
+                                        let escape_md = |s: &str| -> String {
+                                            s.replace('\\', "\\\\")
+                                                .replace('*', "\\*")
+                                                .replace('_', "\\_")
+                                                .replace('`', "\\`")
+                                                .replace('<', "\\<")
+                                                .replace('>', "\\>")
+                                        };
+                                        let url_md = escape_md(&sent.url);
+                                        let headers_md = if sent.headers.is_empty() {
+                                            "*(No headers sent)*".to_string()
+                                        } else {
+                                            sent.headers
+                                                .iter()
+                                                .map(|(k, v)| format!("**{}:** {}", escape_md(k), escape_md(v)))
+                                                .collect::<Vec<_>>()
+                                                .join("  \n")
+                                        };
 
                                         div()
                                             .size_full()
@@ -942,80 +946,26 @@ impl RenderOnce for ResponseInspector {
                                                         div()
                                                             .flex()
                                                             .items_center()
-                                                            .justify_between()
+                                                            .gap(px(8.))
                                                             .child(
                                                                 div()
-                                                                    .flex()
-                                                                    .items_center()
-                                                                    .gap(px(8.))
-                                                                    .child(
-                                                                        div()
-                                                                            .px(px(6.))
-                                                                            .py(px(2.))
-                                                                            .rounded(px(4.))
-                                                                            .bg(gpui::Hsla { a: 0.15, ..t.method_color(sent.method) })
-                                                                            .border_1()
-                                                                            .border_color(gpui::Hsla { a: 0.3, ..t.method_color(sent.method) })
-                                                                            .font_weight(gpui::FontWeight::BOLD)
-                                                                            .text_xs()
-                                                                            .text_color(t.method_color(sent.method))
-                                                                            .child(sent.method.as_str()),
-                                                                    )
-                                                                    .child(
-                                                                        div()
-                                                                            .text_xs()
-                                                                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                                                                            .text_color(t.text_secondary)
-                                                                            .child("Request URL"),
-                                                                    ),
+                                                                    .px(px(6.))
+                                                                    .py(px(2.))
+                                                                    .rounded(px(4.))
+                                                                    .bg(gpui::Hsla { a: 0.15, ..t.method_color(sent.method) })
+                                                                    .border_1()
+                                                                    .border_color(gpui::Hsla { a: 0.3, ..t.method_color(sent.method) })
+                                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                                    .text_xs()
+                                                                    .text_color(t.method_color(sent.method))
+                                                                    .child(sent.method.as_str()),
                                                             )
                                                             .child(
                                                                 div()
-                                                                    .flex()
-                                                                    .items_center()
-                                                                    .gap(px(6.))
-                                                                    .child(
-                                                                        div()
-                                                                            .id("btn-copy-sent-url")
-                                                                            .cursor_pointer()
-                                                                            .px(px(6.))
-                                                                            .py(px(2.))
-                                                                            .rounded(px(4.))
-                                                                            .bg(t.bg_card)
-                                                                            .border_1()
-                                                                            .border_color(t.border)
-                                                                            .text_xs()
-                                                                            .text_color(t.text_secondary)
-                                                                            .hover(|s| s.text_color(t.text_primary).bg(t.bg_hover))
-                                                                            .on_click({
-                                                                                let url = sent_url_copy.clone();
-                                                                                move |_, _, cx| {
-                                                                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(url.clone()));
-                                                                                }
-                                                                            })
-                                                                            .child(Icon::new(IconName::Copy).size(px(14.))).child(" Copy URL"),
-                                                                    )
-                                                                    .child(
-                                                                        div()
-                                                                            .id("btn-copy-sent-curl")
-                                                                            .cursor_pointer()
-                                                                            .px(px(6.))
-                                                                            .py(px(2.))
-                                                                            .rounded(px(4.))
-                                                                            .bg(t.bg_card)
-                                                                            .border_1()
-                                                                            .border_color(t.border)
-                                                                            .text_xs()
-                                                                            .text_color(t.text_secondary)
-                                                                            .hover(|s| s.text_color(t.text_primary).bg(t.bg_hover))
-                                                                            .on_click({
-                                                                                let curl = curl_cmd.clone();
-                                                                                move |_, _, cx| {
-                                                                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(curl.clone()));
-                                                                                }
-                                                                            })
-                                                                            .child("cURL"),
-                                                                    ),
+                                                                    .text_xs()
+                                                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                                    .text_color(t.text_secondary)
+                                                                    .child("Request URL"),
                                                             ),
                                                     )
                                                     .child(
@@ -1027,12 +977,11 @@ impl RenderOnce for ResponseInspector {
                                                             .rounded(px(4.))
                                                             .border_1()
                                                             .border_color(t.border_subtle)
+                                                            .font_family(".SystemMonoFont")
+                                                            .text_xs()
                                                             .child(
-                                                                Textarea::new(&self.request_url_textarea)
-                                                                    .readonly(true)
-                                                                    .appearance(false)
-                                                                    .bordered(false)
-                                                                    .w_full()
+                                                                TextView::markdown("sent-request-url", url_md)
+                                                                    .selectable(true),
                                                             ),
                                                     ),
                                             )
@@ -1044,94 +993,30 @@ impl RenderOnce for ResponseInspector {
                                                     .gap(px(6.))
                                                     .child(
                                                         div()
-                                                            .flex()
-                                                            .items_center()
-                                                            .justify_between()
-                                                            .child(
-                                                                div()
-                                                                    .text_xs()
-                                                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                                                    .text_color(t.text_muted)
-                                                                    .child(format!("Headers Sent ({}):", sent.headers.len())),
-                                                            )
-                                                            .when(!sent.headers.is_empty(), |this| {
-                                                                let all_hdrs = headers_all_text.clone();
-                                                                this.child(
-                                                                    div()
-                                                                        .id("btn-copy-sent-headers")
-                                                                        .cursor_pointer()
-                                                                        .px(px(6.))
-                                                                        .py(px(2.))
-                                                                        .rounded(px(4.))
-                                                                        .bg(t.bg_card)
-                                                                        .border_1()
-                                                                        .border_color(t.border)
-                                                                        .text_xs()
-                                                                        .text_color(t.text_secondary)
-                                                                        .hover(|s| s.text_color(t.text_primary).bg(t.bg_hover))
-                                                                        .on_click(move |_, _, cx| {
-                                                                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(all_hdrs.clone()));
-                                                                        })
-                                                                        .child(Icon::new(IconName::Copy).size(px(14.))).child(" Copy All"),
-                                                                )
-                                                            }),
+                                                            .text_xs()
+                                                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                            .text_color(t.text_muted)
+                                                            .child(format!("Headers Sent ({}):", sent.headers.len())),
                                                     )
                                                     .child(
                                                         div()
+                                                            .w_full()
+                                                            .min_w_0()
                                                             .p(px(8.))
                                                             .bg(t.bg_card)
                                                             .rounded(px(6.))
                                                             .border_1()
                                                             .border_color(t.border)
-                                                            .flex()
-                                                            .flex_col()
-                                                            .gap(px(4.))
-                                                            .children(sent.headers.iter().enumerate().map(|(idx, (k, v))| {
-                                                                let val_copy = v.clone();
-                                                                div()
-                                                                    .flex()
-                                                                    .items_start()
-                                                                    .justify_between()
-                                                                    .gap(px(8.))
-                                                                    .py(px(2.))
-                                                                    .border_b_1()
-                                                                    .border_color(t.border_subtle)
-                                                                    .text_xs()
-                                                                    .font_family(".SystemMonoFont")
-                                                                    .child(
-                                                                        div()
-                                                                            .w(px(180.))
-                                                                            .flex_shrink_0()
-                                                                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                                                                            .text_color(t.primary)
-                                                                            .child(k.clone()),
-                                                                    )
-                                                                    .child(
-                                                                        div()
-                                                                            .flex_1()
-                                                                            .min_w_0()
-                                                                            .text_color(t.text_primary)
-                                                                            .whitespace_normal()
-                                                                            .child(v.clone()),
-                                                                    )
-                                                                    .child(
-                                                                        div()
-                                                                            .id(format!("copy-sent-hdr-{}", idx))
-                                                                            .flex_shrink_0()
-                                                                            .cursor_pointer()
-                                                                            .text_color(t.text_muted)
-                                                                            .hover(|s| s.text_color(t.text_primary))
-                                                                            .on_click(move |_, _, cx| {
-                                                                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(val_copy.clone()));
-                                                                            })
-                                                                            .child(Icon::new(IconName::Copy).size(px(14.))),
-                                                                    )
-                                                            })),
+                                                            .font_family(".SystemMonoFont")
+                                                            .text_xs()
+                                                            .child(
+                                                                TextView::markdown("sent-headers-view", headers_md)
+                                                                    .selectable(true),
+                                                            ),
                                                     ),
                                             )
                                             // Body Sent Section
-                                            .when_some(sent.body_preview.clone(), |this, preview| {
-                                                let preview_copy = preview.clone();
+                                            .when_some(sent.body_preview.clone(), |this, _preview| {
                                                 this.child(
                                                     div()
                                                         .flex()
@@ -1139,37 +1024,10 @@ impl RenderOnce for ResponseInspector {
                                                         .gap(px(6.))
                                                         .child(
                                                             div()
-                                                                .flex()
-                                                                .items_center()
-                                                                .justify_between()
-                                                                .child(
-                                                                    div()
-                                                                        .text_xs()
-                                                                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                                                                        .text_color(t.text_muted)
-                                                                        .child(format!("Body Sent ({} bytes):", sent.body_size_bytes)),
-                                                                )
-                                                                .child(
-                                                                    div()
-                                                                        .id("btn-copy-sent-body")
-                                                                        .cursor_pointer()
-                                                                        .px(px(6.))
-                                                                        .py(px(2.))
-                                                                        .rounded(px(4.))
-                                                                        .bg(t.bg_card)
-                                                                        .border_1()
-                                                                        .border_color(t.border)
-                                                                        .text_xs()
-                                                                        .text_color(t.text_secondary)
-                                                                        .hover(|s| s.text_color(t.text_primary).bg(t.bg_hover))
-                                                                        .on_click({
-                                                                            let b_copy = preview_copy.clone();
-                                                                            move |_, _, cx| {
-                                                                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(b_copy.clone()));
-                                                                            }
-                                                                        })
-                                                                        .child(Icon::new(IconName::Copy).size(px(14.))).child(" Copy Body"),
-                                                                ),
+                                                                .text_xs()
+                                                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                                .text_color(t.text_muted)
+                                                                .child(format!("Body Sent ({} bytes):", sent.body_size_bytes)),
                                                         )
                                                         .child(
                                                             div()

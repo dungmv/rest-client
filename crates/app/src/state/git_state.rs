@@ -72,14 +72,57 @@ impl Default for GitState {
 
 impl GitState {
     pub fn new(repo_path: PathBuf) -> Self {
+        let fast = restclient_core::git::detect_git_repo_fast(&repo_path);
+        let (branch, status) = match fast {
+            Some((_root, branch_opt)) => {
+                let branch_name = branch_opt.unwrap_or_else(|| "main".to_string());
+                (
+                    Some(branch_name.clone()),
+                    Some(restclient_core::git::GitStatusResult {
+                        is_repo: true,
+                        branch: branch_name,
+                        ..Default::default()
+                    }),
+                )
+            }
+            None => (
+                None,
+                Some(restclient_core::git::GitStatusResult {
+                    is_repo: false,
+                    ..Default::default()
+                }),
+            ),
+        };
+
         Self {
             repo_path,
+            branch,
+            status,
             ..Default::default()
         }
     }
 
     pub fn set_repo_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         self.repo_path = path;
+        let fast = restclient_core::git::detect_git_repo_fast(&self.repo_path);
+        match fast {
+            Some((_root, branch_opt)) => {
+                let branch_name = branch_opt.unwrap_or_else(|| "main".to_string());
+                self.branch = Some(branch_name.clone());
+                self.status = Some(restclient_core::git::GitStatusResult {
+                    is_repo: true,
+                    branch: branch_name,
+                    ..Default::default()
+                });
+            }
+            None => {
+                self.branch = None;
+                self.status = Some(restclient_core::git::GitStatusResult {
+                    is_repo: false,
+                    ..Default::default()
+                });
+            }
+        }
         self.refresh_all(cx);
     }
 
@@ -334,8 +377,17 @@ impl GitState {
                 .spawn(async move { restclient_core::git::git_status(&ws_status) })
                 .await;
 
-            let Ok(st) = status_res else {
-                return;
+            let st = match status_res {
+                Ok(st) => st,
+                Err(e) => {
+                    if let Some(this_ent) = this.upgrade() {
+                        this_ent.update(cx, |git, cx| {
+                            git.error = Some(e.to_string());
+                            cx.notify();
+                        });
+                    }
+                    return;
+                }
             };
 
             let diff_result = if show_modal {

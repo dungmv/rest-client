@@ -279,6 +279,7 @@ pub fn render_sidebar_footer(
                 .into_any_element()
         } else {
             let git_init = git_footer.clone();
+            let is_checking = git_status.is_none();
             div()
                 .id("sidebar-footer-no-git")
                 .flex_1()
@@ -295,7 +296,11 @@ pub fn render_sidebar_footer(
                         git.open_modal(GitActiveModal::Commit, cx);
                     });
                 })
-                .child(div().text_color(t.text_muted).child("No Git"))
+                .child(div().text_color(t.text_muted).child(if is_checking {
+                    "Checking Git..."
+                } else {
+                    "No Git"
+                }))
                 .into_any_element()
         })
         .into_any_element()

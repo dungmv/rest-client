@@ -1,6 +1,6 @@
 use crate::state::{ResponseState, ResponseViewMode};
 use gpui::{App, AppContext as _, Entity, Window};
-use gpui_component::input::{EditorState as CodeEditorState, TextareaState};
+use gpui_component::input::EditorState as CodeEditorState;
 use std::rc::Rc;
 
 type HighlighterFactory =
@@ -8,7 +8,6 @@ type HighlighterFactory =
 
 pub struct InspectorDisplays {
     pub response_editor: Entity<CodeEditorState>,
-    pub request_url_textarea: Entity<TextareaState>,
     pub request_body_editor: Entity<CodeEditorState>,
     pub last_synced_response_id: Option<String>,
     pub last_synced_response_view_mode: Option<ResponseViewMode>,
@@ -27,8 +26,6 @@ impl InspectorDisplays {
                 .soft_wrap(false)
         });
 
-        let request_url_textarea = cx.new(|cx| TextareaState::new(window, cx).auto_grow(1, 8));
-
         let request_body_editor = cx.new(|cx| {
             let mut state = CodeEditorState::new(window, cx);
             state.set_highlighter_factory(highlighter_factory, cx);
@@ -37,7 +34,6 @@ impl InspectorDisplays {
 
         Self {
             response_editor,
-            request_url_textarea,
             request_body_editor,
             last_synced_response_id: None,
             last_synced_response_view_mode: None,
@@ -103,7 +99,7 @@ impl InspectorDisplays {
         window: &mut Window,
         cx: &mut App,
     ) {
-        let (sent_url, body_text, lang) = {
+        let (body_text, lang) = {
             let resp_s = response_state.read(cx);
             if let Some(resp) = &resp_s.current_response {
                 if let Some(sent) = &resp.request_sent {
@@ -123,23 +119,15 @@ impl InspectorDisplays {
                     } else {
                         (String::new(), "plaintext")
                     };
-                    (Some(sent.url.clone()), Some(body_text), Some(lang))
+                    (Some(body_text), Some(lang))
                 } else {
-                    (None, None, None)
+                    (None, None)
                 }
             } else {
-                (None, None, None)
+                (None, None)
             }
         };
 
-        if let Some(sent_url) = sent_url {
-            self.request_url_textarea.update(cx, |txt, cx| {
-                if txt.value() != sent_url {
-                    txt.set_value(sent_url, window, cx);
-                    txt.set_readonly(true, cx);
-                }
-            });
-        }
         if let (Some(body_text), Some(lang)) = (body_text, lang) {
             self.request_body_editor.update(cx, |txt, cx| {
                 if txt.value() != body_text {
