@@ -1,4 +1,6 @@
-use crate::models::{Auth, EnvironmentVariable, HttpMethod, KeyValuePair, RequestBody, ScriptConfig};
+use crate::models::{
+    Auth, EnvironmentVariable, HttpMethod, KeyValuePair, RequestBody, ScriptConfig,
+};
 use crate::storage::models::RequestExampleFile;
 use serde::{Deserialize, Serialize};
 

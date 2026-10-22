@@ -28,17 +28,17 @@ impl PreRequestContext {
 
 #[derive(Debug, Clone, Default)]
 pub struct PreRequestOutput {
-    /// Danh sách (key, Some(val)) nếu set, hoặc (key, None) nếu unset
+    /// List of (key, Some(val)) if set, or (key, None) if unset
     pub env_mutations: Vec<(String, Option<String>)>,
-    /// Headers thêm mới hoặc override
+    /// Added or overridden headers
     pub header_mutations: Vec<(String, String)>,
-    /// Nếu script gọi client.request.body.setJson(...)
+    /// Present if the script invoked client.request.body.setJson(...)
     pub body_override: Option<String>,
-    /// Lỗi khi thực thi script (nếu có, không làm crash app)
+    /// Script execution error if any (non-fatal, will not crash the app)
     pub error: Option<String>,
-    /// Log từ console.log(...)
+    /// Logs captured from console.log(...)
     pub console_logs: Vec<String>,
-    /// Danh sách console logs có cấu trúc (source, level, timestamp)
+    /// Structured console logs (source, level, timestamp)
     pub console_entries: Vec<ConsoleLogEntry>,
 }
 
@@ -48,7 +48,7 @@ pub struct PostResponseContext {
     pub status_code: u16,
     pub response_time_ms: u64,
     pub response_headers: Vec<(String, String)>,
-    /// Body dạng chuỗi UTF-8 (giới hạn an toàn tối đa 10MB)
+    /// Response body as UTF-8 string (safety bound: max 10MB)
     pub response_body: String,
 }
 

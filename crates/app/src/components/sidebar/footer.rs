@@ -100,12 +100,8 @@ pub fn render_sidebar_footer(
                                             .items_center()
                                             .gap(px(1.))
                                             .text_color(t.text_muted)
-                                            .child(
-                                                Icon::new(IconName::ArrowUp).size(px(10.)),
-                                            )
-                                            .child(
-                                                div().text_xs().child(format!("{}", ahead)),
-                                            ),
+                                            .child(Icon::new(IconName::ArrowUp).size(px(10.)))
+                                            .child(div().text_xs().child(format!("{}", ahead))),
                                     )
                                 })
                                 .when(behind > 0, |s| {
@@ -115,16 +111,11 @@ pub fn render_sidebar_footer(
                                             .items_center()
                                             .gap(px(1.))
                                             .text_color(t.primary)
-                                            .child(
-                                                Icon::new(IconName::ArrowDown)
-                                                    .size(px(10.)),
-                                            )
+                                            .child(Icon::new(IconName::ArrowDown).size(px(10.)))
                                             .child(
                                                 div()
                                                     .text_xs()
-                                                    .font_weight(
-                                                        gpui::FontWeight::BOLD,
-                                                    )
+                                                    .font_weight(gpui::FontWeight::BOLD)
                                                     .child(format!("{}", behind)),
                                             ),
                                     )
@@ -182,45 +173,38 @@ pub fn render_sidebar_footer(
                     );
 
                     // 3. Branch submenu: named after the current branch
-                    m = m.submenu(
-                        current_b.clone(),
-                        window,
-                        cx,
-                        move |sub, _w, _cx| {
-                            let mut s = sub;
-                            if branches_list.is_empty() {
-                                s = s.item(
-                                    PopupMenuItem::new(if current_b.is_empty() {
-                                        "No branches".to_string()
-                                    } else {
-                                        current_b.clone()
-                                    })
-                                    .checked(true),
-                                );
-                            } else {
-                                for b in &branches_list {
-                                    let b_name = b.name.clone();
-                                    let is_curr = b.is_current || b.name == current_b;
-                                    let git_b = git_checkout_parent.clone();
-                                    let toast_b = toast_checkout_parent.clone();
-                                    let b_target = b_name.clone();
+                    m = m.submenu(current_b.clone(), window, cx, move |sub, _w, _cx| {
+                        let mut s = sub;
+                        if branches_list.is_empty() {
+                            s = s.item(
+                                PopupMenuItem::new(if current_b.is_empty() {
+                                    "No branches".to_string()
+                                } else {
+                                    current_b.clone()
+                                })
+                                .checked(true),
+                            );
+                        } else {
+                            for b in &branches_list {
+                                let b_name = b.name.clone();
+                                let is_curr = b.is_current || b.name == current_b;
+                                let git_b = git_checkout_parent.clone();
+                                let toast_b = toast_checkout_parent.clone();
+                                let b_target = b_name.clone();
 
-                                    s = s.item(
-                                        PopupMenuItem::new(b_name)
-                                            .checked(is_curr)
-                                            .on_click(move |_, _, cx| {
-                                                if !is_curr {
-                                                    git_b.update(cx, |git, cx| {
-                                                        git.checkout(&b_target, Some(toast_b.clone()), cx);
-                                                    });
-                                                }
-                                            }),
-                                    );
-                                }
+                                s = s.item(PopupMenuItem::new(b_name).checked(is_curr).on_click(
+                                    move |_, _, cx| {
+                                        if !is_curr {
+                                            git_b.update(cx, |git, cx| {
+                                                git.checkout(&b_target, Some(toast_b.clone()), cx);
+                                            });
+                                        }
+                                    },
+                                ));
                             }
-                            s
-                        },
-                    );
+                        }
+                        s
+                    });
 
                     // 4. New Branch...
                     m = m.item(

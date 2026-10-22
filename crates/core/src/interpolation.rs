@@ -4,7 +4,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-static VAR_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\{\s*([$a-zA-Z0-9_.-]+)\s*\}\}").unwrap());
+static VAR_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\{\{\s*([$a-zA-Z0-9_.-]+)\s*\}\}").unwrap());
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariableSpan {
@@ -125,7 +126,9 @@ pub fn interpolate_with_map(text: &str, var_map: &HashMap<&str, &str>) -> Interp
                 value: Some(val.to_string()),
             });
         } else if var_name.starts_with('$') {
-            if let Some(resolved_fake) = crate::scripting::fake_vars::generate_fake_var_value(var_name) {
+            if let Some(resolved_fake) =
+                crate::scripting::fake_vars::generate_fake_var_value(var_name)
+            {
                 result.push_str(&resolved_fake);
                 let end_pos = result.len();
                 spans.push(VariableSpan {
@@ -192,7 +195,9 @@ pub fn scan_variables(raw_text: &str, env: Option<&Environment>) -> Vec<Variable
         let (is_resolved, value) = if is_in_env {
             (true, var_map.get(var_name).map(|v| v.to_string()))
         } else if var_name.starts_with('$') {
-            if let Some(resolved_fake) = crate::scripting::fake_vars::generate_fake_var_value(var_name) {
+            if let Some(resolved_fake) =
+                crate::scripting::fake_vars::generate_fake_var_value(var_name)
+            {
                 (true, Some(resolved_fake))
             } else {
                 (false, None)
@@ -245,7 +250,10 @@ mod tests {
         let env = Environment::new("ws1", "local");
         let res = interpolate("http://{{missing_host}}/api/{{missing_path}}", Some(&env));
         assert_eq!(res.text, "http://{{missing_host}}/api/{{missing_path}}");
-        assert_eq!(res.unresolved_variables, vec!["missing_host", "missing_path"]);
+        assert_eq!(
+            res.unresolved_variables,
+            vec!["missing_host", "missing_path"]
+        );
         assert_eq!(res.spans.len(), 2);
         assert!(!res.spans[0].is_resolved);
         assert!(!res.spans[1].is_resolved);

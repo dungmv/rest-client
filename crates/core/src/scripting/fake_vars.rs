@@ -11,7 +11,7 @@ static FAKE_VAR_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\{\{\$(uuid|guid|timestamp|isoTimestamp|randomInt|randomEmail|randomName|randomPhoneNumber)\}\}").unwrap()
 });
 
-/// Sinh giá trị cho các biến giả động theo tên (có hoặc không có prefix `$`).
+/// Generate dynamic values for fake/mock variables by name (with or without `$` prefix).
 pub fn generate_fake_var_value(name: &str) -> Option<String> {
     let stripped = name.strip_prefix('$').unwrap_or(name);
     let mut rng = rand::thread_rng();
@@ -33,9 +33,9 @@ pub fn generate_fake_var_value(name: &str) -> Option<String> {
     }
 }
 
-/// Thay thế các biến động đặc biệt {{$uuid}}, {{$timestamp}}, v.v. trong `text`.
-/// Cần được gọi TRƯỚC bước `interpolate()` để tránh xung đột với biến môi trường thông thường.
-/// Trả về `Cow::Borrowed` nếu chuỗi không chứa `{{$`, hoàn toàn tránh heap allocation.
+/// Replace dynamic mock variables like {{$uuid}}, {{$timestamp}}, etc. in `text`.
+/// Must be called BEFORE `interpolate()` to prevent collisions with normal environment variables.
+/// Returns `Cow::Borrowed` if text does not contain `{{$`, avoiding heap allocations.
 pub fn resolve_fake_vars<'a>(text: &'a str) -> Cow<'a, str> {
     if !text.contains("{{$") {
         return Cow::Borrowed(text);
@@ -46,7 +46,7 @@ pub fn resolve_fake_vars<'a>(text: &'a str) -> Cow<'a, str> {
     })
 }
 
-/// Giải quyết fake vars trực tiếp trên `&mut String`, không cấp phát lại nếu không chứa `{{$`.
+/// Resolve fake variables in-place on `&mut String`, avoiding re-allocation if `{{$` is absent.
 pub fn resolve_fake_vars_in_place(s: &mut String) {
     if !s.contains("{{$") {
         return;
@@ -56,7 +56,7 @@ pub fn resolve_fake_vars_in_place(s: &mut String) {
     }
 }
 
-/// Giải quyết toàn bộ fake vars trong một HttpRequestItem mà chỉ cấp phát lại các trường thực sự chứa `{{$`.
+/// Resolve all fake variables in an HttpRequestItem, allocating only for fields that contain `{{$`.
 pub fn resolve_fake_vars_in_request(req_item: &mut HttpRequestItem) {
     resolve_fake_vars_in_place(&mut req_item.url);
     for p in &mut req_item.params {
@@ -147,9 +147,16 @@ mod tests {
     #[test]
     fn test_resolve_fake_vars_in_request() {
         use crate::models::{HttpMethod, KeyValuePair};
-        let mut item = HttpRequestItem::new("ws1", "Test", HttpMethod::Get, "https://api.example.com/users?uid={{$uuid}}");
-        item.headers.push(KeyValuePair::new("X-Request-Id", "{{$guid}}"));
-        item.headers.push(KeyValuePair::new("Content-Type", "application/json"));
+        let mut item = HttpRequestItem::new(
+            "ws1",
+            "Test",
+            HttpMethod::Get,
+            "https://api.example.com/users?uid={{$uuid}}",
+        );
+        item.headers
+            .push(KeyValuePair::new("X-Request-Id", "{{$guid}}"));
+        item.headers
+            .push(KeyValuePair::new("Content-Type", "application/json"));
         resolve_fake_vars_in_request(&mut item);
         assert!(!item.url.contains("{{$uuid}}"));
         assert!(!item.headers[0].value.contains("{{$guid}}"));

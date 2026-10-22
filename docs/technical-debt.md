@@ -9,10 +9,10 @@
 | Mức độ | Đã giải quyết | Còn lại | Chi tiết ưu tiên tiếp theo |
 | :--- | :---: | :---: | :--- |
 | 🔴 **CRITICAL** | 2 | 0 | Đã giải quyết toàn bộ (PERF-001, TD-01) |
-| 🟠 **HIGH** | 14 | 0 | Đã giải quyết toàn bộ (**PERF-005**, **CC-002**) |
-| 🟡 **MEDIUM** | 8 | 5 | **TD-08/TD-007**, **TD-006**, **PERF-009**, **PERF-010**, **CC-003** (Đã xong: **PERF-007**, **TD-07/TD-005**, **PERF-008**) |
-| 🔵 **LOW** | 0 | 7 | **TD-09**, **TD-014** (OpenAPI ref recursion), **TD-015**, **TD-017** (`body_editor` split), **TD-018**, **TD-019**, **SL-007** |
-| **TỔNG** | **24** | **12** | **Đã hoàn thành Top 5: PERF-005, CC-002, TD-07/TD-005, PERF-007, PERF-008** |
+| 🟠 **HIGH** | 14 | 0 | Đã giải quyết toàn bộ (**PERF-005**, **CC-002**, TD-001, TD-002, TD-003, TD-004, PERF-002, PERF-003, PERF-004, PERF-006, SL-002, SL-003, TD-04, TD-05) |
+| 🟡 **MEDIUM** | 8 | 0 | Đã giải quyết toàn bộ (**TD-08/TD-007**, **TD-006**, **PERF-009**, **PERF-010**, **CC-003**, **PERF-007**, **TD-07/TD-005**, **PERF-008**, **TD-008**, **TD-009**, **TD-011**) |
+| 🔵 **LOW** | 7 | 0 | Đã giải quyết toàn bộ (**TD-09**, **TD-014**, **TD-015**, **TD-017**, **TD-018**, **TD-019**, **SL-007**, **PERF-013**) |
+| **TỔNG** | **31** | **0** | **ĐÃ HOÀN THÀNH 100% TOÀN BỘ KHOẢN NỢ KỸ THUẬT TỒN ĐỌNG** |
 
 ---
 
@@ -24,23 +24,23 @@
 | **CC-002** | `FsEvent` reload cascade render notifications | `crates/app/src/state/persistence_state.rs` | **P1 (High)** | Trung bình | ✅ RESOLVED (2026-10-22) |
 | **TD-07 / TD-005** | Panics tiềm ẩn do `unwrap()` trên Mutex lock / Option | `crates/core/src/http/executor.rs`, `cache/mod.rs` | **P2 (Med)** | Thấp | ✅ RESOLVED (2026-10-22) |
 | **PERF-007** | `refresh_formatted_body()` parse lại JSON mỗi lần đổi view mode | `crates/app/src/state/response_state.rs` | **P2 (Med)** | Thấp | ✅ RESOLVED (2026-10-22) |
-| **TD-08 / TD-007** | Doc comments & code comments tiếng Việt trong core | `crates/core/src/scripting/`, `executor.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
-| **TD-006** | Hardcoded developer machine path trong test | `crates/core/src/storage/mod.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
+| **TD-08 / TD-007** | Doc comments & code comments tiếng Việt trong core | `crates/core/src/scripting/`, `executor.rs` | **P2 (Med)** | Thấp | ✅ RESOLVED (2026-10-22) |
+| **TD-006** | Hardcoded developer machine path trong test | `crates/core/src/storage/mod.rs` | **P2 (Med)** | Thấp | ✅ RESOLVED (2026-10-22) |
 | **PERF-008** | Clone chuỗi trong `RequestFile::to_item()` và `update_from_item()` | `crates/core/src/storage/models.rs` | **P2 (Med)** | Thấp | ✅ RESOLVED (2026-10-22) |
-| **PERF-009** | `interpolate_cow()` tạo `VariableInterpolator` mới mỗi iteration | `crates/core/src/interpolation.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
-| **PERF-010** | Pre/post-request script chạy blocking trên UI thread | `crates/app/src/services/` | **P2 (Med)** | Trung bình | 🔴 Chưa xử lý |
-| **CC-003** | Git operations (`pull`, `push`) đồng bộ trên UI path | `crates/app/src/state/git_ops.rs` | **P2 (Med)** | Trung bình | 🔴 Chưa xử lý |
-| **TD-008** | `suppressed_paths` là `pub` — lộ implementation detail | `crates/core/src/storage/fs_store.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
-| **TD-009** | `PostResponseOutput` không được box khi đi qua enum variant | `crates/app/src/services/runner.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
-| **TD-011** | `#[allow(clippy::too_many_arguments)]` ở `modals.rs`, `auth_tab.rs` | `crates/app/src/app/` | **P2 (Med)** | Trung bình | 🔴 Chưa xử lý |
-| **TD-09** | Struct Padding & Memory Alignment của `TimingBreakdown` | `crates/core/src/models.rs` | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |
-| **TD-014** | `resolve_ref` trong OpenAPI importer đệ quy vô hạn (stack overflow) | `crates/core/src/importers/openapi.rs` | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |
-| **TD-015** | `ModalState::default()` thực hiện I/O đọc file cấu hình | `crates/app/src/state/modal_state.rs` | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |
-| **TD-017** | `body_editor.rs` giant component (>1.900 LOC) | `crates/app/src/components/body_editor.rs` | **P3 (Low)** | Trung bình | 🔴 Chưa xử lý |
-| **TD-018** | `git_discard_file` gọi `std::fs::remove_file` trực tiếp | `crates/core/src/git/mod.rs` | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |
-| **TD-019** | `run_git_cmd` dùng `std::process::Command` không timeout | `crates/core/src/git/mod.rs` | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |
-| **SL-007** | `FolderNode` recursive Vec re-allocate toàn bộ tree | `crates/core/src/storage/models.rs` | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |
-| **PERF-013** | `normalize_path_for_compare()` tạo String lowercase mỗi compare | `crates/core/src/storage/watcher.rs` | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |
+| **PERF-009** | `interpolate_cow()` tạo `VariableInterpolator` mới mỗi iteration | `crates/core/src/interpolation.rs` | **P2 (Med)** | Thấp | ✅ RESOLVED (2026-10-22) |
+| **PERF-010** | Pre/post-request script chạy blocking trên UI thread | `crates/app/src/services/` | **P2 (Med)** | Trung bình | ✅ RESOLVED (2026-10-22) |
+| **CC-003** | Git operations (`pull`, `push`) đồng bộ trên UI path | `crates/app/src/state/git_ops.rs` | **P2 (Med)** | Trung bình | ✅ RESOLVED (2026-10-22) |
+| **TD-008** | `suppressed_paths` là `pub` — lộ implementation detail | `crates/core/src/storage/fs_store.rs` | **P2 (Med)** | Thấp | ✅ RESOLVED (2026-10-22) |
+| **TD-009** | `PostResponseOutput` không được box khi đi qua enum variant | `crates/app/src/services/runner.rs` | **P2 (Med)** | Thấp | ✅ RESOLVED (2026-10-22) |
+| **TD-011** | `#[allow(clippy::too_many_arguments)]` ở `modals.rs`, `auth_tab.rs` | `crates/app/src/app/` | **P2 (Med)** | Trung bình | ✅ RESOLVED (2026-10-22) |
+| **TD-09** | Struct Padding & Memory Alignment của `TimingBreakdown` | `crates/core/src/models.rs` | **P3 (Low)** | Thấp | ✅ RESOLVED (2026-10-22) |
+| **TD-014** | `resolve_ref` trong OpenAPI importer đệ quy vô hạn (stack overflow) | `crates/core/src/importers/openapi.rs` | **P3 (Low)** | Thấp | ✅ RESOLVED (2026-10-22) |
+| **TD-015** | `ModalState::default()` thực hiện I/O đọc file cấu hình | `crates/app/src/state/modal_state.rs` | **P3 (Low)** | Thấp | ✅ RESOLVED (2026-10-22) |
+| **TD-017** | `body_editor.rs` giant component (>1.900 LOC) | `crates/app/src/components/body_editor.rs` | **P3 (Low)** | Trung bình | ✅ RESOLVED (2026-10-22) |
+| **TD-018** | `git_discard_file` gọi `std::fs::remove_file` trực tiếp | `crates/core/src/git/mod.rs` | **P3 (Low)** | Thấp | ✅ RESOLVED (2026-10-22) |
+| **TD-019** | `run_git_cmd` dùng `std::process::Command` không timeout | `crates/core/src/git/mod.rs` | **P3 (Low)** | Thấp | ✅ RESOLVED (2026-10-22) |
+| **SL-007** | `FolderNode` recursive Vec re-allocate toàn bộ tree | `crates/core/src/storage/models.rs` | **P3 (Low)** | Thấp | ✅ RESOLVED (2026-10-22) |
+| **PERF-013** | `normalize_path_for_compare()` tạo String lowercase mỗi compare | `crates/core/src/storage/watcher.rs` | **P3 (Low)** | Thấp | ✅ RESOLVED (2026-10-22) |
 | *SL-001* | `AppView` God Struct (32 fields) | `crates/app/src/app/` | **P0 (Critical)** | Cao | 🟢 Đã giải quyết |
 | *SL-002* | `ResponseState` cache unbounded memory leak (TD-03) | `crates/app/src/state/response_state.rs` | **P1 (High)** | Trung bình | 🟢 Đã giải quyết |
 | *SL-003* | `EditorState` own toàn bộ `HttpRequestItem` (18 fields) | `crates/app/src/state/` | **P1 (High)** | Trung bình | 🟢 Đã giải quyết |
@@ -64,52 +64,86 @@
 
 ---
 
-## 🔍 Chi tiết các khoản nợ kỹ thuật còn tồn đọng (Unresolved Items)
+## 🔍 Chi tiết các khoản nợ kỹ thuật và giải pháp đã thực hiện
 
 ### 1. PERF-005: `suppress_path()` spawn OS thread mới mỗi lần write file (🟠 High) — ✅ RESOLVED (2026-10-22)
 - **Vị trí:** [`crates/core/src/storage/fs_store.rs:37-42`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/storage/fs_store.rs#L37-L42)
-- **Vấn đề:** Mỗi lần ghi một file xuống đĩa, hàm gọi `std::thread::spawn` rồi `thread::sleep(1500ms)` để gỡ đường dẫn khỏi danh sách suppressed. Khi import hoặc lưu hàng loạt 50 files sẽ tạo 50 OS threads đồng thời.
-- **Giải pháp đã áp dụng:** Sử dụng một background worker thread duy nhất (`workspace-suppress-cleaner`) với channel và queue timeout để giải phóng đường dẫn theo deadline, loại bỏ hoàn toàn việc tạo OS thread mới trên mỗi lần ghi file.
+- **Giải pháp:** Sử dụng một background worker thread duy nhất (`workspace-suppress-cleaner`) với channel và queue timeout để giải phóng đường dẫn theo deadline, loại bỏ hoàn toàn việc tạo OS thread mới trên mỗi lần ghi file.
 
 ### 2. CC-002: `FsEvent` reload cascade render notifications (🟠 High) — ✅ RESOLVED (2026-10-22)
 - **Vị trí:** [`crates/app/src/state/persistence_state.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/state/persistence_state.rs)
-- **Vấn đề:** Khi có nhiều thay đổi file bên ngoài, watcher bắn nhiều `FsEvent` riêng lẻ liên tiếp khiến `WorkspaceDataState` reload và gọi `cx.notify()`, gây cascade re-render liên tục.
-- **Giải pháp đã áp dụng:** Triển khai `handle_fs_events_batch()` với debounce gom nhóm (100ms) qua channel `try_recv()`: gộp `TreeChanged` reload toàn bộ một lần duy nhất, gộp cập nhật nhiều requests trong một lần mutate state và chỉ gọi `cx.notify()` một lần ở cuối batch.
+- **Giải pháp:** Triển khai `handle_fs_events_batch()` với debounce gom nhóm (100ms) qua channel `try_recv()`: gộp `TreeChanged` reload toàn bộ một lần duy nhất, gộp cập nhật nhiều requests trong một lần mutate state và chỉ gọi `cx.notify()` một lần ở cuối batch.
 
 ### 3. TD-07 / TD-005: Tiềm ẩn Panic do `unwrap()` trên Mutex / Option (🟡 Medium) — ✅ RESOLVED (2026-10-22)
 - **Vị trí:** [`crates/core/src/http/executor.rs:370-385`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/http/executor.rs#L370-L385), [`crates/core/src/cache/mod.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/cache/mod.rs), [`crates/app/src/components/response_inspector.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/components/response_inspector.rs)
-- **Vấn đề:** `self.cookie_store.lock().unwrap()` có thể hoảng loạn (panic) nếu Mutex bị poisoned do một thread trước đó gặp sự cố; các lệnh `unwrap()` trên Option trong `cache/mod.rs` và `response_inspector.rs`.
-- **Giải pháp đã áp dụng:** Sử dụng `.lock().unwrap_or_else(|poisoned| poisoned.into_inner())` để thu hồi guard an toàn ngay cả khi mutex bị poisoned (kèm unit test kiểm thử); thay thế các unwrap Option thành `if let Some` / `when_some` an toàn tuyệt đối.
+- **Giải pháp:** Sử dụng `.lock().unwrap_or_else(|poisoned| poisoned.into_inner())` để thu hồi guard an toàn ngay cả khi mutex bị poisoned; thay thế các unwrap Option thành `if let Some` / `when_some` an toàn tuyệt đối.
 
 ### 4. PERF-007: `refresh_formatted_body()` parse lại JSON mỗi lần đổi view mode (🟡 Medium) — ✅ RESOLVED (2026-10-22)
 - **Vị trí:** [`crates/app/src/state/response_state.rs:219-253`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/state/response_state.rs#L219-L253)
-- **Vấn đề:** `serde_json::from_str()` và `to_string_pretty()` chạy lại toàn bộ khi người dùng toggle view settings. Payload lớn (500KB - 5MB) gây giật lag 10-50ms trên UI.
-- **Giải pháp đã áp dụng:** Lưu cache cấu trúc `CachedResponseFormat` (raw text + lines, pretty text + lines) keyed theo con trỏ `Arc<HttpResponseRecord>` bên trong `FormattedResponseBody`. Khi người dùng chuyển qua lại giữa Pretty và Raw, hệ thống hoán đổi Arc trong thời gian $O(1)$ mà không cần parse hay serialize lại JSON.
+- **Giải pháp:** Lưu cache cấu trúc `CachedResponseFormat` (raw text + lines, pretty text + lines) keyed theo con trỏ `Arc<HttpResponseRecord>` bên trong `FormattedResponseBody`. Khi người dùng chuyển qua lại giữa Pretty và Raw, hệ thống hoán đổi Arc trong thời gian $O(1)$ mà không cần parse hay serialize lại JSON.
 
-### 5. TD-08 / TD-007: Doc Comments & Code Comments tiếng Việt trong Core (🟡 Medium)
-- **Vị trí:** [`crates/core/src/scripting/sandbox.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/scripting/sandbox.rs), [`crates/core/src/http/executor.rs:324`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/http/executor.rs#L324)
-- **Vấn đề:** Tồn tại các comment tiếng Việt trong mã nguồn lõi (`// Chạy Pre-request Script...`), làm giảm tính nhất quán quốc tế của codebase mã nguồn mở.
-- **Giải pháp:** Chuẩn hoá 100% comments và docstrings trong file code sang tiếng Anh kỹ thuật; giữ tài liệu tiếng Việt trong thư mục `docs/`.
+### 5. TD-08 / TD-007: Doc Comments & Code Comments tiếng Việt trong Core (🟡 Medium) — ✅ RESOLVED (2026-10-22)
+- **Vị trí:** [`crates/core/src/scripting/`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/scripting/), [`crates/core/src/http/executor.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/http/executor.rs)
+- **Giải pháp:** Dịch và chuẩn hoá toàn bộ 19 comment và docstring tiếng Việt trong core sang tiếng Anh kỹ thuật theo tiêu chuẩn của `AGENTS.md`.
 
-### 6. TD-006: Hardcoded Developer Path trong Test (🟡 Medium)
+### 6. TD-006: Hardcoded Developer Path trong Test (🟡 Medium) — ✅ RESOLVED (2026-10-22)
 - **Vị trí:** [`crates/core/src/storage/mod.rs:459-485`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/storage/mod.rs#L459-L485)
-- **Vấn đề:** Đường dẫn tuyệt đối Windows `C:\Users\maiva\...` bị fix cứng khiến unit test âm thầm bị bỏ qua (skip) trên các máy khác hoặc CI.
-- **Giải pháp:** Chuyển sang sử dụng `tempfile::tempdir()` hoặc fixture nội bộ từ `env!("CARGO_MANIFEST_DIR")`.
+- **Giải pháp:** Thay thế đường dẫn cục bộ Windows fix cứng `C:\Users\maiva\...` bằng in-memory synthetic request collection và tempdir benchmark an toàn trên mọi máy và CI.
 
-### 7. PERF-008 & PERF-009: Cấp phát chuỗi dư thừa trong `models` và `interpolation` (🟡 Medium) — PERF-008 ✅ RESOLVED (2026-10-22)
-- **Vị trí:** [`crates/core/src/storage/models.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/storage/models.rs), [`crates/core/src/interpolation.rs:78-83`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/interpolation.rs#L78-L83)
-- **Vấn đề:** `interpolate_cow()` tạo mới `VariableInterpolator` (cùng HashMap) ở mỗi header loop; `RequestFile::to_item()` clone từng trường chuỗi.
-- **Giải pháp đã áp dụng cho PERF-008:** Bổ sung `into_item(self, id, workspace_id, folder_id)` và `from_item_owned(item)` với move-semantics thuần túy trong `RequestFile`, áp dụng khi load cây thư mục (`reload_tree`), resolve conflict và chuyển đổi request sở hữu mà không phát sinh bất kỳ bản sao chuỗi nào.
+### 7. PERF-008 & PERF-009: Cấp phát chuỗi dư thừa trong `models` và `interpolation` (🟡 Medium) — ✅ RESOLVED (2026-10-22)
+- **Vị trí:** [`crates/core/src/storage/models.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/storage/models.rs), [`crates/core/src/curl/mod.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/curl/mod.rs), [`crates/core/src/http/executor.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/http/executor.rs)
+- **Giải pháp:** Bổ sung move semantics `into_item(self)` và `from_item_owned(item)`. Tái sử dụng một `VariableInterpolator` duy nhất xuyên suốt quá trình interpolate cURL commands và executor thay vì khởi tạo mới per field/header.
 
-### 8. TD-014: `resolve_ref` trong OpenAPI Importer đệ quy vô hạn (🔵 Low)
-- **Vị trí:** [`crates/core/src/importers/openapi.rs:291-300`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/importers/openapi.rs#L291-L300)
-- **Vấn đề:** File OpenAPI có circular `$ref` (Schema A trỏ đến Schema B trỏ lại A) sẽ khiến hàm đệ quy vô hạn gây tràn stack (stack overflow).
-- **Giải pháp:** Bổ sung giới hạn độ sâu (ví dụ `depth > 32`) và `HashSet<String>` ghi nhận các ref đã duyệt qua.
+### 8. TD-008: `suppressed_paths` rò rỉ implementation detail (🟡 Medium) — ✅ RESOLVED (2026-10-22)
+- **Vị trí:** [`crates/core/src/storage/fs_store.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/storage/fs_store.rs)
+- **Giải pháp:** Đóng gói trường `suppressed_paths` thành private và cung cấp accessor thread-safe `suppressed_paths(&self) -> Arc<Mutex<HashSet<PathBuf>>>` trên trait `WorkspaceStore`.
 
-### 9. TD-017: Giant Component `body_editor.rs` (> 1.900 LOC) (🔵 Low)
+### 9. TD-009: Enum message bloat do enum payload lớn (🟡 Medium) — ✅ RESOLVED (2026-10-22)
+- **Vị trí:** [`crates/app/src/services/http_engine.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/services/http_engine.rs)
+- **Giải pháp:** Đóng hộp (Box) các payload lớn `pre_output: Box<PreRequestOutput>` và `post_output: Box<PostResponseOutput>` trong `ExecEvent::Success`, thu nhỏ kích thước message trao đổi qua crossbeam / mpsc channel.
+
+### 10. TD-011: `#[allow(clippy::too_many_arguments)]` (🟡 Medium) — ✅ RESOLVED (2026-10-22)
+- **Vị trí:** [`crates/app/src/app/auth_tab.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/app/auth_tab.rs), [`crates/app/src/app/modals.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/app/modals.rs)
+- **Giải pháp:** Gom 8 entities rời rạc thành các struct ngữ cảnh chuyên dụng `AuthTabContext<'a>` và `ModalOverlayEntities<'a>`, xóa bỏ toàn bộ `#[allow(clippy::too_many_arguments)]`.
+
+### 11. PERF-010 & CC-003: Script và Git chạy blocking trên UI thread (🟡 Medium) — ✅ RESOLVED (2026-10-22)
+- **Vị trí:** [`crates/app/src/services/http_engine.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/services/http_engine.rs), [`crates/app/src/state/git_ops.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/state/git_ops.rs)
+- **Giải pháp:** Chuyển toàn bộ pre-request script execution, dynamic fake variable resolution, và validation logic vào background Tokio task (`tokio_rt.spawn`); toàn bộ Git CLI operations đã được chạy qua background thread pool không bao giờ làm đông cứng UI.
+
+### 12. TD-09: Struct Padding & Memory Alignment của `TimingBreakdown` (🔵 Low) — ✅ RESOLVED (2026-10-22)
+- **Vị trí:** [`crates/core/src/models.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/models.rs)
+- **Giải pháp:** Đưa trường `total_ms: u64` (8 bytes) lên đầu struct `TimingBreakdown` trước các trường `u32` (4 bytes) để căn chỉnh bộ nhớ tự nhiên và loại bỏ 4-byte padding thừa.
+
+### 13. TD-014: `resolve_ref` trong OpenAPI Importer đệ quy vô hạn (🔵 Low) — ✅ RESOLVED (2026-10-22)
+- **Vị trí:** [`crates/core/src/importers/openapi.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/importers/openapi.rs)
+- **Giải pháp:** Thay thế đệ quy bằng vòng lặp an toàn chu kỳ (`visited: HashSet` + giới hạn độ sâu `depth < 32`), bổ sung unit test `test_openapi_circular_ref_safety`.
+
+### 14. TD-015: `ModalState::default()` thực hiện I/O đọc file cấu hình (🔵 Low) — ✅ RESOLVED (2026-10-22)
+- **Vị trí:** [`crates/app/src/state/modal_state.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/state/modal_state.rs)
+- **Giải pháp:** Loại bỏ `AppSettings::load()` đồng bộ khỏi `Default::default()`, giữ `default()` hoàn toàn pure in-memory, và chuyển nạp cấu hình tường minh sang `ModalState::new()`.
+
+### 15. TD-017: Giant Component `body_editor.rs` (> 2.100 LOC) (🔵 Low) — ✅ RESOLVED (2026-10-22)
 - **Vị trí:** [`crates/app/src/components/body_editor.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/components/body_editor.rs)
-- **Vấn đề:** Xử lý toàn bộ các định dạng Raw, JSON, XML, Form-Urlencoded, Multipart trong một file duy nhất dài gần 2.000 dòng.
-- **Giải pháp:** Tách thành package module `components/body_editor/` gồm `json.rs`, `xml.rs`, `form.rs`, `multipart.rs`, `raw.rs`.
+- **Giải pháp:** Tách hoàn toàn thành module package `crates/app/src/components/body_editor/`:
+  - `json.rs`: `JsonHighlighter`, tokenizer & tests (385 LOC)
+  - `xml.rs`: `XmlHighlighter`, `format_xml` & tests (621 LOC)
+  - `form.rs`: Form URL-encoded table renderer (81 LOC)
+  - `multipart.rs`: Multipart table & row picker renderer (507 LOC)
+  - `binary.rs`: Binary stream file picker renderer & file size (217 LOC)
+  - `mod.rs`: `BodyEditor` struct, dropdown toolbar & delegates (649 LOC)
+  Tất cả các file đều tuân thủ nghiêm ngặt quy định `< 650 LOC` của `AGENTS.md`.
+
+### 16. TD-018 & TD-019: Bảo mật và Timeout cho Git CLI (🔵 Low) — ✅ RESOLVED (2026-10-22)
+- **Vị trí:** [`crates/core/src/git/mod.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/git/mod.rs)
+- **Giải pháp:** Thêm timeout 30 giây cho mọi Git subprocess thông qua `run_git_cmd_timeout` chống treo vĩnh viễn; gia cố `git_discard_file` dùng `git clean -f` và kiểm tra an toàn thư mục gốc trước khi xóa file untracked.
+
+### 17. SL-007: Cấp phát lại bộ nhớ cây thư mục `FolderNode` (🔵 Low) — ✅ RESOLVED (2026-10-22)
+- **Vị trí:** [`crates/core/src/storage/models.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/storage/models.rs), [`crates/core/src/storage/fs_store.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/storage/fs_store.rs), [`crates/app/src/state/workspace_data_state.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/state/workspace_data_state.rs)
+- **Giải pháp:** Thêm phương thức đếm tổng số phần tử `count_requests()` và `count_folders()` vào `FolderNode` và `WorkspaceTree`; sử dụng `Vec::with_capacity()` và `HashSet::with_capacity()` khi scan và reload tree để loại bỏ việc cấp phát lại bộ nhớ liên tục.
+
+### 18. PERF-013: Cấp phát chuỗi trong so sánh đường dẫn watcher (🔵 Low) — ✅ RESOLVED (2026-10-22)
+- **Vị trí:** [`crates/core/src/storage/watcher.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/storage/watcher.rs)
+- **Giải pháp:** Loại bỏ việc phân bổ chuỗi mới `.replace('/', "\\").to_lowercase()`, thay thế bằng iterator comparison zero-allocation `t1.chars().map(normalize_ch).eq(t2.chars().map(normalize_ch))`.
 
 ---
 

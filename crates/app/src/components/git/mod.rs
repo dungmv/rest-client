@@ -36,11 +36,18 @@ impl RenderOnce for GitModal {
 
         match active_modal {
             Some(GitActiveModal::Commit) => {
-                GitCommitModal::new(self.git_state.clone(), self.workspace_state.clone()).into_any_element()
+                GitCommitModal::new(self.git_state.clone(), self.workspace_state.clone())
+                    .into_any_element()
             }
-            Some(GitActiveModal::History) => GitHistoryModal::new(self.git_state.clone()).into_any_element(),
-            Some(GitActiveModal::NewBranch) => GitBranchModal::new(self.git_state.clone()).into_any_element(),
-            Some(GitActiveModal::Remotes) => GitRemotesModal::new(self.git_state.clone()).into_any_element(),
+            Some(GitActiveModal::History) => {
+                GitHistoryModal::new(self.git_state.clone()).into_any_element()
+            }
+            Some(GitActiveModal::NewBranch) => {
+                GitBranchModal::new(self.git_state.clone()).into_any_element()
+            }
+            Some(GitActiveModal::Remotes) => {
+                GitRemotesModal::new(self.git_state.clone()).into_any_element()
+            }
             None => div().into_any_element(),
         }
     }

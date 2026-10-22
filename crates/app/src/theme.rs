@@ -177,11 +177,11 @@ impl AppTheme {
             var_unresolved: hex_to_hsla(0xef4444),
 
             // JSON Syntax Highlighting
-            json_key: hex_to_hsla(0x38bdf8),        // Sky blue
-            json_string: hex_to_hsla(0x34d399),     // Emerald green
-            json_number: hex_to_hsla(0xfbbf24),     // Amber / Gold
-            json_boolean: hex_to_hsla(0xc084fc),    // Purple / Violet
-            json_null: hex_to_hsla(0xf87171),       // Soft coral red
+            json_key: hex_to_hsla(0x38bdf8),         // Sky blue
+            json_string: hex_to_hsla(0x34d399),      // Emerald green
+            json_number: hex_to_hsla(0xfbbf24),      // Amber / Gold
+            json_boolean: hex_to_hsla(0xc084fc),     // Purple / Violet
+            json_null: hex_to_hsla(0xf87171),        // Soft coral red
             json_punctuation: hex_to_hsla(0x94a3b8), // Slate / Muted gray
 
             transparent: gpui::transparent_black(),
@@ -239,11 +239,11 @@ impl AppTheme {
             var_unresolved: hex_to_hsla(0xdc2626),
 
             // JSON Syntax Highlighting for light backgrounds
-            json_key: hex_to_hsla(0x0284c7),        // Rich Blue/Cyan
-            json_string: hex_to_hsla(0x059669),     // Deep Emerald
-            json_number: hex_to_hsla(0xd97706),     // Warm Amber
-            json_boolean: hex_to_hsla(0x7c3aed),    // Violet
-            json_null: hex_to_hsla(0xe11d48),       // Rose Red
+            json_key: hex_to_hsla(0x0284c7),         // Rich Blue/Cyan
+            json_string: hex_to_hsla(0x059669),      // Deep Emerald
+            json_number: hex_to_hsla(0xd97706),      // Warm Amber
+            json_boolean: hex_to_hsla(0x7c3aed),     // Violet
+            json_null: hex_to_hsla(0xe11d48),        // Rose Red
             json_punctuation: hex_to_hsla(0x64748b), // Slate gray
 
             transparent: gpui::transparent_black(),
@@ -352,9 +352,21 @@ mod tests {
 
     #[test]
     fn test_resolve_theme_mode() {
-        assert_eq!(resolve_theme_mode(ThemePreference::Dark, WindowAppearance::Light), ThemeMode::Dark);
-        assert_eq!(resolve_theme_mode(ThemePreference::Light, WindowAppearance::Dark), ThemeMode::Light);
-        assert_eq!(resolve_theme_mode(ThemePreference::System, WindowAppearance::Light), ThemeMode::Light);
-        assert_eq!(resolve_theme_mode(ThemePreference::System, WindowAppearance::Dark), ThemeMode::Dark);
+        assert_eq!(
+            resolve_theme_mode(ThemePreference::Dark, WindowAppearance::Light),
+            ThemeMode::Dark
+        );
+        assert_eq!(
+            resolve_theme_mode(ThemePreference::Light, WindowAppearance::Dark),
+            ThemeMode::Light
+        );
+        assert_eq!(
+            resolve_theme_mode(ThemePreference::System, WindowAppearance::Light),
+            ThemeMode::Light
+        );
+        assert_eq!(
+            resolve_theme_mode(ThemePreference::System, WindowAppearance::Dark),
+            ThemeMode::Dark
+        );
     }
 }

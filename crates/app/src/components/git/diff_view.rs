@@ -73,7 +73,11 @@ pub fn parse_side_by_side_diff(diff: &str) -> Vec<SideBySideRow> {
 
     let multi_file = diff.matches("diff --git").count() > 1;
 
-    let flush_pending = |deleted: &mut Vec<String>, added: &mut Vec<String>, old_cur: &mut usize, new_cur: &mut usize, rows: &mut Vec<SideBySideRow>| {
+    let flush_pending = |deleted: &mut Vec<String>,
+                         added: &mut Vec<String>,
+                         old_cur: &mut usize,
+                         new_cur: &mut usize,
+                         rows: &mut Vec<SideBySideRow>| {
         let max_len = deleted.len().max(added.len());
         for i in 0..max_len {
             let left = if i < deleted.len() {
@@ -108,7 +112,13 @@ pub fn parse_side_by_side_diff(diff: &str) -> Vec<SideBySideRow> {
 
     for line in diff.lines() {
         if line.starts_with("diff --git") {
-            flush_pending(&mut pending_deleted, &mut pending_added, &mut old_line, &mut new_line, &mut rows);
+            flush_pending(
+                &mut pending_deleted,
+                &mut pending_added,
+                &mut old_line,
+                &mut new_line,
+                &mut rows,
+            );
             old_line = 1;
             new_line = 1;
             if multi_file {
@@ -138,15 +148,29 @@ pub fn parse_side_by_side_diff(diff: &str) -> Vec<SideBySideRow> {
         }
 
         if line.starts_with("@@") {
-            flush_pending(&mut pending_deleted, &mut pending_added, &mut old_line, &mut new_line, &mut rows);
+            flush_pending(
+                &mut pending_deleted,
+                &mut pending_added,
+                &mut old_line,
+                &mut new_line,
+                &mut rows,
+            );
             if let Some(hunk_parts) = line.split("@@").nth(1) {
                 let parts: Vec<&str> = hunk_parts.split_whitespace().collect();
                 for p in parts {
                     if let Some(stripped) = p.strip_prefix('-') {
-                        let num = stripped.split(',').next().and_then(|n| n.parse::<usize>().ok()).unwrap_or(1);
+                        let num = stripped
+                            .split(',')
+                            .next()
+                            .and_then(|n| n.parse::<usize>().ok())
+                            .unwrap_or(1);
                         old_line = num;
                     } else if let Some(stripped) = p.strip_prefix('+') {
-                        let num = stripped.split(',').next().and_then(|n| n.parse::<usize>().ok()).unwrap_or(1);
+                        let num = stripped
+                            .split(',')
+                            .next()
+                            .and_then(|n| n.parse::<usize>().ok())
+                            .unwrap_or(1);
                         new_line = num;
                     }
                 }
@@ -156,8 +180,18 @@ pub fn parse_side_by_side_diff(diff: &str) -> Vec<SideBySideRow> {
         } else if let Some(stripped) = line.strip_prefix('+') {
             pending_added.push(stripped.to_string());
         } else {
-            flush_pending(&mut pending_deleted, &mut pending_added, &mut old_line, &mut new_line, &mut rows);
-            let content = if let Some(stripped) = line.strip_prefix(' ') { stripped } else { line };
+            flush_pending(
+                &mut pending_deleted,
+                &mut pending_added,
+                &mut old_line,
+                &mut new_line,
+                &mut rows,
+            );
+            let content = if let Some(stripped) = line.strip_prefix(' ') {
+                stripped
+            } else {
+                line
+            };
             let ln_old = old_line;
             let ln_new = new_line;
             old_line += 1;
@@ -177,11 +211,20 @@ pub fn parse_side_by_side_diff(diff: &str) -> Vec<SideBySideRow> {
         }
     }
 
-    flush_pending(&mut pending_deleted, &mut pending_added, &mut old_line, &mut new_line, &mut rows);
+    flush_pending(
+        &mut pending_deleted,
+        &mut pending_added,
+        &mut old_line,
+        &mut new_line,
+        &mut rows,
+    );
     rows
 }
 
-pub fn render_diff_view_toggle(view_mode: DiffViewMode, view_mode_entity: Entity<DiffViewMode>) -> gpui::AnyElement {
+pub fn render_diff_view_toggle(
+    view_mode: DiffViewMode,
+    view_mode_entity: Entity<DiffViewMode>,
+) -> gpui::AnyElement {
     let t = theme();
     div()
         .flex()
@@ -201,8 +244,15 @@ pub fn render_diff_view_toggle(view_mode: DiffViewMode, view_mode_entity: Entity
                 .rounded(px(3.))
                 .cursor_pointer()
                 .text_xs()
-                .when(view_mode == DiffViewMode::Split, |s| s.bg(t.bg_card).text_color(t.text_primary).font_weight(gpui::FontWeight::SEMIBOLD))
-                .when(view_mode != DiffViewMode::Split, |s| s.text_color(t.text_muted).hover(|h| h.text_color(t.text_secondary)))
+                .when(view_mode == DiffViewMode::Split, |s| {
+                    s.bg(t.bg_card)
+                        .text_color(t.text_primary)
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                })
+                .when(view_mode != DiffViewMode::Split, |s| {
+                    s.text_color(t.text_muted)
+                        .hover(|h| h.text_color(t.text_secondary))
+                })
                 .on_click(move |_, _, cx| {
                     st.update(cx, |m, cx| {
                         *m = DiffViewMode::Split;
@@ -220,8 +270,15 @@ pub fn render_diff_view_toggle(view_mode: DiffViewMode, view_mode_entity: Entity
                 .rounded(px(3.))
                 .cursor_pointer()
                 .text_xs()
-                .when(view_mode == DiffViewMode::Unified, |s| s.bg(t.bg_card).text_color(t.text_primary).font_weight(gpui::FontWeight::SEMIBOLD))
-                .when(view_mode != DiffViewMode::Unified, |s| s.text_color(t.text_muted).hover(|h| h.text_color(t.text_secondary)))
+                .when(view_mode == DiffViewMode::Unified, |s| {
+                    s.bg(t.bg_card)
+                        .text_color(t.text_primary)
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                })
+                .when(view_mode != DiffViewMode::Unified, |s| {
+                    s.text_color(t.text_muted)
+                        .hover(|h| h.text_color(t.text_secondary))
+                })
                 .on_click(move |_, _, cx| {
                     st.update(cx, |m, cx| {
                         *m = DiffViewMode::Unified;
@@ -233,14 +290,27 @@ pub fn render_diff_view_toggle(view_mode: DiffViewMode, view_mode_entity: Entity
         .into_any_element()
 }
 
-pub fn render_diff_content(diff_content: Option<String>, view_mode: DiffViewMode) -> gpui::AnyElement {
+pub fn render_diff_content(
+    diff_content: Option<String>,
+    view_mode: DiffViewMode,
+) -> gpui::AnyElement {
     let t = theme();
 
     match diff_content {
         Some(diff) if !diff.trim().is_empty() => {
-            let green_bg = gpui::Hsla { h: 142.0 / 360.0, s: 0.7, l: 0.45, a: 0.15 };
+            let green_bg = gpui::Hsla {
+                h: 142.0 / 360.0,
+                s: 0.7,
+                l: 0.45,
+                a: 0.15,
+            };
             let green_text: gpui::Hsla = gpui::rgb(0x4ade80).into();
-            let red_bg = gpui::Hsla { h: 0.0, s: 0.7, l: 0.45, a: 0.15 };
+            let red_bg = gpui::Hsla {
+                h: 0.0,
+                s: 0.7,
+                l: 0.45,
+                a: 0.15,
+            };
             let red_text: gpui::Hsla = gpui::rgb(0xef4444).into();
             let gray_text = t.text_muted;
 
@@ -255,36 +325,56 @@ pub fn render_diff_content(diff_content: Option<String>, view_mode: DiffViewMode
                         .text_xs()
                         .children(rows.into_iter().map(|row| {
                             match row {
-                                SideBySideRow::FileHeader(file) => {
-                                    div()
-                                        .w_full()
-                                        .px(px(8.))
-                                        .py(px(4.))
-                                        .bg(t.bg_sidebar)
-                                        .border_y_1()
-                                        .border_color(t.border)
-                                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                                        .text_color(t.text_primary)
-                                        .child(format!("📄 {}", file))
-                                }
+                                SideBySideRow::FileHeader(file) => div()
+                                    .w_full()
+                                    .px(px(8.))
+                                    .py(px(4.))
+                                    .bg(t.bg_sidebar)
+                                    .border_y_1()
+                                    .border_color(t.border)
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(t.text_primary)
+                                    .child(format!("📄 {}", file)),
                                 SideBySideRow::Diff { left, right } => {
                                     div()
                                         .w_full()
                                         .flex()
                                         .border_b_1()
-                                        .border_color(gpui::Hsla { a: 0.25, ..t.border })
+                                        .border_color(gpui::Hsla {
+                                            a: 0.25,
+                                            ..t.border
+                                        })
                                         // Left column (Old)
                                         .child({
                                             let (bg, txt_color, line_num, txt) = match left {
                                                 Some(l) => {
                                                     let (bg, col) = match l.kind {
-                                                        DiffLineKind::Deleted => (Some(red_bg), red_text),
-                                                        DiffLineKind::Added => (Some(green_bg), green_text),
+                                                        DiffLineKind::Deleted => {
+                                                            (Some(red_bg), red_text)
+                                                        }
+                                                        DiffLineKind::Added => {
+                                                            (Some(green_bg), green_text)
+                                                        }
                                                         DiffLineKind::Normal => (None, gray_text),
                                                     };
-                                                    (bg, col, l.line_no.map(|n| n.to_string()).unwrap_or_default(), l.content)
+                                                    (
+                                                        bg,
+                                                        col,
+                                                        l.line_no
+                                                            .map(|n| n.to_string())
+                                                            .unwrap_or_default(),
+                                                        l.content,
+                                                    )
                                                 }
-                                                None => (Some(gpui::Hsla { a: 0.15, ..t.bg_card }), gray_text, String::new(), String::new()),
+                                                None => (
+                                                    Some(gpui::Hsla {
+                                                        a: 0.15,
+                                                        ..t.bg_card
+                                                    }),
+                                                    gray_text,
+                                                    String::new(),
+                                                    String::new(),
+                                                ),
                                             };
 
                                             div()
@@ -322,13 +412,34 @@ pub fn render_diff_content(diff_content: Option<String>, view_mode: DiffViewMode
                                             let (bg, txt_color, line_num, txt) = match right {
                                                 Some(r) => {
                                                     let (bg, col) = match r.kind {
-                                                        DiffLineKind::Added => (Some(green_bg), green_text),
-                                                        DiffLineKind::Deleted => (Some(red_bg), red_text),
-                                                        DiffLineKind::Normal => (None, t.text_primary),
+                                                        DiffLineKind::Added => {
+                                                            (Some(green_bg), green_text)
+                                                        }
+                                                        DiffLineKind::Deleted => {
+                                                            (Some(red_bg), red_text)
+                                                        }
+                                                        DiffLineKind::Normal => {
+                                                            (None, t.text_primary)
+                                                        }
                                                     };
-                                                    (bg, col, r.line_no.map(|n| n.to_string()).unwrap_or_default(), r.content)
+                                                    (
+                                                        bg,
+                                                        col,
+                                                        r.line_no
+                                                            .map(|n| n.to_string())
+                                                            .unwrap_or_default(),
+                                                        r.content,
+                                                    )
                                                 }
-                                                None => (Some(gpui::Hsla { a: 0.15, ..t.bg_card }), gray_text, String::new(), String::new()),
+                                                None => (
+                                                    Some(gpui::Hsla {
+                                                        a: 0.15,
+                                                        ..t.bg_card
+                                                    }),
+                                                    gray_text,
+                                                    String::new(),
+                                                    String::new(),
+                                                ),
                                             };
 
                                             div()
@@ -408,7 +519,7 @@ pub fn render_diff_content(diff_content: Option<String>, view_mode: DiffViewMode
                                         .border_color(t.border)
                                         .font_weight(gpui::FontWeight::SEMIBOLD)
                                         .text_color(t.text_primary)
-                                        .child(format!("📄 {}", file_name))
+                                        .child(format!("📄 {}", file_name)),
                                 );
                             }
 
@@ -428,29 +539,25 @@ pub fn render_diff_content(diff_content: Option<String>, view_mode: DiffViewMode
                                     .py(px(1.))
                                     .when_some(bg, |this, b| this.bg(b))
                                     .text_color(text_color)
-                                    .child(line.to_string())
+                                    .child(line.to_string()),
                             )
                         }))
                         .into_any_element()
                 }
             }
         }
-        Some(_) => {
-            div()
-                .p(px(12.))
-                .text_xs()
-                .text_color(t.text_muted)
-                .child("File has no modifications compared to HEAD.")
-                .into_any_element()
-        }
-        None => {
-            div()
-                .p(px(12.))
-                .text_xs()
-                .text_color(t.text_muted)
-                .child("Select a modified or staged file to view its git diff.")
-                .into_any_element()
-        }
+        Some(_) => div()
+            .p(px(12.))
+            .text_xs()
+            .text_color(t.text_muted)
+            .child("File has no modifications compared to HEAD.")
+            .into_any_element(),
+        None => div()
+            .p(px(12.))
+            .text_xs()
+            .text_color(t.text_muted)
+            .child("Select a modified or staged file to view its git diff.")
+            .into_any_element(),
     }
 }
 
@@ -488,7 +595,11 @@ index 0000000..c221a93
 
         // Must have 3 added lines
         assert_eq!(rows.len(), 3);
-        if let SideBySideRow::Diff { left: None, right: Some(r) } = &rows[0] {
+        if let SideBySideRow::Diff {
+            left: None,
+            right: Some(r),
+        } = &rows[0]
+        {
             assert_eq!(r.content, "name: New Request");
             assert_eq!(r.kind, DiffLineKind::Added);
             assert_eq!(r.line_no, Some(1));
@@ -511,7 +622,11 @@ index 1111111..2222222 100644
         let rows = parse_side_by_side_diff(raw_diff);
         // Hunk header @@ -10,3 is suppressed: only 2 code rows (1 normal line + 1 modified row)
         assert_eq!(rows.len(), 2);
-        if let SideBySideRow::Diff { left: Some(l), right: Some(r) } = &rows[0] {
+        if let SideBySideRow::Diff {
+            left: Some(l),
+            right: Some(r),
+        } = &rows[0]
+        {
             assert_eq!(l.content, "normal line");
             assert_eq!(l.line_no, Some(10));
             assert_eq!(r.line_no, Some(10));
@@ -538,10 +653,13 @@ index 3333333..4444444 100644
 +d"#;
 
         let rows = parse_side_by_side_diff(raw_diff);
-        let file_headers: Vec<_> = rows.iter().filter_map(|r| match r {
-            SideBySideRow::FileHeader(f) => Some(f.as_str()),
-            _ => None,
-        }).collect();
+        let file_headers: Vec<_> = rows
+            .iter()
+            .filter_map(|r| match r {
+                SideBySideRow::FileHeader(f) => Some(f.as_str()),
+                _ => None,
+            })
+            .collect();
 
         assert_eq!(file_headers, vec!["file1.txt", "file2.txt"]);
     }

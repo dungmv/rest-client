@@ -1,5 +1,5 @@
 use super::models::{
-    ImportFormat, ImportedEnvironment, ImportedFolder, ImportedRequest, ImportResult,
+    ImportFormat, ImportResult, ImportedEnvironment, ImportedFolder, ImportedRequest,
 };
 use crate::models::{
     Auth, EnvironmentVariable, HttpMethod, KeyValuePair, MultipartItem, RequestBody,
@@ -173,7 +173,10 @@ pub fn parse_openapi(content: &str) -> Result<ImportResult> {
 
             for param in all_params {
                 let resolved_param = resolve_ref(&root, &param);
-                let p_in = resolved_param.get("in").and_then(|v| v.as_str()).unwrap_or("");
+                let p_in = resolved_param
+                    .get("in")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let p_name = resolved_param
                     .get("name")
                     .and_then(|v| v.as_str())
@@ -212,7 +215,10 @@ pub fn parse_openapi(content: &str) -> Result<ImportResult> {
             // Request Body
             let (body, content_type_header) = extract_request_body(&root, op_obj);
             if let Some(ct) = content_type_header {
-                if !header_params.iter().any(|h| h.key.eq_ignore_ascii_case("content-type")) {
+                if !header_params
+                    .iter()
+                    .any(|h| h.key.eq_ignore_ascii_case("content-type"))
+                {
                     header_params.push(KeyValuePair::new("Content-Type", ct));
                 }
             }
@@ -240,7 +246,8 @@ pub fn parse_openapi(content: &str) -> Result<ImportResult> {
     }
 
     if imported_requests.is_empty() {
-        warnings.push("No HTTP request operations found in the provided OpenAPI document.".to_string());
+        warnings
+            .push("No HTTP request operations found in the provided OpenAPI document.".to_string());
     }
 
     Ok(ImportResult {
@@ -289,14 +296,27 @@ fn format_path_params(path: &str) -> String {
 }
 
 fn resolve_ref<'a>(root: &'a Value, val: &'a Value) -> &'a Value {
-    if let Some(ref_str) = val.get("$ref").and_then(|r| r.as_str()) {
-        if let Some(pointer_path) = ref_str.strip_prefix('#') {
-            if let Some(target) = root.pointer(pointer_path) {
-                return resolve_ref(root, target);
+    let mut current = val;
+    let mut visited = std::collections::HashSet::new();
+    let mut depth = 0;
+
+    while depth < 32 {
+        if let Some(ref_str) = current.get("$ref").and_then(|r| r.as_str()) {
+            if !visited.insert(ref_str) {
+                // Cycle detected, abort resolution and return current value
+                break;
+            }
+            if let Some(pointer_path) = ref_str.strip_prefix('#') {
+                if let Some(target) = root.pointer(pointer_path) {
+                    current = target;
+                    depth += 1;
+                    continue;
+                }
             }
         }
+        break;
     }
-    val
+    current
 }
 
 fn extract_param_sample(root: &Value, param: &Value) -> String {
@@ -344,7 +364,10 @@ fn value_to_string(v: &Value) -> String {
     }
 }
 
-fn extract_request_body(root: &Value, op_obj: &Map<String, Value>) -> (RequestBody, Option<String>) {
+fn extract_request_body(
+    root: &Value,
+    op_obj: &Map<String, Value>,
+) -> (RequestBody, Option<String>) {
     // OpenAPI 3.x requestBody
     if let Some(rb) = op_obj.get("requestBody") {
         let rb_resolved = resolve_ref(root, rb);
@@ -373,9 +396,7 @@ fn extract_request_body(root: &Value, op_obj: &Map<String, Value>) -> (RequestBo
                     }
                 }
                 return (
-                    RequestBody::FormUrlEncoded {
-                        params: form_items,
-                    },
+                    RequestBody::FormUrlEncoded { params: form_items },
                     Some("application/x-www-form-urlencoded".to_string()),
                 );
             }
@@ -393,9 +414,7 @@ fn extract_request_body(root: &Value, op_obj: &Map<String, Value>) -> (RequestBo
                     }
                 }
                 return (
-                    RequestBody::Multipart {
-                        items: multi_items,
-                    },
+                    RequestBody::Multipart { items: multi_items },
                     Some("multipart/form-data".to_string()),
                 );
             }
@@ -528,7 +547,10 @@ fn extract_auth(root: &Value, op_obj: &Map<String, Value>) -> Auth {
                 for (scheme_name, _) in req_map {
                     if let Some(scheme_val) = schemes.get(scheme_name) {
                         let res_scheme = resolve_ref(root, scheme_val);
-                        let scheme_type = res_scheme.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                        let scheme_type = res_scheme
+                            .get("type")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("");
                         match scheme_type {
                             "http" => {
                                 let sub_scheme = res_scheme
@@ -560,7 +582,10 @@ fn extract_auth(root: &Value, op_obj: &Map<String, Value>) -> Auth {
                                     .and_then(|n| n.as_str())
                                     .unwrap_or("X-API-Key")
                                     .to_string();
-                                let key_in = res_scheme.get("in").and_then(|i| i.as_str()).unwrap_or("header");
+                                let key_in = res_scheme
+                                    .get("in")
+                                    .and_then(|i| i.as_str())
+                                    .unwrap_or("header");
                                 return Auth::ApiKey {
                                     key: key_name,
                                     value: "{{apiKey}}".to_string(),
@@ -634,4 +659,52 @@ fn extract_response_examples(root: &Value, op_obj: &Map<String, Value>) -> Vec<R
     }
 
     examples
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_openapi_circular_ref_safety() {
+        let json_spec = r##"{
+            "openapi": "3.0.0",
+            "info": { "title": "Circular API", "version": "1.0.0" },
+            "paths": {
+                "/test": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": { "$ref": "#/components/schemas/NodeA" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "NodeA": {
+                        "type": "object",
+                        "properties": {
+                            "next": { "$ref": "#/components/schemas/NodeB" }
+                        }
+                    },
+                    "NodeB": {
+                        "type": "object",
+                        "properties": {
+                            "next": { "$ref": "#/components/schemas/NodeA" }
+                        }
+                    }
+                }
+            }
+        }"##;
+
+        let res = parse_openapi(json_spec).unwrap();
+        assert_eq!(res.requests.len(), 1);
+    }
 }

@@ -133,9 +133,11 @@ impl SidebarState {
         });
 
         let r_id = req_id.clone();
-        let sub = cx.subscribe(&input, move |this, input, event: &gpui_component::input::InputEvent, cx| {
-            match event {
-                gpui_component::input::InputEvent::PressEnter { .. } | gpui_component::input::InputEvent::Blur => {
+        let sub = cx.subscribe(
+            &input,
+            move |this, input, event: &gpui_component::input::InputEvent, cx| match event {
+                gpui_component::input::InputEvent::PressEnter { .. }
+                | gpui_component::input::InputEvent::Blur => {
                     let val = input.read(cx).value().to_string();
                     this.cancel_renaming_request(cx);
                     let trimmed = val.trim();
@@ -146,8 +148,8 @@ impl SidebarState {
                     }
                 }
                 _ => {}
-            }
-        });
+            },
+        );
 
         self.renaming_request = Some(RenamingState {
             id: req_id,
@@ -176,9 +178,11 @@ impl SidebarState {
         });
 
         let f_id = folder_id.clone();
-        let sub = cx.subscribe(&input, move |this, input, event: &gpui_component::input::InputEvent, cx| {
-            match event {
-                gpui_component::input::InputEvent::PressEnter { .. } | gpui_component::input::InputEvent::Blur => {
+        let sub = cx.subscribe(
+            &input,
+            move |this, input, event: &gpui_component::input::InputEvent, cx| match event {
+                gpui_component::input::InputEvent::PressEnter { .. }
+                | gpui_component::input::InputEvent::Blur => {
                     let val = input.read(cx).value().to_string();
                     this.cancel_renaming_folder(cx);
                     let trimmed = val.trim();
@@ -189,8 +193,8 @@ impl SidebarState {
                     }
                 }
                 _ => {}
-            }
-        });
+            },
+        );
 
         self.renaming_folder = Some(RenamingState {
             id: folder_id,
@@ -220,9 +224,11 @@ impl SidebarState {
 
         let r_id = req_id.clone();
         let old_ex_name = example_name.clone();
-        let sub = cx.subscribe(&input, move |this, input, event: &gpui_component::input::InputEvent, cx| {
-            match event {
-                gpui_component::input::InputEvent::PressEnter { .. } | gpui_component::input::InputEvent::Blur => {
+        let sub = cx.subscribe(
+            &input,
+            move |this, input, event: &gpui_component::input::InputEvent, cx| match event {
+                gpui_component::input::InputEvent::PressEnter { .. }
+                | gpui_component::input::InputEvent::Blur => {
                     let val = input.read(cx).value().to_string();
                     this.cancel_renaming_example(cx);
                     let trimmed = val.trim();
@@ -233,8 +239,8 @@ impl SidebarState {
                     }
                 }
                 _ => {}
-            }
-        });
+            },
+        );
 
         self.renaming_example = Some(RenamingState {
             id: (req_id, example_name),
@@ -261,18 +267,21 @@ impl SidebarState {
             s
         });
 
-        let sub = cx.subscribe(&input, move |this, input, event: &gpui_component::input::InputEvent, cx| {
-            if let gpui_component::input::InputEvent::PressEnter { .. } = event {
-                let val = input.read(cx).value().to_string();
-                this.cancel_renaming_workspace(cx);
-                let trimmed = val.trim();
-                if !trimmed.is_empty() {
-                    ws.update(cx, |ws, cx| {
-                        ws.rename_workspace(trimmed.to_string(), cx);
-                    });
+        let sub = cx.subscribe(
+            &input,
+            move |this, input, event: &gpui_component::input::InputEvent, cx| {
+                if let gpui_component::input::InputEvent::PressEnter { .. } = event {
+                    let val = input.read(cx).value().to_string();
+                    this.cancel_renaming_workspace(cx);
+                    let trimmed = val.trim();
+                    if !trimmed.is_empty() {
+                        ws.update(cx, |ws, cx| {
+                            ws.rename_workspace(trimmed.to_string(), cx);
+                        });
+                    }
                 }
-            }
-        });
+            },
+        );
 
         self.renaming_workspace = Some(RenamingState {
             id: curr_name,
@@ -301,9 +310,11 @@ impl SidebarState {
         });
 
         let e_id = env_id.clone();
-        let sub = cx.subscribe(&input, move |this, input, event: &gpui_component::input::InputEvent, cx| {
-            match event {
-                gpui_component::input::InputEvent::PressEnter { .. } | gpui_component::input::InputEvent::Blur => {
+        let sub = cx.subscribe(
+            &input,
+            move |this, input, event: &gpui_component::input::InputEvent, cx| match event {
+                gpui_component::input::InputEvent::PressEnter { .. }
+                | gpui_component::input::InputEvent::Blur => {
                     let val = input.read(cx).value().to_string();
                     this.cancel_renaming_environment(cx);
                     let trimmed = val.trim();
@@ -314,8 +325,8 @@ impl SidebarState {
                     }
                 }
                 _ => {}
-            }
-        });
+            },
+        );
 
         self.renaming_env = Some(RenamingState {
             id: env_id,

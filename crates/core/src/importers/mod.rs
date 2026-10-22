@@ -3,8 +3,8 @@ pub mod openapi;
 pub mod postman;
 
 pub use models::{
-    ImportFormat, ImportedEnvironment, ImportedFolder, ImportedRequest, ImportOptions,
-    ImportResult, ImportSummary,
+    ImportFormat, ImportOptions, ImportResult, ImportSummary, ImportedEnvironment, ImportedFolder,
+    ImportedRequest,
 };
 
 use crate::storage::models::{EnvVarFile, EnvironmentFile, RequestFile};
@@ -233,7 +233,11 @@ mod tests {
         assert_eq!(res.folders.len(), 1);
         assert_eq!(res.folders[0].name, "Pets");
 
-        let get_req = res.requests.iter().find(|r| r.method == HttpMethod::Get).unwrap();
+        let get_req = res
+            .requests
+            .iter()
+            .find(|r| r.method == HttpMethod::Get)
+            .unwrap();
         assert_eq!(get_req.name, "List all pets");
         assert_eq!(get_req.url, "{{baseUrl}}/pets");
         assert_eq!(get_req.params.len(), 1);
@@ -241,7 +245,11 @@ mod tests {
         assert_eq!(get_req.params[0].value, "10");
         assert_eq!(get_req.examples.len(), 1);
 
-        let post_req = res.requests.iter().find(|r| r.method == HttpMethod::Post).unwrap();
+        let post_req = res
+            .requests
+            .iter()
+            .find(|r| r.method == HttpMethod::Post)
+            .unwrap();
         assert_eq!(post_req.name, "Create a pet");
         match &post_req.body {
             crate::models::RequestBody::Json { content: body } => {
@@ -346,7 +354,10 @@ paths:
         assert_eq!(res.title, "My Postman API");
         assert_eq!(res.environments.len(), 1);
         assert_eq!(res.environments[0].variables[0].key, "baseUrl");
-        assert_eq!(res.environments[0].variables[0].initial_value, "https://httpbin.org");
+        assert_eq!(
+            res.environments[0].variables[0].initial_value,
+            "https://httpbin.org"
+        );
         assert_eq!(res.folders.len(), 1);
         assert_eq!(res.folders[0].name, "Auth");
         assert_eq!(res.requests.len(), 1);
@@ -364,7 +375,10 @@ paths:
         assert_eq!(req.examples.len(), 1);
         assert_eq!(req.examples[0].name, "200 Success");
         assert_eq!(req.examples[0].status, 200);
-        assert_eq!(req.examples[0].body.as_deref(), Some("{\"token\": \"xyz\"}"));
+        assert_eq!(
+            req.examples[0].body.as_deref(),
+            Some("{\"token\": \"xyz\"}")
+        );
     }
 
     #[test]

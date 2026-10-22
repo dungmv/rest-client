@@ -1,4 +1,4 @@
-use super::auth_tab::{render_auth_tab, AuthTabInputs};
+use super::auth_tab::{render_auth_tab, AuthTabContext, AuthTabInputs};
 use super::sync::save_active_request_without_redraw;
 use super::AppView;
 use crate::components::*;
@@ -460,10 +460,12 @@ impl AppView {
                         render_auth_tab(
                             &auth,
                             folder_id.as_deref(),
-                            &self.state.workspace,
-                            &self.state.env,
-                            &self.state.modal,
-                            &self.state.session,
+                            AuthTabContext {
+                                workspace_state: &self.state.workspace,
+                                env_state: &self.state.env,
+                                modal_state: &self.state.modal,
+                                editor_state: &self.state.session,
+                            },
                             AuthTabInputs {
                                 bearer_token_input: &self.composer_inputs.bearer_token_input,
                                 basic_user_input: &self.composer_inputs.basic_user_input,

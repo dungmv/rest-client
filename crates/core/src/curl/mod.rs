@@ -1,4 +1,3 @@
-use crate::interpolation::interpolate;
 use crate::models::{
     Auth, Environment, HttpMethod, HttpRequestItem, KeyValuePair, MultipartItem, RequestBody,
 };
@@ -194,7 +193,8 @@ pub fn curl_to_request(workspace_id: &str, curl_str: &str) -> Result<HttpRequest
                 let form_str = &tokens[idx];
                 if let Some((field, val)) = form_str.split_once('=') {
                     if let Some(file_path) = val.strip_prefix('@') {
-                        multipart_items.push(MultipartItem::new_file(field.trim(), file_path.trim()));
+                        multipart_items
+                            .push(MultipartItem::new_file(field.trim(), file_path.trim()));
                     } else {
                         multipart_items.push(MultipartItem::new_text(field.trim(), val.trim()));
                     }
@@ -338,16 +338,17 @@ pub fn request_to_curl(item: &HttpRequestItem, env: Option<&Environment>) -> Str
     parts.push("-X".to_string());
     parts.push(item.method.as_str().to_string());
 
-    // URL
+    // URL & Interpolator
+    let interpolator = crate::interpolation::VariableInterpolator::new(env);
     let full_url = crate::http::build_url_with_query(&item.url, &item.params);
-    let url = interpolate(&full_url, env).text;
+    let url = interpolator.interpolate_cow(&full_url);
     parts.push(format!("'{}'", url.replace('\'', "'\\''")));
 
     // Headers
     for h in &item.headers {
         if h.enabled && !h.key.trim().is_empty() {
-            let k = interpolate(&h.key, env).text;
-            let v = interpolate(&h.value, env).text;
+            let k = interpolator.interpolate_cow(&h.key);
+            let v = interpolator.interpolate_cow(&h.value);
             parts.push("-H".to_string());
             parts.push(format!(
                 "'{}: {}'",
@@ -361,13 +362,16 @@ pub fn request_to_curl(item: &HttpRequestItem, env: Option<&Environment>) -> Str
     match &item.auth {
         Auth::Inherit | Auth::None => {}
         Auth::Bearer { token } => {
-            let t = interpolate(token, env).text;
+            let t = interpolator.interpolate_cow(token);
             parts.push("-H".to_string());
-            parts.push(format!("'Authorization: Bearer {}'", t.replace('\'', "'\\''")));
+            parts.push(format!(
+                "'Authorization: Bearer {}'",
+                t.replace('\'', "'\\''")
+            ));
         }
         Auth::Basic { username, password } => {
-            let u = interpolate(username, env).text;
-            let p = interpolate(password, env).text;
+            let u = interpolator.interpolate_cow(username);
+            let p = interpolator.interpolate_cow(password);
             parts.push("-u".to_string());
             parts.push(format!(
                 "'{}:{}'",
@@ -381,8 +385,8 @@ pub fn request_to_curl(item: &HttpRequestItem, env: Option<&Environment>) -> Str
             in_header,
         } => {
             if *in_header && !key.trim().is_empty() {
-                let k = interpolate(key, env).text;
-                let v = interpolate(value, env).text;
+                let k = interpolator.interpolate_cow(key);
+                let v = interpolator.interpolate_cow(value);
                 parts.push("-H".to_string());
                 parts.push(format!(
                     "'{}: {}'",
@@ -397,7 +401,7 @@ pub fn request_to_curl(item: &HttpRequestItem, env: Option<&Environment>) -> Str
     match &item.body {
         RequestBody::None => {}
         RequestBody::Json { content: raw_json } => {
-            let interpolated = interpolate(raw_json, env).text;
+            let interpolated = interpolator.interpolate_cow(raw_json);
             parts.push("-H".to_string());
             parts.push("'Content-Type: application/json'".to_string());
             parts.push("-d".to_string());
@@ -407,7 +411,7 @@ pub fn request_to_curl(item: &HttpRequestItem, env: Option<&Environment>) -> Str
             content,
             content_type,
         } => {
-            let interpolated = interpolate(content, env).text;
+            let interpolated = interpolator.interpolate_cow(content);
             if !content_type.trim().is_empty() {
                 parts.push("-H".to_string());
                 parts.push(format!(
@@ -421,8 +425,8 @@ pub fn request_to_curl(item: &HttpRequestItem, env: Option<&Environment>) -> Str
         RequestBody::FormUrlEncoded { params: pairs } => {
             for p in pairs {
                 if p.enabled && !p.key.trim().is_empty() {
-                    let k = interpolate(&p.key, env).text;
-                    let v = interpolate(&p.value, env).text;
+                    let k = interpolator.interpolate_cow(&p.key);
+                    let v = interpolator.interpolate_cow(&p.value);
                     parts.push("--data-urlencode".to_string());
                     parts.push(format!(
                         "'{}={}'",
@@ -534,8 +538,14 @@ mod tests {
         assert_eq!(req.params[0].value, "1");
         assert_eq!(req.params[1].key, "limit");
         assert_eq!(req.params[1].value, "20");
-        assert!(req.headers.iter().any(|h| h.key == "accept" && h.value == "application/json"));
-        assert!(req.headers.iter().any(|h| h.key == "user-agent" && h.value == "Mozilla/5.0"));
+        assert!(req
+            .headers
+            .iter()
+            .any(|h| h.key == "accept" && h.value == "application/json"));
+        assert!(req
+            .headers
+            .iter()
+            .any(|h| h.key == "user-agent" && h.value == "Mozilla/5.0"));
     }
 
     #[test]
@@ -581,11 +591,18 @@ mod tests {
 
     #[test]
     fn test_parse_curl_flags_before_url() {
-        let curl = "curl -A 'MyBrowser/1.0' -b 'session=abc' --connect-timeout 30 https://example.com/api";
+        let curl =
+            "curl -A 'MyBrowser/1.0' -b 'session=abc' --connect-timeout 30 https://example.com/api";
         let req = curl_to_request("ws1", curl).unwrap();
         assert_eq!(req.url, "https://example.com/api");
-        assert!(req.headers.iter().any(|h| h.key == "User-Agent" && h.value == "MyBrowser/1.0"));
-        assert!(req.headers.iter().any(|h| h.key == "Cookie" && h.value == "session=abc"));
+        assert!(req
+            .headers
+            .iter()
+            .any(|h| h.key == "User-Agent" && h.value == "MyBrowser/1.0"));
+        assert!(req
+            .headers
+            .iter()
+            .any(|h| h.key == "Cookie" && h.value == "session=abc"));
     }
 
     #[test]

@@ -2,8 +2,8 @@ use crate::components::status_badge::MethodBadge;
 use crate::state::{ModalState, RequestSessionState, WorkspaceDataState};
 use crate::theme::{theme, ThemePreference};
 use gpui::{
-    div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
-    RenderOnce, StatefulInteractiveElement as _, Styled, Window,
+    div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement, RenderOnce,
+    StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::Icon;

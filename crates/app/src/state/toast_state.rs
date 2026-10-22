@@ -24,9 +24,7 @@ pub struct ToastState {
 
 impl ToastState {
     pub fn new() -> Self {
-        Self {
-            toasts: Vec::new(),
-        }
+        Self { toasts: Vec::new() }
     }
 
     pub fn push_toast(&mut self, toast: ToastItem, cx: &mut Context<Self>) {
@@ -34,7 +32,12 @@ impl ToastState {
         cx.notify();
     }
 
-    pub fn push_info(&mut self, title: impl Into<String>, msg: impl Into<String>, cx: &mut Context<Self>) {
+    pub fn push_info(
+        &mut self,
+        title: impl Into<String>,
+        msg: impl Into<String>,
+        cx: &mut Context<Self>,
+    ) {
         self.push_toast(
             ToastItem {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -48,7 +51,12 @@ impl ToastState {
         );
     }
 
-    pub fn push_error(&mut self, title: impl Into<String>, msg: impl Into<String>, cx: &mut Context<Self>) {
+    pub fn push_error(
+        &mut self,
+        title: impl Into<String>,
+        msg: impl Into<String>,
+        cx: &mut Context<Self>,
+    ) {
         self.push_toast(
             ToastItem {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -62,7 +70,12 @@ impl ToastState {
         );
     }
 
-    pub fn push_success(&mut self, title: impl Into<String>, msg: impl Into<String>, cx: &mut Context<Self>) {
+    pub fn push_success(
+        &mut self,
+        title: impl Into<String>,
+        msg: impl Into<String>,
+        cx: &mut Context<Self>,
+    ) {
         self.push_toast(
             ToastItem {
                 id: uuid::Uuid::new_v4().to_string(),

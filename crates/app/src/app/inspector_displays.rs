@@ -3,9 +3,8 @@ use gpui::{App, AppContext as _, Entity, Window};
 use gpui_component::input::{EditorState as CodeEditorState, TextareaState};
 use std::rc::Rc;
 
-type HighlighterFactory = Rc<
-    dyn Fn(&str) -> Option<Box<dyn gpui_component::input::InputHighlighter>>,
->;
+type HighlighterFactory =
+    Rc<dyn Fn(&str) -> Option<Box<dyn gpui_component::input::InputHighlighter>>>;
 
 pub struct InspectorDisplays {
     pub response_editor: Entity<CodeEditorState>,
@@ -17,11 +16,7 @@ pub struct InspectorDisplays {
 }
 
 impl InspectorDisplays {
-    pub fn new(
-        window: &mut Window,
-        highlighter_factory: HighlighterFactory,
-        cx: &mut App,
-    ) -> Self {
+    pub fn new(window: &mut Window, highlighter_factory: HighlighterFactory, cx: &mut App) -> Self {
         let response_editor = cx.new(|cx| {
             let mut state = CodeEditorState::new(window, cx);
             state.set_highlighter_factory(highlighter_factory.clone(), cx);

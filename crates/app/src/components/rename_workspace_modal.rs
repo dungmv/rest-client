@@ -31,7 +31,11 @@ impl RenderOnce for RenameWorkspaceModal {
         let t = theme();
         let ws_s = self.workspace_state.clone();
         let sb_s = self.sidebar_state.clone();
-        let input_entity = self.sidebar_state.read(cx).rename_workspace_input().cloned();
+        let input_entity = self
+            .sidebar_state
+            .read(cx)
+            .rename_workspace_input()
+            .cloned();
 
         div()
             .id("rename-workspace-modal-overlay")

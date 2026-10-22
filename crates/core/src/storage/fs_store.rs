@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 
 pub struct FsWorkspaceStore {
     root_dir: PathBuf,
-    pub suppressed_paths: Arc<Mutex<HashSet<PathBuf>>>,
+    suppressed_paths: Arc<Mutex<HashSet<PathBuf>>>,
     suppress_tx: std::sync::mpsc::Sender<PathBuf>,
 }
 
@@ -82,6 +82,10 @@ impl FsWorkspaceStore {
             .unwrap_or_else(|e| e.into_inner());
         set.insert(path.to_path_buf());
         let _ = self.suppress_tx.send(path.to_path_buf());
+    }
+
+    pub fn suppressed_paths(&self) -> Arc<Mutex<HashSet<PathBuf>>> {
+        self.suppressed_paths.clone()
     }
 
     pub fn collections_dir(&self) -> PathBuf {
@@ -227,8 +231,8 @@ impl FsWorkspaceStore {
         // Order requests:
         // Follow _folder.yaml `order:`. Requests missing from it are appended alphabetically.
         // Entries pointing to missing files are ignored silently.
-        let mut ordered_requests = Vec::new();
-        let mut included_stems = std::collections::HashSet::new();
+        let mut ordered_requests = Vec::with_capacity(req_map.len());
+        let mut included_stems = std::collections::HashSet::with_capacity(folder_meta.order.len());
 
         for stem in &folder_meta.order {
             if let Some(req) = req_map.remove(stem) {
@@ -459,6 +463,7 @@ impl WorkspaceStore for FsWorkspaceStore {
 
         let mut root_stems: Vec<String> = req_map.keys().cloned().collect();
         root_stems.sort();
+        root_requests.reserve(root_stems.len());
         for s in root_stems {
             if let Some(r) = req_map.remove(&s) {
                 root_requests.push(r);

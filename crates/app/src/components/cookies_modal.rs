@@ -1,8 +1,8 @@
 use crate::state::{ModalState, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::{
-    div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
-    RenderOnce, StatefulInteractiveElement as _, Styled, Window,
+    div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement, RenderOnce,
+    StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::scroll::ScrollableElement as _;
 
@@ -90,18 +90,13 @@ impl RenderOnce for CookiesModal {
                             .items_center()
                             .justify_between()
                             .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(6.))
-                                    .child("🍪")
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                                            .text_color(t.text_primary)
-                                            .child("Workspace Cookie Jar"),
-                                    ),
+                                div().flex().items_center().gap(px(6.)).child("🍪").child(
+                                    div()
+                                        .text_sm()
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .text_color(t.text_primary)
+                                        .child("Workspace Cookie Jar"),
+                                ),
                             )
                             .child({
                                 let modal_s = modal_clone.clone();

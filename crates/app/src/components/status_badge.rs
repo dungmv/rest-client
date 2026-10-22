@@ -26,10 +26,7 @@ impl RenderOnce for MethodBadge {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let t = theme();
         let color = t.method_color(self.method);
-        let bg_color = gpui::Hsla {
-            a: 0.15,
-            ..color
-        };
+        let bg_color = gpui::Hsla { a: 0.15, ..color };
 
         div()
             .flex_shrink_0()
@@ -59,10 +56,7 @@ impl RenderOnce for StatusCodeBadge {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let t = theme();
         let color = t.status_color(self.status_code);
-        let bg_color = gpui::Hsla {
-            a: 0.15,
-            ..color
-        };
+        let bg_color = gpui::Hsla { a: 0.15, ..color };
 
         div()
             .flex_shrink_0()

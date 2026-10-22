@@ -7,58 +7,66 @@ impl GitState {
         let ws_path = self.repo_path.clone();
         let p = path.to_string();
         cx.spawn(async move |this, cx| {
-            let _ = cx.background_executor().spawn(async move {
-                restclient_core::git::git_stage_file(&ws_path, &p)
-            }).await;
+            let _ = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_stage_file(&ws_path, &p) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.refresh_status(cx);
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn unstage_file(&mut self, path: &str, cx: &mut Context<Self>) {
         let ws_path = self.repo_path.clone();
         let p = path.to_string();
         cx.spawn(async move |this, cx| {
-            let _ = cx.background_executor().spawn(async move {
-                restclient_core::git::git_unstage_file(&ws_path, &p)
-            }).await;
+            let _ = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_unstage_file(&ws_path, &p) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.refresh_status(cx);
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn stage_all(&mut self, cx: &mut Context<Self>) {
         let ws_path = self.repo_path.clone();
         cx.spawn(async move |this, cx| {
-            let _ = cx.background_executor().spawn(async move {
-                restclient_core::git::git_stage_all(&ws_path)
-            }).await;
+            let _ = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_stage_all(&ws_path) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.refresh_status(cx);
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn unstage_all(&mut self, cx: &mut Context<Self>) {
         let ws_path = self.repo_path.clone();
         cx.spawn(async move |this, cx| {
-            let _ = cx.background_executor().spawn(async move {
-                restclient_core::git::git_unstage_all(&ws_path)
-            }).await;
+            let _ = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_unstage_all(&ws_path) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.refresh_status(cx);
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn toggle_unstaged_selection(&mut self, path: &str, cx: &mut Context<Self>) {
@@ -73,7 +81,12 @@ impl GitState {
     pub fn toggle_all_unstaged_selection(&mut self, select: bool, cx: &mut Context<Self>) {
         if let Some(st) = &self.status {
             if select {
-                self.selected_unstaged_files = st.unstaged_files.iter().chain(&st.untracked_files).map(|f| f.path.clone()).collect();
+                self.selected_unstaged_files = st
+                    .unstaged_files
+                    .iter()
+                    .chain(&st.untracked_files)
+                    .map(|f| f.path.clone())
+                    .collect();
             } else {
                 self.selected_unstaged_files.clear();
             }
@@ -93,7 +106,8 @@ impl GitState {
     pub fn toggle_all_staged_selection(&mut self, select: bool, cx: &mut Context<Self>) {
         if let Some(st) = &self.status {
             if select {
-                self.selected_staged_files = st.staged_files.iter().map(|f| f.path.clone()).collect();
+                self.selected_staged_files =
+                    st.staged_files.iter().map(|f| f.path.clone()).collect();
             } else {
                 self.selected_staged_files.clear();
             }
@@ -109,16 +123,20 @@ impl GitState {
         self.selected_unstaged_files.clear();
         let ws_path = self.repo_path.clone();
         cx.spawn(async move |this, cx| {
-            let _ = cx.background_executor().spawn(async move {
-                let str_paths: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
-                restclient_core::git::git_stage_files(&ws_path, &str_paths)
-            }).await;
+            let _ = cx
+                .background_executor()
+                .spawn(async move {
+                    let str_paths: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+                    restclient_core::git::git_stage_files(&ws_path, &str_paths)
+                })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.refresh_status(cx);
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn unstage_selected(&mut self, cx: &mut Context<Self>) {
@@ -129,16 +147,20 @@ impl GitState {
         self.selected_staged_files.clear();
         let ws_path = self.repo_path.clone();
         cx.spawn(async move |this, cx| {
-            let _ = cx.background_executor().spawn(async move {
-                let str_paths: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
-                restclient_core::git::git_unstage_files(&ws_path, &str_paths)
-            }).await;
+            let _ = cx
+                .background_executor()
+                .spawn(async move {
+                    let str_paths: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+                    restclient_core::git::git_unstage_files(&ws_path, &str_paths)
+                })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.refresh_status(cx);
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn discard_file(&mut self, path: &str, cx: &mut Context<Self>) {
@@ -146,9 +168,10 @@ impl GitState {
         let p = path.to_string();
         let p_task = p.clone();
         cx.spawn(async move |this, cx| {
-            let _ = cx.background_executor().spawn(async move {
-                restclient_core::git::git_discard_file(&ws_path, &p_task)
-            }).await;
+            let _ = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_discard_file(&ws_path, &p_task) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     if let Some((sel, _)) = &git.selected_file {
@@ -160,7 +183,8 @@ impl GitState {
                     git.refresh_status(cx);
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn commit(&mut self, message: &str, cx: &mut Context<Self>) {
@@ -174,9 +198,10 @@ impl GitState {
         let ws_path = self.repo_path.clone();
         let msg = message.to_string();
         cx.spawn(async move |this, cx| {
-            let res = cx.background_executor().spawn(async move {
-                restclient_core::git::git_commit(&ws_path, &msg)
-            }).await;
+            let res = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_commit(&ws_path, &msg) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.loading = false;
@@ -196,10 +221,16 @@ impl GitState {
                     }
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
-    pub fn checkout(&mut self, branch: &str, toast: Option<Entity<ToastState>>, cx: &mut Context<Self>) {
+    pub fn checkout(
+        &mut self,
+        branch: &str,
+        toast: Option<Entity<ToastState>>,
+        cx: &mut Context<Self>,
+    ) {
         if self.loading {
             return;
         }
@@ -211,9 +242,10 @@ impl GitState {
         let b = branch.to_string();
         let b_task = b.clone();
         cx.spawn(async move |this, cx| {
-            let res = cx.background_executor().spawn(async move {
-                restclient_core::git::git_checkout(&ws_path, &b_task)
-            }).await;
+            let res = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_checkout(&ws_path, &b_task) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.loading = false;
@@ -224,7 +256,14 @@ impl GitState {
                             git.refresh_all(cx);
                             if let Some(toast) = &toast {
                                 toast.update(cx, |ts, cx| {
-                                    ts.push_success("Git Checkout", format!("Switched to branch '{}'", git.branch.as_deref().unwrap_or("")), cx);
+                                    ts.push_success(
+                                        "Git Checkout",
+                                        format!(
+                                            "Switched to branch '{}'",
+                                            git.branch.as_deref().unwrap_or("")
+                                        ),
+                                        cx,
+                                    );
                                 });
                             }
                         }
@@ -241,7 +280,8 @@ impl GitState {
                     }
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn create_branch(&mut self, name: &str, cx: &mut Context<Self>) {
@@ -256,9 +296,10 @@ impl GitState {
         let n = name.to_string();
         let n_task = n.clone();
         cx.spawn(async move |this, cx| {
-            let res = cx.background_executor().spawn(async move {
-                restclient_core::git::git_create_branch(&ws_path, &n_task)
-            }).await;
+            let res = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_create_branch(&ws_path, &n_task) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.loading = false;
@@ -276,7 +317,8 @@ impl GitState {
                     }
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn pull(&mut self, toast: Option<Entity<ToastState>>, cx: &mut Context<Self>) {
@@ -289,9 +331,10 @@ impl GitState {
 
         let ws_path = self.repo_path.clone();
         cx.spawn(async move |this, cx| {
-            let res = cx.background_executor().spawn(async move {
-                restclient_core::git::git_pull(&ws_path)
-            }).await;
+            let res = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_pull(&ws_path) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.is_syncing = false;
@@ -307,7 +350,11 @@ impl GitState {
                                     });
                                 } else {
                                     toast.update(cx, |ts, cx| {
-                                        ts.push_success("Git Pull", format!("Successfully pulled: {}", trimmed), cx);
+                                        ts.push_success(
+                                            "Git Pull",
+                                            format!("Successfully pulled: {}", trimmed),
+                                            cx,
+                                        );
                                     });
                                 }
                             }
@@ -325,7 +372,8 @@ impl GitState {
                     }
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn fetch_in_background(&mut self, cx: &mut Context<Self>) {
@@ -342,9 +390,10 @@ impl GitState {
 
         let ws_path = self.repo_path.clone();
         cx.spawn(async move |this, cx| {
-            let res = cx.background_executor().spawn(async move {
-                restclient_core::git::git_push(&ws_path)
-            }).await;
+            let res = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_push(&ws_path) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.is_syncing = false;
@@ -380,7 +429,8 @@ impl GitState {
                     }
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn init_repo(&mut self, cx: &mut Context<Self>) {
@@ -393,9 +443,10 @@ impl GitState {
 
         let ws_path = self.repo_path.clone();
         cx.spawn(async move |this, cx| {
-            let res = cx.background_executor().spawn(async move {
-                restclient_core::git::git_init(&ws_path)
-            }).await;
+            let res = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_init(&ws_path) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.loading = false;
@@ -411,6 +462,7 @@ impl GitState {
                     }
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 }

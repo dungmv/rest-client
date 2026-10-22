@@ -5,9 +5,8 @@ use gpui_component::input::{EditorState as CodeEditorState, InputState, Textarea
 use restclient_core::models::{Auth, RequestBody};
 use std::rc::Rc;
 
-type HighlighterFactory = Rc<
-    dyn Fn(&str) -> Option<Box<dyn gpui_component::input::InputHighlighter>>,
->;
+type HighlighterFactory =
+    Rc<dyn Fn(&str) -> Option<Box<dyn gpui_component::input::InputHighlighter>>>;
 
 pub struct ComposerInputs {
     pub url_input: Entity<InputState>,
@@ -42,9 +41,7 @@ impl ComposerInputs {
             let mut state = CodeEditorState::new(window, cx);
             state.set_highlighter_factory(highlighter_factory.clone(), cx);
             state.lsp_mut().completion_provider = Some(Rc::new(
-                crate::components::env_autocomplete::EnvCompletionProvider::new(
-                    env_state.clone(),
-                ),
+                crate::components::env_autocomplete::EnvCompletionProvider::new(env_state.clone()),
             ));
             state.language("json").line_number(true).folding(true)
         });
@@ -53,9 +50,7 @@ impl ComposerInputs {
             let mut state = CodeEditorState::new(window, cx);
             state.set_highlighter_factory(highlighter_factory.clone(), cx);
             state.lsp_mut().completion_provider = Some(Rc::new(
-                crate::components::env_autocomplete::EnvCompletionProvider::new(
-                    env_state.clone(),
-                ),
+                crate::components::env_autocomplete::EnvCompletionProvider::new(env_state.clone()),
             ));
             state.language("xml").line_number(true).folding(true)
         });
@@ -65,39 +60,27 @@ impl ComposerInputs {
         let pre_script_editor = cx.new(|cx| {
             let mut state = CodeEditorState::new(window, cx);
             state.set_highlighter_factory(highlighter_factory.clone(), cx);
-            state.lsp_mut().completion_provider = Some(Rc::new(
-                ScriptCompletionProvider::with_environment(
+            state.lsp_mut().completion_provider =
+                Some(Rc::new(ScriptCompletionProvider::with_environment(
                     ScriptEditorKind::PreRequest,
                     env_state.clone(),
-                ),
-            ));
-            state
-                .language("javascript")
-                .line_number(true)
-                .folding(true)
+                )));
+            state.language("javascript").line_number(true).folding(true)
         });
 
         let test_script_editor = cx.new(|cx| {
             let mut state = CodeEditorState::new(window, cx);
             state.set_highlighter_factory(highlighter_factory, cx);
             state.lsp_mut().completion_provider = Some(Rc::new(
-                ScriptCompletionProvider::with_environment(
-                    ScriptEditorKind::Tests,
-                    env_state,
-                ),
+                ScriptCompletionProvider::with_environment(ScriptEditorKind::Tests, env_state),
             ));
-            state
-                .language("javascript")
-                .line_number(true)
-                .folding(true)
+            state.language("javascript").line_number(true).folding(true)
         });
 
         let bearer_token_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Enter Bearer token..."));
-        let basic_user_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Username..."));
-        let basic_pass_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Password..."));
+        let basic_user_input = cx.new(|cx| InputState::new(window, cx).placeholder("Username..."));
+        let basic_pass_input = cx.new(|cx| InputState::new(window, cx).placeholder("Password..."));
         let apikey_key_input = cx.new(|cx| InputState::new(window, cx).placeholder("X-API-Key"));
         let apikey_val_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("API key value..."));
@@ -175,7 +158,9 @@ impl ComposerInputs {
                     self.bearer_token_input.update(cx, |inp, cx| {
                         let env = env_m.read(cx);
                         inp.set_value(
-                            crate::components::env_autocomplete::build_tokenized_content(token, env),
+                            crate::components::env_autocomplete::build_tokenized_content(
+                                token, env,
+                            ),
                             window,
                             cx,
                         );
@@ -219,7 +204,9 @@ impl ComposerInputs {
                     self.apikey_val_input.update(cx, |inp, cx| {
                         let env = env_v.read(cx);
                         inp.set_value(
-                            crate::components::env_autocomplete::build_tokenized_content(value, env),
+                            crate::components::env_autocomplete::build_tokenized_content(
+                                value, env,
+                            ),
                             window,
                             cx,
                         );

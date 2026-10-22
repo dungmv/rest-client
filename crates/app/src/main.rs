@@ -3,8 +3,8 @@
 
 mod app;
 mod components;
-pub mod services;
 mod platform;
+pub mod services;
 pub mod settings;
 mod state;
 mod theme;

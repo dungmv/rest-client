@@ -9,9 +9,7 @@ use gpui_component::input::{Input, InputState};
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
-use restclient_core::importers::{
-    parse_content, ImportFormat, ImportOptions, ImportResult,
-};
+use restclient_core::importers::{parse_content, ImportFormat, ImportOptions, ImportResult};
 use restclient_core::models::HttpMethod;
 use std::path::PathBuf;
 
@@ -35,7 +33,9 @@ pub struct ImportModalState {
 impl ImportModalState {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let paste_input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Paste OpenAPI (JSON/YAML) or Postman Collection (JSON) content here...")
+            InputState::new(window, cx).placeholder(
+                "Paste OpenAPI (JSON/YAML) or Postman Collection (JSON) content here...",
+            )
         });
 
         Self {
@@ -131,13 +131,24 @@ impl RenderOnce for ImportModal {
         let modal_entity_ref = self.modal_state.clone();
         let toast_entity = self.toast_state.clone();
 
-        let modal_entity = window.use_keyed_state(
-            gpui::SharedString::from("import-modal-state-key"),
-            cx,
-            |window, cx| cx.new(|cx| ImportModalState::new(window, cx)),
-        ).read(cx).clone();
+        let modal_entity = window
+            .use_keyed_state(
+                gpui::SharedString::from("import-modal-state-key"),
+                cx,
+                |window, cx| cx.new(|cx| ImportModalState::new(window, cx)),
+            )
+            .read(cx)
+            .clone();
 
-        let (format, source_tab, selected_file, create_enclosing, import_env, parse_result, paste_inp) = {
+        let (
+            format,
+            source_tab,
+            selected_file,
+            create_enclosing,
+            import_env,
+            parse_result,
+            paste_inp,
+        ) = {
             let s = modal_entity.read(cx);
             (
                 s.format,
@@ -587,7 +598,11 @@ where
         .pb(px(6.))
         .cursor_pointer()
         .text_xs()
-        .font_weight(if active { FontWeight::SEMIBOLD } else { FontWeight::NORMAL })
+        .font_weight(if active {
+            FontWeight::SEMIBOLD
+        } else {
+            FontWeight::NORMAL
+        })
         .text_color(if active { t.text_primary } else { t.text_muted })
         .when(active, |s| s.border_b_2().border_color(t.primary))
         .child(label)
@@ -601,72 +616,72 @@ fn render_file_picker_view(
 ) -> impl IntoElement {
     let st_pick = modal_state.clone();
 
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(8.))
-        .child(
-            div()
-                .p(px(16.))
-                .rounded(px(8.))
-                .border_1()
-                .border_color(t.border)
-                .bg(t.bg_panel)
-                .flex()
-                .items_center()
-                .justify_between()
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(2.))
-                        .child(
-                            div()
-                                .text_xs()
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(t.text_primary)
-                                .child(match selected_file {
-                                    Some(f) => f.file_name().and_then(|n| n.to_str()).unwrap_or("Selected File").to_string(),
-                                    None => "No file selected".to_string(),
-                                }),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(t.text_muted)
-                                .child(match selected_file {
-                                    Some(f) => f.to_string_lossy().to_string(),
-                                    None => "Supports .json, .yaml, .yml files".to_string(),
-                                }),
-                        ),
-                )
-                .child(
-                    div()
-                        .id("btn-browse-import-file")
-                        .px(px(12.))
-                        .py(px(6.))
-                        .rounded(px(6.))
-                        .border_1()
-                        .border_color(t.border)
-                        .bg(t.bg_card)
-                        .cursor_pointer()
-                        .hover(|s| s.bg(t.bg_hover).border_color(t.primary))
-                        .text_xs()
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(t.text_primary)
-                        .child("Browse File...")
-                        .on_click(move |_, window, cx| {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("API Specification & Collections", &["json", "yaml", "yml"])
-                                .pick_file()
-                            {
-                                st_pick.update(cx, |s, cx| {
-                                    s.set_file(path, window, cx);
-                                });
-                            }
-                        }),
-                ),
-        )
+    div().flex().flex_col().gap(px(8.)).child(
+        div()
+            .p(px(16.))
+            .rounded(px(8.))
+            .border_1()
+            .border_color(t.border)
+            .bg(t.bg_panel)
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(t.text_primary)
+                            .child(match selected_file {
+                                Some(f) => f
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("Selected File")
+                                    .to_string(),
+                                None => "No file selected".to_string(),
+                            }),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(t.text_muted)
+                            .child(match selected_file {
+                                Some(f) => f.to_string_lossy().to_string(),
+                                None => "Supports .json, .yaml, .yml files".to_string(),
+                            }),
+                    ),
+            )
+            .child(
+                div()
+                    .id("btn-browse-import-file")
+                    .px(px(12.))
+                    .py(px(6.))
+                    .rounded(px(6.))
+                    .border_1()
+                    .border_color(t.border)
+                    .bg(t.bg_card)
+                    .cursor_pointer()
+                    .hover(|s| s.bg(t.bg_hover).border_color(t.primary))
+                    .text_xs()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(t.text_primary)
+                    .child("Browse File...")
+                    .on_click(move |_, window, cx| {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("API Specification & Collections", &["json", "yaml", "yml"])
+                            .pick_file()
+                        {
+                            st_pick.update(cx, |s, cx| {
+                                s.set_file(path, window, cx);
+                            });
+                        }
+                    }),
+            ),
+    )
 }
 
 fn render_paste_view(
@@ -691,30 +706,27 @@ fn render_paste_view(
                 .child(Input::new(&paste_input)),
         )
         .child(
-            div()
-                .flex()
-                .justify_end()
-                .child(
-                    div()
-                        .id("btn-analyze-paste-content")
-                        .px(px(10.))
-                        .py(px(5.))
-                        .rounded(px(5.))
-                        .border_1()
-                        .border_color(t.border)
-                        .bg(t.bg_card)
-                        .cursor_pointer()
-                        .hover(|s| s.bg(t.bg_hover).border_color(t.primary))
-                        .text_xs()
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(t.text_primary)
-                        .child("Analyze & Preview")
-                        .on_click(move |_, _, cx| {
-                            st_parse.update(cx, |s, cx| {
-                                s.reparse(cx);
-                            });
-                        }),
-                ),
+            div().flex().justify_end().child(
+                div()
+                    .id("btn-analyze-paste-content")
+                    .px(px(10.))
+                    .py(px(5.))
+                    .rounded(px(5.))
+                    .border_1()
+                    .border_color(t.border)
+                    .bg(t.bg_card)
+                    .cursor_pointer()
+                    .hover(|s| s.bg(t.bg_hover).border_color(t.primary))
+                    .text_xs()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(t.text_primary)
+                    .child("Analyze & Preview")
+                    .on_click(move |_, _, cx| {
+                        st_parse.update(cx, |s, cx| {
+                            s.reparse(cx);
+                        });
+                    }),
+            ),
         )
 }
 
@@ -759,10 +771,19 @@ fn render_preview_card(res: &ImportResult, t: &crate::theme::AppTheme) -> impl I
                     div()
                         .flex()
                         .gap(px(6.))
-                        .child(render_badge(&format!("{} requests", res.requests.len()), t.primary))
-                        .child(render_badge(&format!("{} folders", res.folders.len()), t.text_secondary))
+                        .child(render_badge(
+                            &format!("{} requests", res.requests.len()),
+                            t.primary,
+                        ))
+                        .child(render_badge(
+                            &format!("{} folders", res.folders.len()),
+                            t.text_secondary,
+                        ))
                         .when(!res.environments.is_empty(), |this| {
-                            this.child(render_badge(&format!("{} env", res.environments.len()), t.status_3xx))
+                            this.child(render_badge(
+                                &format!("{} env", res.environments.len()),
+                                t.status_3xx,
+                            ))
                         }),
                 ),
         )
@@ -893,18 +914,8 @@ where
                 .items_center()
                 .justify_center()
                 .when(checked, |s| {
-                    s.child(
-                        div()
-                            .text_xs()
-                            .text_color(t.primary_foreground)
-                            .child("✓"),
-                    )
+                    s.child(div().text_xs().text_color(t.primary_foreground).child("✓"))
                 }),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(t.text_secondary)
-                .child(label),
-        )
+        .child(div().text_xs().text_color(t.text_secondary).child(label))
 }

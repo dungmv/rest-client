@@ -1,8 +1,8 @@
 use crate::state::{ToastKind, ToastState};
 use crate::theme::theme;
 use gpui::{
-    div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
-    RenderOnce, StatefulInteractiveElement as _, Styled, Window,
+    div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement, RenderOnce,
+    StatefulInteractiveElement as _, Styled, Window,
 };
 
 #[derive(IntoElement)]
@@ -70,12 +70,7 @@ impl RenderOnce for ToastContainer {
                                 .flex()
                                 .items_center()
                                 .gap(px(8.))
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(icon_color)
-                                        .child(icon_char),
-                                )
+                                .child(div().text_sm().text_color(icon_color).child(icon_char))
                                 .child(
                                     div()
                                         .text_sm()
@@ -114,30 +109,27 @@ impl RenderOnce for ToastContainer {
                 let close_id = item.id.clone();
 
                 card = card.child(
-                    div()
-                        .flex()
-                        .gap(px(8.))
-                        .child(
-                            div()
-                                .id(format!("act-{}", item.id))
-                                .px(px(12.))
-                                .py(px(4.))
-                                .rounded(px(4.))
-                                .bg(t.primary)
-                                .text_color(t.primary_foreground)
-                                .text_xs()
-                                .cursor_pointer()
-                                .hover(|s| s.bg(t.primary_hover))
-                                .on_click(move |_, _, cx| {
-                                    if let Some(cb) = &action_cb {
-                                        cb();
-                                    }
-                                    ts_close.update(cx, |state, cx| {
-                                        state.dismiss_toast(&close_id, cx);
-                                    });
-                                })
-                                .child(label),
-                        ),
+                    div().flex().gap(px(8.)).child(
+                        div()
+                            .id(format!("act-{}", item.id))
+                            .px(px(12.))
+                            .py(px(4.))
+                            .rounded(px(4.))
+                            .bg(t.primary)
+                            .text_color(t.primary_foreground)
+                            .text_xs()
+                            .cursor_pointer()
+                            .hover(|s| s.bg(t.primary_hover))
+                            .on_click(move |_, _, cx| {
+                                if let Some(cb) = &action_cb {
+                                    cb();
+                                }
+                                ts_close.update(cx, |state, cx| {
+                                    state.dismiss_toast(&close_id, cx);
+                                });
+                            })
+                            .child(label),
+                    ),
                 );
             }
 

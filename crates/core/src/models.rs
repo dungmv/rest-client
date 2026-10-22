@@ -646,12 +646,12 @@ impl Workspace {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct TimingBreakdown {
+    pub total_ms: u64,
     pub dns_ms: Option<u64>,
     pub connect_ms: Option<u64>,
     pub tls_ms: Option<u64>,
     pub ttfb_ms: Option<u64>,
     pub download_ms: Option<u64>,
-    pub total_ms: u64,
     #[serde(default)]
     pub connection_reused: bool,
 }

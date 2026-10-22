@@ -9,7 +9,7 @@ pub mod watcher;
 pub use fs_store::FsWorkspaceStore;
 pub use models::*;
 pub use traits::WorkspaceStore;
-pub use watcher::{FsEvent, WorkspaceWatcher, start_workspace_watcher};
+pub use watcher::{start_workspace_watcher, FsEvent, WorkspaceWatcher};
 
 #[cfg(test)]
 mod tests {
@@ -339,18 +339,14 @@ mod tests {
         let (_, group_rel) = store.create_group(None, "Auth").unwrap();
         let moved_rel = store.move_request(&new_rel, Some(&group_rel)).unwrap();
         assert_eq!(moved_rel, "auth/login-admin.yaml");
-        assert!(
-            store
-                .collections_dir()
-                .join("auth/login-admin.yaml")
-                .exists()
-        );
-        assert!(
-            store
-                .collections_dir()
-                .join("auth/login-admin.loc")
-                .exists()
-        );
+        assert!(store
+            .collections_dir()
+            .join("auth/login-admin.yaml")
+            .exists());
+        assert!(store
+            .collections_dir()
+            .join("auth/login-admin.loc")
+            .exists());
 
         // 4. Create an orphan .loc in auth/
         let orphan_loc = store.collections_dir().join("auth/ghost.loc");
@@ -551,33 +547,27 @@ mod tests {
         let store = FsWorkspaceStore::new(&temp_dir);
         let test_path = temp_dir.join("test.yaml");
 
-        assert!(
-            !store
-                .suppressed_paths
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .contains(&test_path)
-        );
+        assert!(!store
+            .suppressed_paths()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(&test_path));
         store.suppress_path(&test_path);
-        assert!(
-            store
-                .suppressed_paths
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .contains(&test_path)
-        );
+        assert!(store
+            .suppressed_paths()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(&test_path));
 
         // Calling multiple times in a burst does not panic and tracks suppressed paths via single queue
         for i in 0..50 {
             let p = temp_dir.join(format!("burst_{}.yaml", i));
             store.suppress_path(&p);
-            assert!(
-                store
-                    .suppressed_paths
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .contains(&p)
-            );
+            assert!(store
+                .suppressed_paths()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains(&p));
         }
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -585,32 +575,47 @@ mod tests {
 
     #[test]
     fn test_benchmark_yaml_and_clone() {
-        let speedt_path = std::path::Path::new(
-            r"C:\Users\maiva\Documents\speedtest\collections\new-folder\new\new-folder\speedt.yaml",
-        );
-        if speedt_path.exists() {
-            let content = std::fs::read_to_string(speedt_path).unwrap();
-            let t0 = std::time::Instant::now();
-            let req_file: RequestFile = serde_yaml::from_str(&content).unwrap();
-            let parse_time = t0.elapsed();
+        let temp_dir = std::env::temp_dir().join(format!(
+            "test_benchmark_yaml_{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let speedt_path = temp_dir.join("speedt.yaml");
 
-            let t1 = std::time::Instant::now();
-            let serialized = to_yaml_string(&req_file).unwrap();
-            let ser_time = t1.elapsed();
-
-            let item = req_file.to_item("speedt.yaml", "ws", None);
-            let t2 = std::time::Instant::now();
-            for _ in 0..100 {
-                let _ = item.clone();
-            }
-            let clone_time = t2.elapsed();
-
-            println!("\n=== BENCHMARK on 16KB speedt.yaml ===");
-            println!("YAML parse: {:?}", parse_time);
-            println!("YAML serialize: {:?}", ser_time);
-            println!("100 clones: {:?}", clone_time);
-            println!("Serialized len: {} bytes", serialized.len());
-            println!("====================================\n");
+        // Generate synthetic ~16KB request file for benchmarking
+        let mut headers = String::new();
+        for i in 0..150 {
+            headers.push_str(&format!(
+                "  - key: X-Benchmark-Header-{}\n    value: benchmark-value-header-payload-{}\n    enabled: true\n",
+                i, i
+            ));
         }
+        let sample_content = format!(
+            "name: Benchmark Request\nmethod: POST\nurl: https://api.benchmark.example.com/v1/payload\nheaders:\n{}body:\n  type: json\n  content: '{{\"benchmark\": true}}'\n",
+            headers
+        );
+        std::fs::write(&speedt_path, sample_content).unwrap();
+
+        let content = std::fs::read_to_string(&speedt_path).unwrap();
+        let t0 = std::time::Instant::now();
+        let req_file: RequestFile = serde_yaml::from_str(&content).unwrap();
+        let parse_time = t0.elapsed();
+
+        let t1 = std::time::Instant::now();
+        let serialized = to_yaml_string(&req_file).unwrap();
+        let ser_time = t1.elapsed();
+
+        let item = req_file.to_item("speedt.yaml", "ws", None);
+        let t2 = std::time::Instant::now();
+        for _ in 0..100 {
+            let _ = item.clone();
+        }
+        let clone_time = t2.elapsed();
+
+        assert!(!serialized.is_empty());
+        assert_eq!(item.name, "Benchmark Request");
+        let _ = (parse_time, ser_time, clone_time);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

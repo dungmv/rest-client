@@ -189,11 +189,7 @@ impl RenderOnce for SidebarTree {
         };
         let is_syncing = git_is_syncing;
 
-        let active_req_id = self
-            .editor_state
-            .read(cx)
-            .active_request_id
-            .clone();
+        let active_req_id = self.editor_state.read(cx).active_request_id.clone();
         let active_example_name = self.response_state.read(cx).active_example_name.clone();
         let has_nothing = folders.is_empty() && requests.is_empty();
 
@@ -423,9 +419,7 @@ impl RenderOnce for SidebarTree {
                         let ws_pin_reorder = ws_clone.clone();
                         let pinned_requests: Vec<_> = pins
                             .iter()
-                            .filter_map(|pin_id| {
-                                requests.iter().find(|r| &r.id == pin_id).cloned()
-                            })
+                            .filter_map(|pin_id| requests.iter().find(|r| &r.id == pin_id).cloned())
                             .collect();
 
                         this.child(
@@ -502,9 +496,7 @@ impl RenderOnce for SidebarTree {
                             .iter()
                             .filter(|r| {
                                 (r.folder_id.is_none()
-                                    || !folders
-                                        .iter()
-                                        .any(|f| Some(&f.id) == r.folder_id.as_ref()))
+                                    || !folders.iter().any(|f| Some(&f.id) == r.folder_id.as_ref()))
                                     && (query.is_empty()
                                         || r.name.to_lowercase().contains(&query)
                                         || r.url.to_lowercase().contains(&query)

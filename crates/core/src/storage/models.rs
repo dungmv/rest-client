@@ -509,10 +509,50 @@ pub struct FolderNode {
     pub subfolders: Vec<FolderNode>,
 }
 
+impl FolderNode {
+    /// Recursively counts all requests contained in this folder and its subfolders.
+    pub fn count_requests(&self) -> usize {
+        let mut count = self.requests.len();
+        for sub in &self.subfolders {
+            count += sub.count_requests();
+        }
+        count
+    }
+
+    /// Recursively counts this folder and all nested subfolders.
+    pub fn count_folders(&self) -> usize {
+        let mut count = 1;
+        for sub in &self.subfolders {
+            count += sub.count_folders();
+        }
+        count
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct WorkspaceTree {
     pub root_requests: Vec<RequestNode>,
     pub folders: Vec<FolderNode>,
+}
+
+impl WorkspaceTree {
+    /// Recursively counts all requests contained across the entire workspace tree.
+    pub fn count_requests(&self) -> usize {
+        let mut count = self.root_requests.len();
+        for f in &self.folders {
+            count += f.count_requests();
+        }
+        count
+    }
+
+    /// Recursively counts all folders contained across the entire workspace tree.
+    pub fn count_folders(&self) -> usize {
+        let mut count = 0;
+        for f in &self.folders {
+            count += f.count_folders();
+        }
+        count
+    }
 }
 
 #[cfg(test)]
@@ -625,5 +665,44 @@ mod tests {
         let rec_404 = loc_404.to_record("req-2");
         assert_eq!(rec_404.status_code, 404);
         assert_eq!(rec_404.status_text, "Not Found");
+    }
+
+    #[test]
+    fn test_workspace_tree_counting() {
+        let req1 = RequestNode {
+            slug: "r1".into(),
+            rel_path: "r1.yaml".into(),
+            file: RequestFile::default(),
+            last_status_code: None,
+            parse_error: None,
+        };
+        let req2 = RequestNode {
+            slug: "r2".into(),
+            rel_path: "sub/r2.yaml".into(),
+            file: RequestFile::default(),
+            last_status_code: None,
+            parse_error: None,
+        };
+        let subfolder = FolderNode {
+            dir_name: "nested".into(),
+            rel_path: "sub/nested".into(),
+            file: FolderFile::default(),
+            requests: vec![req2],
+            subfolders: vec![],
+        };
+        let folder = FolderNode {
+            dir_name: "sub".into(),
+            rel_path: "sub".into(),
+            file: FolderFile::default(),
+            requests: vec![],
+            subfolders: vec![subfolder],
+        };
+        let tree = WorkspaceTree {
+            root_requests: vec![req1],
+            folders: vec![folder],
+        };
+
+        assert_eq!(tree.count_requests(), 2);
+        assert_eq!(tree.count_folders(), 2);
     }
 }

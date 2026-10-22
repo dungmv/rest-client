@@ -87,11 +87,7 @@ pub fn render_request_node(
         .py(px(4.))
         .rounded(px(6.))
         .border_1()
-        .border_color(if is_selected {
-            t.border
-        } else {
-            t.transparent
-        })
+        .border_color(if is_selected { t.border } else { t.transparent })
         .bg(if is_selected {
             t.bg_selected
         } else if is_viewing_example {
@@ -105,9 +101,7 @@ pub fn render_request_node(
         .items_center()
         .justify_between()
         .when(!is_renaming, |this| {
-            this.on_drag(drag_req_payload, |item, _, _, cx| {
-                cx.new(|_| item.clone())
-            })
+            this.on_drag(drag_req_payload, |item, _, _, cx| cx.new(|_| item.clone()))
         })
         .drag_over::<DragRequestItem>(|style, _, _, _| {
             let t = theme();
@@ -187,28 +181,27 @@ pub fn render_request_node(
 
                 let mut m = menu
                     .item(
-                        PopupMenuItem::new("Copy as YAML")
-                            .on_click(move |_, _, cx| {
-                                if let Some(r) = ws_yaml.read(cx).find_request(&r_id_yaml) {
-                                    let rf = RequestFile::from_item(r);
-                                    if let Ok(yaml) = to_yaml_string(&rf) {
-                                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(yaml));
-                                    }
+                        PopupMenuItem::new("Copy as YAML").on_click(move |_, _, cx| {
+                            if let Some(r) = ws_yaml.read(cx).find_request(&r_id_yaml) {
+                                let rf = RequestFile::from_item(r);
+                                if let Ok(yaml) = to_yaml_string(&rf) {
+                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(yaml));
                                 }
-                            }),
+                            }
+                        }),
                     )
                     .item(
-                        PopupMenuItem::new("Copy as cURL")
-                            .on_click(move |_, _, cx| {
-                                if let Some(r) = ws_curl.read(cx).find_request(&r_id_curl) {
-                                    let mut r_clone = r.clone();
-                                    let (resolved_h, resolved_a) = ws_curl.read(cx).resolve_request_hierarchy(&r_clone);
-                                    r_clone.headers = resolved_h;
-                                    r_clone.auth = resolved_a;
-                                    let curl = restclient_core::curl::request_to_curl(&r_clone, None);
-                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(curl));
-                                }
-                            }),
+                        PopupMenuItem::new("Copy as cURL").on_click(move |_, _, cx| {
+                            if let Some(r) = ws_curl.read(cx).find_request(&r_id_curl) {
+                                let mut r_clone = r.clone();
+                                let (resolved_h, resolved_a) =
+                                    ws_curl.read(cx).resolve_request_hierarchy(&r_clone);
+                                r_clone.headers = resolved_h;
+                                r_clone.auth = resolved_a;
+                                let curl = restclient_core::curl::request_to_curl(&r_clone, None);
+                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(curl));
+                            }
+                        }),
                     )
                     .separator()
                     .item(
@@ -219,27 +212,27 @@ pub fn render_request_node(
                                 });
                             }),
                     )
-                    .item(
-                        PopupMenuItem::new("Rename")
-                            .on_click(move |_, window, cx| {
-                                let ws_c = ws_r.clone();
-                                sb_r.update(cx, |state, cx| {
-                                    state.start_renaming_request(r_id_r.clone(), init_r.clone(), ws_c, window, cx);
-                                });
-                            }),
-                    )
-                    .item(
-                        PopupMenuItem::new("Duplicate")
-                            .on_click(move |_, _, cx| {
-                                if let Some(dup) = ws_d.update(cx, |state, cx| {
-                                    state.duplicate_request(&r_id_d, cx)
-                                }) {
-                                    ed_d.update(cx, |state, cx| {
-                                        state.set_active_request_id(&dup.id, cx);
-                                    });
-                                }
-                            }),
-                    );
+                    .item(PopupMenuItem::new("Rename").on_click(move |_, window, cx| {
+                        let ws_c = ws_r.clone();
+                        sb_r.update(cx, |state, cx| {
+                            state.start_renaming_request(
+                                r_id_r.clone(),
+                                init_r.clone(),
+                                ws_c,
+                                window,
+                                cx,
+                            );
+                        });
+                    }))
+                    .item(PopupMenuItem::new("Duplicate").on_click(move |_, _, cx| {
+                        if let Some(dup) =
+                            ws_d.update(cx, |state, cx| state.duplicate_request(&r_id_d, cx))
+                        {
+                            ed_d.update(cx, |state, cx| {
+                                state.set_active_request_id(&dup.id, cx);
+                            });
+                        }
+                    }));
 
                 if is_dirty_git {
                     let git_disc = git_menu.clone();
@@ -250,9 +243,10 @@ pub fn render_request_node(
                     let toast_disc = toast_menu.clone();
                     let r_name_disc = init_name_menu.clone();
 
-                    m = m.separator().item(
-                        PopupMenuItem::new("Discard Changes")
-                            .on_click(move |_, _, cx| {
+                    m = m
+                        .separator()
+                        .item(
+                            PopupMenuItem::new("Discard Changes").on_click(move |_, _, cx| {
                                 let req_name = r_name_disc.clone();
                                 let norm_req = r_id_disc.replace('\\', "/");
                                 let coll_rel = format!("collections/{}", norm_req);
@@ -266,9 +260,22 @@ pub fn render_request_node(
                                                 || p.ends_with(&format!("/{}", norm_req))
                                                 || p.ends_with(&format!("/{}", coll_rel))
                                         };
-                                        git_st.untracked_files.iter().find(|i| matches(&i.path))
-                                            .or_else(|| git_st.unstaged_files.iter().find(|i| matches(&i.path)))
-                                            .or_else(|| git_st.staged_files.iter().find(|i| matches(&i.path)))
+                                        git_st
+                                            .untracked_files
+                                            .iter()
+                                            .find(|i| matches(&i.path))
+                                            .or_else(|| {
+                                                git_st
+                                                    .unstaged_files
+                                                    .iter()
+                                                    .find(|i| matches(&i.path))
+                                            })
+                                            .or_else(|| {
+                                                git_st
+                                                    .staged_files
+                                                    .iter()
+                                                    .find(|i| matches(&i.path))
+                                            })
                                             .map(|i| i.path.clone())
                                             .unwrap_or(coll_rel)
                                     } else {
@@ -284,7 +291,8 @@ pub fn render_request_node(
                                 });
                                 ws_disc.update(cx, |ws, cx| {
                                     ws.reload_all();
-                                    let active_id = ed_disc.read(cx).active_request_id().to_string();
+                                    let active_id =
+                                        ed_disc.read(cx).active_request_id().to_string();
                                     if active_id == r_id_disc {
                                         if ws.find_request(&r_id_disc).is_some() {
                                             ed_disc.update(cx, |ed, cx| {
@@ -304,18 +312,20 @@ pub fn render_request_node(
                                     cx.notify();
                                 });
                                 toast_disc.update(cx, |ts, cx| {
-                                    ts.push_info("Git Discard", format!("Discarded changes in '{}'", req_name), cx);
+                                    ts.push_info(
+                                        "Git Discard",
+                                        format!("Discarded changes in '{}'", req_name),
+                                        cx,
+                                    );
                                 });
                             }),
-                    );
+                        );
                 }
 
-                m.separator().item(
-                    PopupMenuItem::new("Delete")
-                        .on_click(move |_, _, cx| {
-                            delete_request_item(&ws_del, &ed_del, &r_id_del, cx);
-                        }),
-                )
+                m.separator()
+                    .item(PopupMenuItem::new("Delete").on_click(move |_, _, cx| {
+                        delete_request_item(&ws_del, &ed_del, &r_id_del, cx);
+                    }))
             }
         })
         .child(
@@ -346,7 +356,7 @@ pub fn render_request_node(
                             } else {
                                 IconName::ChevronDown
                             })
-                            .size(px(11.))
+                            .size(px(11.)),
                         )
                         .on_click(move |_, _, cx| {
                             cx.stop_propagation();
@@ -356,7 +366,11 @@ pub fn render_request_node(
                         })
                         .into_any_element()
                 } else {
-                    div().w(px(14.)).h(px(14.)).flex_shrink_0().into_any_element()
+                    div()
+                        .w(px(14.))
+                        .h(px(14.))
+                        .flex_shrink_0()
+                        .into_any_element()
                 })
                 .child(MethodBadge::new(req.method))
                 .child(if let (true, Some(inp)) = (is_renaming, ctx.rename_input) {
@@ -413,12 +427,7 @@ pub fn render_request_node(
                 .items_center()
                 .gap(px(4.))
                 .when(ctx.parse_errors.contains_key(&req.id), |this| {
-                    this.child(
-                        div()
-                            .text_xs()
-                            .text_color(t.status_5xx)
-                            .child("!"),
-                    )
+                    this.child(div().text_xs().text_color(t.status_5xx).child("!"))
                 })
                 .when(ctx.running_request_id == Some(req.id.as_str()), |this| {
                     this.child(
@@ -429,15 +438,11 @@ pub fn render_request_node(
                     )
                 })
                 .when(ctx.unsaved_requests.contains(&req.id), |this| {
-                    this.child(
-                        div()
-                            .text_xs()
-                            .text_color(t.primary)
-                            .child("●"),
-                    )
+                    this.child(div().text_xs().text_color(t.primary).child("●"))
                 })
-                .when(req_git_status != SidebarGitStatus::Clean, |this| {
-                    match req_git_status {
+                .when(
+                    req_git_status != SidebarGitStatus::Clean,
+                    |this| match req_git_status {
                         SidebarGitStatus::New => this.child(
                             div()
                                 .text_xs()
@@ -453,8 +458,8 @@ pub fn render_request_node(
                                 .child("M"),
                         ),
                         SidebarGitStatus::Clean => this,
-                    }
-                })
+                    },
+                )
                 .when_some(req.last_status_code, |this, code| {
                     this.child(StatusCodeBadge::new(code))
                 }),
@@ -473,7 +478,15 @@ pub fn render_request_node(
             .child(parent_row)
             .when(!is_req_collapsed, |this| {
                 this.children(examples_list.into_iter().enumerate().map(|(idx, ex)| {
-                    render_example_node(&parent_id, idx, &ex, in_folder, req.examples.len(), is_req_active, ctx)
+                    render_example_node(
+                        &parent_id,
+                        idx,
+                        &ex,
+                        in_folder,
+                        req.examples.len(),
+                        is_req_active,
+                        ctx,
+                    )
                 }))
             })
             .into_any_element()

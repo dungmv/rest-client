@@ -35,9 +35,8 @@ impl AppView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let state = AppState::new(cx);
 
-        type HighlighterFactory = std::rc::Rc<
-            dyn Fn(&str) -> Option<Box<dyn gpui_component::input::InputHighlighter>>,
-        >;
+        type HighlighterFactory =
+            std::rc::Rc<dyn Fn(&str) -> Option<Box<dyn gpui_component::input::InputHighlighter>>>;
 
         let highlighter_factory: HighlighterFactory = std::rc::Rc::new(|lang: &str| match lang {
             "json" => Some(Box::new(
@@ -50,12 +49,8 @@ impl AppView {
             _ => None,
         });
 
-        let mut composer_inputs = ComposerInputs::new(
-            window,
-            state.env.clone(),
-            highlighter_factory.clone(),
-            cx,
-        );
+        let mut composer_inputs =
+            ComposerInputs::new(window, state.env.clone(), highlighter_factory.clone(), cx);
         let mut inspector_displays = InspectorDisplays::new(window, highlighter_factory, cx);
 
         let executor = Arc::new(ReqwestExecutor::new());
@@ -355,14 +350,16 @@ impl Render for AppView {
         let send_view = app_view_entity.clone();
         attach_modal_overlays(
             root,
-            &ws_entity,
-            &self.state.env,
-            &self.state.persistence,
-            &modal_entity,
-            &sidebar_entity,
-            &git_entity,
-            &session_entity,
-            &toast_entity,
+            ModalOverlayEntities {
+                workspace_state: &ws_entity,
+                env_state: &self.state.env,
+                persistence_state: &self.state.persistence,
+                modal_state: &modal_entity,
+                sidebar_state: &sidebar_entity,
+                git_state: &git_entity,
+                editor_state: &session_entity,
+                toast_state: &toast_entity,
+            },
             move |_, cx| {
                 send_view.update(cx, |view, cx| {
                     view.send_current_request(cx);

@@ -60,11 +60,7 @@ pub fn delete_request(collections_dir: &Path, rel_path: &Path) -> Result<()> {
 
 /// Rename a request:
 /// Renames `<slug>.yaml` and matching `<slug>.loc` atomically, updating display name in yaml.
-pub fn rename_request(
-    collections_dir: &Path,
-    rel_path: &Path,
-    new_name: &str,
-) -> Result<PathBuf> {
+pub fn rename_request(collections_dir: &Path, rel_path: &Path, new_name: &str) -> Result<PathBuf> {
     let old_yaml_path = collections_dir.join(rel_path);
     if !old_yaml_path.exists() {
         anyhow::bail!("Request file {:?} does not exist", old_yaml_path);
@@ -92,8 +88,8 @@ pub fn rename_request(
 
     // Read existing yaml content, update name, and write to new path
     let existing_raw = std::fs::read_to_string(&old_yaml_path)?;
-    let mut req: RequestFile = serde_yaml::from_str(&existing_raw)
-        .unwrap_or_else(|_| RequestFile {
+    let mut req: RequestFile =
+        serde_yaml::from_str(&existing_raw).unwrap_or_else(|_| RequestFile {
             name: new_name.to_string(),
             ..Default::default()
         });
@@ -263,11 +259,7 @@ pub fn delete_group(collections_dir: &Path, folder_rel: &str) -> Result<()> {
 }
 
 /// Rename a group: updates display name in `_folder.yaml` and renames directory.
-pub fn rename_group(
-    collections_dir: &Path,
-    folder_rel: &str,
-    new_name: &str,
-) -> Result<PathBuf> {
+pub fn rename_group(collections_dir: &Path, folder_rel: &str, new_name: &str) -> Result<PathBuf> {
     let old_group_dir = collections_dir.join(folder_rel);
     if !old_group_dir.exists() {
         anyhow::bail!("Group {:?} does not exist", old_group_dir);
@@ -281,7 +273,8 @@ pub fn rename_group(
     let base_slug = slugify(new_name);
     let mut new_dir_name = base_slug.clone();
     let mut counter = 2;
-    while parent_dir.join(&new_dir_name).exists() && parent_dir.join(&new_dir_name) != old_group_dir {
+    while parent_dir.join(&new_dir_name).exists() && parent_dir.join(&new_dir_name) != old_group_dir
+    {
         new_dir_name = format!("{}-{}", base_slug, counter);
         counter += 1;
     }

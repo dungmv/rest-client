@@ -44,7 +44,8 @@ pub trait WorkspaceStore: Send + Sync {
     fn move_request(&self, rel_path: &str, target_folder_rel: Option<&str>) -> Result<String>;
 
     /// Group / Folder CRUD
-    fn create_group(&self, parent_folder_rel: Option<&str>, name: &str) -> Result<(String, String)>; // (dir_name, rel_path)
+    fn create_group(&self, parent_folder_rel: Option<&str>, name: &str)
+        -> Result<(String, String)>; // (dir_name, rel_path)
     fn delete_group(&self, folder_rel: &str) -> Result<()>;
     fn rename_group(&self, folder_rel: &str, new_name: &str) -> Result<String>;
     fn move_group(&self, folder_rel: &str, target_parent_rel: Option<&str>) -> Result<String>;
@@ -72,5 +73,7 @@ pub trait WorkspaceStore: Send + Sync {
     fn save_cookies(&self, cookies: &serde_json::Value) -> Result<()>;
 
     /// Thread-safe set of paths currently suppressed from watcher notifications
-    fn suppressed_paths(&self) -> std::sync::Arc<std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>>>;
+    fn suppressed_paths(
+        &self,
+    ) -> std::sync::Arc<std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>>>;
 }

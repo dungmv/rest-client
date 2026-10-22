@@ -18,7 +18,7 @@ type EnvMutations = Rc<RefCell<Vec<(String, Option<String>)>>>;
 pub struct ScriptSandbox;
 
 impl ScriptSandbox {
-    /// Chạy Pre-request Script trong một isolate JS QuickJS hoàn toàn cô lập
+    /// Execute Pre-request Script in an isolated QuickJS runtime
     pub fn run_pre_request(code: &str, ctx_data: PreRequestContext) -> PreRequestOutput {
         let rt = match Runtime::new() {
             Ok(r) => r,
@@ -48,8 +48,8 @@ impl ScriptSandbox {
         let eval_res = ctx.with(|ctx| -> Result<(), String> {
             let env_obj = build_environment_object(&ctx, &ctx_data.env_vars, env_mutations.clone())
                 .map_err(|e| format!("{:?}", e))?;
-            let vars_obj = build_variables_object(&ctx, &ctx_data.env_vars)
-                .map_err(|e| format!("{:?}", e))?;
+            let vars_obj =
+                build_variables_object(&ctx, &ctx_data.env_vars).map_err(|e| format!("{:?}", e))?;
             let req_obj = build_request_object(
                 &ctx,
                 &ctx_data,
@@ -57,8 +57,7 @@ impl ScriptSandbox {
                 body_override.clone(),
             )
             .map_err(|e| format!("{:?}", e))?;
-            let crypto_obj =
-                build_crypto_object(&ctx).map_err(|e| format!("{:?}", e))?;
+            let crypto_obj = build_crypto_object(&ctx).map_err(|e| format!("{:?}", e))?;
 
             let client = Object::new(ctx.clone()).map_err(|e| format!("{:?}", e))?;
             client
@@ -89,7 +88,10 @@ impl ScriptSandbox {
 
             let assert_fn = Function::new(
                 ctx.clone(),
-                |ctx: rquickjs::Ctx<'_>, condition: bool, msg: Opt<String>| -> rquickjs::Result<()> {
+                |ctx: rquickjs::Ctx<'_>,
+                 condition: bool,
+                 msg: Opt<String>|
+                 -> rquickjs::Result<()> {
                     if !condition {
                         let m = msg.0.unwrap_or_else(|| "Assertion failed".to_string());
                         let js_str = rquickjs::String::from_str(ctx.clone(), &m)?;
@@ -147,7 +149,7 @@ impl ScriptSandbox {
         }
     }
 
-    /// Chạy Post-response / Test Script sau khi có kết quả trả về từ server
+    /// Execute Post-response / Test Script after server response is received
     pub fn run_post_response(code: &str, ctx_data: PostResponseContext) -> PostResponseOutput {
         let rt = match Runtime::new() {
             Ok(r) => r,
@@ -176,12 +178,11 @@ impl ScriptSandbox {
         let eval_res = ctx.with(|ctx| -> Result<(), String> {
             let env_obj = build_environment_object(&ctx, &ctx_data.env_vars, env_mutations.clone())
                 .map_err(|e| format!("{:?}", e))?;
-            let vars_obj = build_variables_object(&ctx, &ctx_data.env_vars)
-                .map_err(|e| format!("{:?}", e))?;
+            let vars_obj =
+                build_variables_object(&ctx, &ctx_data.env_vars).map_err(|e| format!("{:?}", e))?;
             let resp_obj =
                 build_response_object(&ctx, &ctx_data).map_err(|e| format!("{:?}", e))?;
-            let crypto_obj =
-                build_crypto_object(&ctx).map_err(|e| format!("{:?}", e))?;
+            let crypto_obj = build_crypto_object(&ctx).map_err(|e| format!("{:?}", e))?;
 
             let client = Object::new(ctx.clone()).map_err(|e| format!("{:?}", e))?;
             client
@@ -236,7 +237,10 @@ impl ScriptSandbox {
             // client.assert(condition, msg?)
             let assert_fn = Function::new(
                 ctx.clone(),
-                |ctx: rquickjs::Ctx<'_>, condition: bool, msg: Opt<String>| -> rquickjs::Result<()> {
+                |ctx: rquickjs::Ctx<'_>,
+                 condition: bool,
+                 msg: Opt<String>|
+                 -> rquickjs::Result<()> {
                     if !condition {
                         let m = msg.0.unwrap_or_else(|| "Assertion failed".to_string());
                         let js_str = rquickjs::String::from_str(ctx.clone(), &m)?;
@@ -258,8 +262,12 @@ impl ScriptSandbox {
                 .set("pm", client)
                 .map_err(|e| format!("{:?}", e))?;
 
-            inject_console(&ctx, console_entries.clone(), ConsoleLogSource::PostResponse)
-                .map_err(|e| format!("{:?}", e))?;
+            inject_console(
+                &ctx,
+                console_entries.clone(),
+                ConsoleLogSource::PostResponse,
+            )
+            .map_err(|e| format!("{:?}", e))?;
 
             let eval_result: Result<Value, _> = ctx.eval(code.as_bytes());
             if let Err(e) = eval_result {
@@ -308,12 +316,9 @@ fn build_environment_object<'js>(
 
     // client.environment.get(key)
     let map_for_get = map_cell.clone();
-    let get_fn = Function::new(
-        ctx.clone(),
-        move |key: String| -> Option<String> {
-            map_for_get.borrow().get(&key).cloned()
-        },
-    )?;
+    let get_fn = Function::new(ctx.clone(), move |key: String| -> Option<String> {
+        map_for_get.borrow().get(&key).cloned()
+    })?;
     obj.set("get", get_fn)?;
 
     // client.environment.set(key, val)
@@ -323,7 +328,9 @@ fn build_environment_object<'js>(
         ctx.clone(),
         move |ctx: rquickjs::Ctx<'js>, key: String, val: Value<'js>| -> rquickjs::Result<()> {
             let val_str = js_val_to_string(&ctx, &val)?;
-            map_for_set.borrow_mut().insert(key.clone(), val_str.clone());
+            map_for_set
+                .borrow_mut()
+                .insert(key.clone(), val_str.clone());
             mut_for_set.borrow_mut().push((key, Some(val_str)));
             Ok(())
         },
@@ -333,13 +340,10 @@ fn build_environment_object<'js>(
     // client.environment.unset(key)
     let mut_for_unset = mutations;
     let map_for_unset = map_cell;
-    let unset_fn = Function::new(
-        ctx.clone(),
-        move |key: String| {
-            map_for_unset.borrow_mut().remove(&key);
-            mut_for_unset.borrow_mut().push((key, None));
-        },
-    )?;
+    let unset_fn = Function::new(ctx.clone(), move |key: String| {
+        map_for_unset.borrow_mut().remove(&key);
+        mut_for_unset.borrow_mut().push((key, None));
+    })?;
     obj.set("unset", unset_fn)?;
 
     Ok(obj)
@@ -358,12 +362,9 @@ fn build_variables_object<'js>(
     let obj = Object::new(ctx.clone())?;
 
     let map_for_get = map_cell.clone();
-    let get_fn = Function::new(
-        ctx.clone(),
-        move |key: String| -> Option<String> {
-            map_for_get.borrow().get(&key).cloned()
-        },
-    )?;
+    let get_fn = Function::new(ctx.clone(), move |key: String| -> Option<String> {
+        map_for_get.borrow().get(&key).cloned()
+    })?;
     obj.set("get", get_fn)?;
 
     let map_for_set = map_cell.clone();
@@ -378,12 +379,9 @@ fn build_variables_object<'js>(
     obj.set("set", set_fn)?;
 
     let map_for_has = map_cell;
-    let has_fn = Function::new(
-        ctx.clone(),
-        move |key: String| -> bool {
-            map_for_has.borrow().contains_key(&key)
-        },
-    )?;
+    let has_fn = Function::new(ctx.clone(), move |key: String| -> bool {
+        map_for_has.borrow().contains_key(&key)
+    })?;
     obj.set("has", has_fn)?;
 
     Ok(obj)
@@ -400,16 +398,13 @@ fn build_request_object<'js>(
     // client.request.headers.add(k, v)
     let headers_obj = Object::new(ctx.clone())?;
     let hm_clone = header_mutations;
-    let add_fn = Function::new(
-        ctx.clone(),
-        move |name: String, val: String| {
-            hm_clone.borrow_mut().push((name, val));
-        },
-    )?;
+    let add_fn = Function::new(ctx.clone(), move |name: String, val: String| {
+        hm_clone.borrow_mut().push((name, val));
+    })?;
     headers_obj.set("add", add_fn)?;
     req_obj.set("headers", headers_obj)?;
 
-    // client.request.body.json() và setJson(obj)
+    // client.request.body.json() and setJson(obj)
     let body_obj = Object::new(ctx.clone())?;
     let json_content = req_ctx.request_body_json.clone();
     let body_override_clone = body_override.clone();
@@ -488,12 +483,7 @@ fn build_response_object<'js>(
     resp_obj.set("json", json_fn)?;
 
     // client.response.text()
-    let text_fn = Function::new(
-        ctx.clone(),
-        move || -> String {
-            body_str.clone()
-        },
-    )?;
+    let text_fn = Function::new(ctx.clone(), move || -> String { body_str.clone() })?;
     resp_obj.set("text", text_fn)?;
 
     Ok(resp_obj)
@@ -534,12 +524,9 @@ fn build_crypto_object<'js>(ctx: &rquickjs::Ctx<'js>) -> rquickjs::Result<Object
     crypto.set("md5", md5_fn)?;
 
     // base64Encode(str: string) -> string
-    let b64_enc_fn = Function::new(
-        ctx.clone(),
-        |s: String| -> String {
-            base64::engine::general_purpose::STANDARD.encode(s.as_bytes())
-        },
-    )?;
+    let b64_enc_fn = Function::new(ctx.clone(), |s: String| -> String {
+        base64::engine::general_purpose::STANDARD.encode(s.as_bytes())
+    })?;
     crypto.set("base64Encode", b64_enc_fn)?;
 
     // base64Decode(str: string) -> string
@@ -628,7 +615,9 @@ fn format_js_error(ctx: &rquickjs::Ctx<'_>, e: rquickjs::Error) -> String {
     if let rquickjs::Error::Exception = e {
         let caught = ctx.catch();
         if let Some(exc) = caught.as_exception() {
-            let msg = exc.message().unwrap_or_else(|| "Unknown exception".to_string());
+            let msg = exc
+                .message()
+                .unwrap_or_else(|| "Unknown exception".to_string());
             let stack = exc.stack().unwrap_or_default();
             if !stack.is_empty() {
                 return format!("{}: {}", msg, stack);
@@ -691,12 +680,21 @@ mod tests {
 
         // Verify env mutations
         assert_eq!(output.env_mutations.len(), 2);
-        assert_eq!(output.env_mutations[0], ("token".to_string(), Some("new_token_123".to_string())));
-        assert_eq!(output.env_mutations[1], ("computed".to_string(), Some("42".to_string())));
+        assert_eq!(
+            output.env_mutations[0],
+            ("token".to_string(), Some("new_token_123".to_string()))
+        );
+        assert_eq!(
+            output.env_mutations[1],
+            ("computed".to_string(), Some("42".to_string()))
+        );
 
         // Verify header mutations
         assert_eq!(output.header_mutations.len(), 1);
-        assert_eq!(output.header_mutations[0], ("X-Custom-Header".to_string(), "Value123".to_string()));
+        assert_eq!(
+            output.header_mutations[0],
+            ("X-Custom-Header".to_string(), "Value123".to_string())
+        );
 
         // Verify body override
         assert!(output.body_override.is_some());
@@ -711,7 +709,8 @@ mod tests {
 
     #[test]
     fn test_post_response_test_assertions_and_chaining() {
-        let resp_body = r#"{"id": 100, "status": "active", "access_token": "jwt_secret_token"}"#.to_string();
+        let resp_body =
+            r#"{"id": 100, "status": "active", "access_token": "jwt_secret_token"}"#.to_string();
         let ctx_data = PostResponseContext {
             env_vars: vec![],
             status_code: 200,
@@ -752,7 +751,13 @@ mod tests {
 
         // Env mutation for request chaining
         assert_eq!(output.env_mutations.len(), 1);
-        assert_eq!(output.env_mutations[0], ("access_token".to_string(), Some("jwt_secret_token".to_string())));
+        assert_eq!(
+            output.env_mutations[0],
+            (
+                "access_token".to_string(),
+                Some("jwt_secret_token".to_string())
+            )
+        );
     }
 
     #[test]
@@ -774,7 +779,11 @@ mod tests {
         let output = ScriptSandbox::run_post_response(script, ctx_data);
         assert_eq!(output.test_results.len(), 1);
         assert!(!output.test_results[0].passed);
-        assert!(output.test_results[0].error_message.as_ref().unwrap().contains("Expected 200 OK"));
+        assert!(output.test_results[0]
+            .error_message
+            .as_ref()
+            .unwrap()
+            .contains("Expected 200 OK"));
     }
 
     #[test]
@@ -796,10 +805,24 @@ mod tests {
         let output = ScriptSandbox::run_pre_request(script, ctx_data);
         assert!(output.error.is_none(), "Error: {:?}", output.error);
 
-        let hmac = output.env_mutations.iter().find(|(k, _)| k == "hmac").unwrap().1.as_ref().unwrap();
+        let hmac = output
+            .env_mutations
+            .iter()
+            .find(|(k, _)| k == "hmac")
+            .unwrap()
+            .1
+            .as_ref()
+            .unwrap();
         assert_eq!(hmac.len(), 64); // 256-bit hex
 
-        let md5_val = output.env_mutations.iter().find(|(k, _)| k == "md5").unwrap().1.as_ref().unwrap();
+        let md5_val = output
+            .env_mutations
+            .iter()
+            .find(|(k, _)| k == "md5")
+            .unwrap()
+            .1
+            .as_ref()
+            .unwrap();
         assert_eq!(md5_val, "5eb63bbbe01eeed093cb22bb8f5acdc3"); // known md5 of "hello world"
     }
 
@@ -812,7 +835,10 @@ mod tests {
 
         let output = ScriptSandbox::run_pre_request(script, ctx_data);
         assert!(output.error.is_none());
-        assert_eq!(output.env_mutations[0], ("from_pm".to_string(), Some("success".to_string())));
+        assert_eq!(
+            output.env_mutations[0],
+            ("from_pm".to_string(), Some("success".to_string()))
+        );
     }
 
     #[test]
@@ -830,7 +856,10 @@ mod tests {
         assert_eq!(output.console_entries.len(), 4);
         assert_eq!(output.console_entries[0].level, ConsoleLogLevel::Log);
         assert_eq!(output.console_entries[0].message, "standard log 123");
-        assert_eq!(output.console_entries[0].source, ConsoleLogSource::PreRequest);
+        assert_eq!(
+            output.console_entries[0].source,
+            ConsoleLogSource::PreRequest
+        );
 
         assert_eq!(output.console_entries[1].level, ConsoleLogLevel::Info);
         assert_eq!(output.console_entries[1].message, "info log");

@@ -6,20 +6,32 @@ use crate::state::{
 use gpui::prelude::FluentBuilder as _;
 use gpui::{App, Div, Entity, ParentElement, Window};
 
-#[allow(clippy::too_many_arguments)]
+pub struct ModalOverlayEntities<'a> {
+    pub workspace_state: &'a Entity<WorkspaceDataState>,
+    pub env_state: &'a Entity<EnvironmentState>,
+    pub persistence_state: &'a Entity<PersistenceState>,
+    pub modal_state: &'a Entity<ModalState>,
+    pub sidebar_state: &'a Entity<SidebarState>,
+    pub git_state: &'a Entity<GitState>,
+    pub editor_state: &'a Entity<RequestSessionState>,
+    pub toast_state: &'a Entity<ToastState>,
+}
+
 pub fn attach_modal_overlays(
     root: Div,
-    workspace_state: &Entity<WorkspaceDataState>,
-    env_state: &Entity<EnvironmentState>,
-    persistence_state: &Entity<PersistenceState>,
-    modal_state: &Entity<ModalState>,
-    sidebar_state: &Entity<SidebarState>,
-    git_state: &Entity<GitState>,
-    editor_state: &Entity<RequestSessionState>,
-    toast_state: &Entity<ToastState>,
+    entities: ModalOverlayEntities,
     send_request_cb: impl 'static + Clone + Fn(&mut Window, &mut App),
     cx: &mut App,
 ) -> Div {
+    let workspace_state = entities.workspace_state;
+    let env_state = entities.env_state;
+    let persistence_state = entities.persistence_state;
+    let modal_state = entities.modal_state;
+    let sidebar_state = entities.sidebar_state;
+    let git_state = entities.git_state;
+    let editor_state = entities.editor_state;
+    let toast_state = entities.toast_state;
+
     let modal = modal_state.read(cx);
     let show_env_modal = modal.show_env_modal;
     let show_cookies_modal = modal.show_cookies_modal;
@@ -48,10 +60,7 @@ pub fn attach_modal_overlays(
         ))
     })
     .when(show_cookies_modal, |this| {
-        this.child(CookiesModal::new(
-            ws_entity.clone(),
-            modal_entity.clone(),
-        ))
+        this.child(CookiesModal::new(ws_entity.clone(), modal_entity.clone()))
     })
     .when(show_settings_modal, |this| {
         this.child(SettingsModal::new(

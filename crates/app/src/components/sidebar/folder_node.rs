@@ -50,7 +50,9 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                 && (ctx.query.is_empty()
                     || r.name.to_lowercase().contains(ctx.query)
                     || r.url.to_lowercase().contains(ctx.query)
-                    || r.examples.iter().any(|e| e.name.to_lowercase().contains(ctx.query)))
+                    || r.examples
+                        .iter()
+                        .any(|e| e.name.to_lowercase().contains(ctx.query)))
         })
         .collect();
 
@@ -103,7 +105,10 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                 })
                 .drag_over::<DragFolderItem>(|style, _, _, _| {
                     let t = theme();
-                    style.bg(t.bg_hover).border_t_2().border_color(t.border_focus)
+                    style
+                        .bg(t.bg_hover)
+                        .border_t_2()
+                        .border_color(t.border_focus)
                 })
                 .on_drop(move |drag: &DragFolderItem, _, cx| {
                     ws_drop_folder.update(cx, |state, cx| {
@@ -214,22 +219,20 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                                 },
                             ),
                         )
-                        .item(
-                            gpui_component::menu::PopupMenuItem::new("Rename").on_click(
-                                move |_, window, cx| {
-                                    let ws_c = ws_r.clone();
-                                    sb_r.update(cx, |state, cx| {
-                                        state.start_renaming_folder(
-                                            f_id_r.clone(),
-                                            f_name_r.clone(),
-                                            ws_c,
-                                            window,
-                                            cx,
-                                        );
-                                    });
-                                },
-                            ),
-                        )
+                        .item(gpui_component::menu::PopupMenuItem::new("Rename").on_click(
+                            move |_, window, cx| {
+                                let ws_c = ws_r.clone();
+                                sb_r.update(cx, |state, cx| {
+                                    state.start_renaming_folder(
+                                        f_id_r.clone(),
+                                        f_name_r.clone(),
+                                        ws_c,
+                                        window,
+                                        cx,
+                                    );
+                                });
+                            },
+                        ))
                         .item(
                             gpui_component::menu::PopupMenuItem::new("Folder Settings...")
                                 .icon(IconName::Settings)
@@ -289,8 +292,7 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                             .text_color(folder_color),
                         )
                         .child(
-                            if let (true, Some(inp)) =
-                                (is_renaming_folder, ctx.rename_folder_input)
+                            if let (true, Some(inp)) = (is_renaming_folder, ctx.rename_folder_input)
                             {
                                 let sb_esc = ctx.sidebar.clone();
                                 div()
@@ -333,8 +335,9 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                             },
                         ),
                 )
-                .when(folder_git_status != SidebarGitStatus::Clean, |this| {
-                    match folder_git_status {
+                .when(
+                    folder_git_status != SidebarGitStatus::Clean,
+                    |this| match folder_git_status {
                         SidebarGitStatus::New => this.child(
                             div()
                                 .text_xs()
@@ -350,8 +353,8 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                                 .child("M"),
                         ),
                         SidebarGitStatus::Clean => this,
-                    }
-                }),
+                    },
+                ),
         )
         // Folder items
         .when(!is_collapsed, |this| {

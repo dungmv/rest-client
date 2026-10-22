@@ -5,17 +5,16 @@ use anyhow::Result;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     div, px, App, Context, Entity, HighlightStyle, InteractiveElement as _, IntoElement,
-    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement as _, Styled, Task,
-    Window,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement as _, Styled, Task, Window,
 };
 use gpui_component::input::{
-    CompletionProvider, Editor, EditorState as CodeEditorState, FoldRange,
-    HighlightStyleResolver, InputEdit, InputHighlighter, Rope,
+    CompletionProvider, Editor, EditorState as CodeEditorState, FoldRange, HighlightStyleResolver,
+    InputEdit, InputHighlighter, Rope,
 };
 use gpui_component::RopeExt;
 use lsp_types::{
-    CompletionContext, CompletionItem, CompletionItemKind, CompletionResponse,
-    CompletionTextEdit, Documentation, Position, Range as LspRange, TextEdit,
+    CompletionContext, CompletionItem, CompletionItemKind, CompletionResponse, CompletionTextEdit,
+    Documentation, Position, Range as LspRange, TextEdit,
 };
 use std::ops::Range;
 use std::rc::Rc;
@@ -46,8 +45,6 @@ fn clamp_char_boundary_right(s: &str, mut idx: usize) -> usize {
     idx
 }
 
-
-
 // =========================================================================
 // JavaScript Syntax Highlighter
 // =========================================================================
@@ -73,21 +70,68 @@ impl Default for JavaScriptHighlighter {
 }
 
 const JS_KEYWORDS: &[&str] = &[
-    "async", "await", "break", "case", "catch", "class", "const", "continue",
-    "debugger", "default", "delete", "do", "else", "export", "extends", "finally",
-    "for", "function", "if", "import", "in", "instanceof", "let", "new",
-    "of", "return", "super", "switch", "this", "throw", "try", "typeof",
-    "var", "void", "while", "with", "yield",
+    "async",
+    "await",
+    "break",
+    "case",
+    "catch",
+    "class",
+    "const",
+    "continue",
+    "debugger",
+    "default",
+    "delete",
+    "do",
+    "else",
+    "export",
+    "extends",
+    "finally",
+    "for",
+    "function",
+    "if",
+    "import",
+    "in",
+    "instanceof",
+    "let",
+    "new",
+    "of",
+    "return",
+    "super",
+    "switch",
+    "this",
+    "throw",
+    "try",
+    "typeof",
+    "var",
+    "void",
+    "while",
+    "with",
+    "yield",
 ];
 
-const JS_LITERALS: &[&str] = &[
-    "true", "false", "null", "undefined", "NaN", "Infinity",
-];
+const JS_LITERALS: &[&str] = &["true", "false", "null", "undefined", "NaN", "Infinity"];
 
 const JS_GLOBALS: &[&str] = &[
-    "client", "pm", "console", "JSON", "Math", "Date", "String", "Number",
-    "Boolean", "Array", "Object", "RegExp", "Promise", "Error", "Map", "Set",
-    "parseInt", "parseFloat", "encodeURIComponent", "decodeURIComponent",
+    "client",
+    "pm",
+    "console",
+    "JSON",
+    "Math",
+    "Date",
+    "String",
+    "Number",
+    "Boolean",
+    "Array",
+    "Object",
+    "RegExp",
+    "Promise",
+    "Error",
+    "Map",
+    "Set",
+    "parseInt",
+    "parseFloat",
+    "encodeURIComponent",
+    "decodeURIComponent",
 ];
 
 impl InputHighlighter for JavaScriptHighlighter {
@@ -220,7 +264,8 @@ impl InputHighlighter for JavaScriptHighlighter {
                     while i < len && bytes[i].is_ascii_hexdigit() {
                         i += 1;
                     }
-                } else if b == b'0' && i + 1 < len && (bytes[i + 1] == b'b' || bytes[i + 1] == b'B') {
+                } else if b == b'0' && i + 1 < len && (bytes[i + 1] == b'b' || bytes[i + 1] == b'B')
+                {
                     i += 2;
                     while i < len && (bytes[i] == b'0' || bytes[i] == b'1') {
                         i += 1;
@@ -246,7 +291,9 @@ impl InputHighlighter for JavaScriptHighlighter {
             else if b.is_ascii_alphabetic() || b == b'_' || b == b'$' {
                 let id_start = i;
                 i += 1;
-                while i < len && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'$') {
+                while i < len
+                    && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'$')
+                {
                     i += 1;
                 }
                 let id_str = &slice_str[id_start..i];
@@ -440,11 +487,17 @@ pub struct ScriptCompletionProvider {
 impl ScriptCompletionProvider {
     #[allow(dead_code)]
     pub fn new(kind: ScriptEditorKind) -> Self {
-        Self { kind, env_state: None }
+        Self {
+            kind,
+            env_state: None,
+        }
     }
 
     pub fn with_environment(kind: ScriptEditorKind, env_state: Entity<EnvironmentState>) -> Self {
-        Self { kind, env_state: Some(env_state) }
+        Self {
+            kind,
+            env_state: Some(env_state),
+        }
     }
 
     fn get_candidates(&self, base_path: &str) -> Vec<CandidateDef> {
@@ -553,7 +606,8 @@ impl ScriptCompletionProvider {
                     insert_text: "toObject()",
                     kind: CompletionItemKind::METHOD,
                     detail: "(): Record<string, string>",
-                    doc: "Returns all active environment variables as a key-value JavaScript object.",
+                    doc:
+                        "Returns all active environment variables as a key-value JavaScript object.",
                 },
             ],
 
@@ -922,7 +976,9 @@ impl ScriptCompletionProvider {
         new_text.contains('{')
             || new_text.contains('"')
             || new_text.contains('\'')
-            || new_text.chars().any(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '$')
+            || new_text
+                .chars()
+                .any(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '$')
     }
 }
 
@@ -1171,16 +1227,12 @@ impl RenderOnce for ScriptEditor {
                     .flex()
                     .child(
                         // Left: Code Editor Area
-                        div()
-                            .flex_1()
-                            .h_full()
-                            .p(px(8.))
-                            .child(
-                                Editor::new(&self.editor)
-                                    .appearance(false)
-                                    .bordered(false)
-                                    .h(gpui::relative(1.)),
-                            ),
+                        div().flex_1().h_full().p(px(8.)).child(
+                            Editor::new(&self.editor)
+                                .appearance(false)
+                                .bordered(false)
+                                .h(gpui::relative(1.)),
+                        ),
                     )
                     // Right: Snippets Toolbar
                     .child(
@@ -1202,33 +1254,35 @@ impl RenderOnce for ScriptEditor {
                                     .mb(px(4.))
                                     .child("SNIPPETS"),
                             )
-                            .children(snippets.into_iter().enumerate().map(|(idx, (label, code))| {
-                                let insert_cb = on_insert.clone();
-                                let snippet_code = code;
-                                div()
-                                    .id(format!(
-                                        "snippet-btn-{}-{}",
-                                        match kind {
-                                            ScriptEditorKind::PreRequest => "pre",
-                                            ScriptEditorKind::Tests => "test",
-                                        },
-                                        idx
-                                    ))
-                                    .px(px(8.))
-                                    .py(px(5.))
-                                    .rounded(px(4.))
-                                    .bg(t.bg_editor)
-                                    .border_1()
-                                    .border_color(t.border)
-                                    .text_xs()
-                                    .text_color(t.text_primary)
-                                    .hover(|s| s.bg(t.bg_hover).border_color(t.border_focus))
-                                    .cursor_pointer()
-                                    .on_click(move |_, window, cx| {
-                                        insert_cb(snippet_code, window, cx);
-                                    })
-                                    .child(label)
-                            })),
+                            .children(snippets.into_iter().enumerate().map(
+                                |(idx, (label, code))| {
+                                    let insert_cb = on_insert.clone();
+                                    let snippet_code = code;
+                                    div()
+                                        .id(format!(
+                                            "snippet-btn-{}-{}",
+                                            match kind {
+                                                ScriptEditorKind::PreRequest => "pre",
+                                                ScriptEditorKind::Tests => "test",
+                                            },
+                                            idx
+                                        ))
+                                        .px(px(8.))
+                                        .py(px(5.))
+                                        .rounded(px(4.))
+                                        .bg(t.bg_editor)
+                                        .border_1()
+                                        .border_color(t.border)
+                                        .text_xs()
+                                        .text_color(t.text_primary)
+                                        .hover(|s| s.bg(t.bg_hover).border_color(t.border_focus))
+                                        .cursor_pointer()
+                                        .on_click(move |_, window, cx| {
+                                            insert_cb(snippet_code, window, cx);
+                                        })
+                                        .child(label)
+                                },
+                            )),
                     ),
             )
     }
@@ -1334,7 +1388,11 @@ mod tests {
             .unwrap_or(0);
         let expr = &slice[query_start..];
         let (base_path, query, replace_start) = if let Some(dot_idx) = expr.rfind('.') {
-            (expr[..dot_idx].to_string(), expr[dot_idx + 1..].to_string(), query_start + dot_idx + 1)
+            (
+                expr[..dot_idx].to_string(),
+                expr[dot_idx + 1..].to_string(),
+                query_start + dot_idx + 1,
+            )
         } else {
             ("".to_string(), expr.to_string(), query_start)
         };
@@ -1354,7 +1412,11 @@ mod tests {
             .unwrap_or(0);
         let expr2 = &slice2[query_start2..];
         let (base_path2, query2, replace_start2) = if let Some(dot_idx) = expr2.rfind('.') {
-            (expr2[..dot_idx].to_string(), expr2[dot_idx + 1..].to_string(), query_start2 + dot_idx + 1)
+            (
+                expr2[..dot_idx].to_string(),
+                expr2[dot_idx + 1..].to_string(),
+                query_start2 + dot_idx + 1,
+            )
         } else {
             ("".to_string(), expr2.to_string(), query_start2)
         };
@@ -1363,7 +1425,10 @@ mod tests {
         assert_eq!(replace_start2, 23);
 
         let candidates = provider.get_candidates(&base_path2);
-        let filtered: Vec<_> = candidates.into_iter().filter(|c| c.name.starts_with(&query2)).collect();
+        let filtered: Vec<_> = candidates
+            .into_iter()
+            .filter(|c| c.name.starts_with(&query2))
+            .collect();
         assert!(filtered.iter().any(|c| c.name == "add"));
         assert!(filtered.iter().any(|c| c.name == "all"));
     }

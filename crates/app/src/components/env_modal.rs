@@ -2,8 +2,8 @@ use crate::state::{EnvironmentState, ModalState, SidebarState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, AnyElement, App, AppContext as _, Entity, InteractiveElement as _, IntoElement, MouseButton,
-    ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Window,
+    div, px, AnyElement, App, AppContext as _, Entity, InteractiveElement as _, IntoElement,
+    MouseButton, ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::{ContextMenuExt as _, PopupMenuItem};
@@ -62,7 +62,8 @@ impl RenderOnce for EnvironmentModal {
             gpui::SharedString::from(format!("var-modal-search-{}", selected_id)),
             cx,
             |window, cx| {
-                let input = cx.new(|cx| InputState::new(window, cx).placeholder("Filter variables..."));
+                let input =
+                    cx.new(|cx| InputState::new(window, cx).placeholder("Filter variables..."));
                 let inp = input.clone();
                 let modal_s = modal_clone.clone();
                 let sub = cx.subscribe_in(&input, window, move |_, _, ev, _, cx| {

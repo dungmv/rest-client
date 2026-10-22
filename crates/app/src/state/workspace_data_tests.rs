@@ -5,7 +5,8 @@ mod tests {
         ScopeSettingsTarget, SidebarState, WorkspaceDataState,
     };
     use restclient_core::models::{
-        Auth, Environment, EnvironmentVariable, Folder, HttpMethod, HttpRequestItem, KeyValuePair, Workspace,
+        Auth, Environment, EnvironmentVariable, Folder, HttpMethod, HttpRequestItem, KeyValuePair,
+        Workspace,
     };
     use restclient_core::storage::models::{EnvironmentFile, WorkspaceMeta};
     use restclient_core::storage::{FsWorkspaceStore, WorkspaceStore};
@@ -50,7 +51,10 @@ mod tests {
         modals.show_settings_modal = true;
         modals.scope_settings_target = Some(ScopeSettingsTarget::Workspace);
         assert!(modals.show_settings_modal);
-        assert_eq!(modals.scope_settings_target, Some(ScopeSettingsTarget::Workspace));
+        assert_eq!(
+            modals.scope_settings_target,
+            Some(ScopeSettingsTarget::Workspace)
+        );
     }
 
     #[test]
@@ -66,7 +70,10 @@ mod tests {
         settings.theme = Some("light".to_string());
         let _ = settings.save();
         let modals = ModalState::new();
-        assert_eq!(modals.theme_preference, crate::theme::ThemePreference::Light);
+        assert_eq!(
+            modals.theme_preference,
+            crate::theme::ThemePreference::Light
+        );
 
         settings.theme = original_theme;
         let _ = settings.save();
@@ -148,23 +155,37 @@ mod tests {
             secret: false,
         });
 
-        let temp_dir = std::env::temp_dir().join(format!("test_ws_eff_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_ws_eff_{}", uuid::Uuid::new_v4().simple()));
         let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
         let _ = store.init_workspace("Test WS");
 
-        let mut env_state = EnvironmentState::new(store, "Test WS".to_string(), Some(active.id.clone()));
+        let mut env_state =
+            EnvironmentState::new(store, "Test WS".to_string(), Some(active.id.clone()));
         env_state.environments = vec![active.clone()];
         env_state.global_environment = global;
         env_state.active_environment_id = Some(active.id.clone());
 
         let effective = env_state.effective_environment();
-        let host_var = effective.variables.iter().find(|v| v.key == "HOST").unwrap();
+        let host_var = effective
+            .variables
+            .iter()
+            .find(|v| v.key == "HOST")
+            .unwrap();
         assert_eq!(host_var.resolved_value(), "prod.example.com");
 
-        let port_var = effective.variables.iter().find(|v| v.key == "PORT").unwrap();
+        let port_var = effective
+            .variables
+            .iter()
+            .find(|v| v.key == "PORT")
+            .unwrap();
         assert_eq!(port_var.resolved_value(), "443");
 
-        let token_var = effective.variables.iter().find(|v| v.key == "GLOBAL_TOKEN").unwrap();
+        let token_var = effective
+            .variables
+            .iter()
+            .find(|v| v.key == "GLOBAL_TOKEN")
+            .unwrap();
         assert_eq!(token_var.resolved_value(), "token_123");
 
         assert!(effective.variables.iter().any(|v| v.key == "ONLY_GLOBAL"));
@@ -173,11 +194,21 @@ mod tests {
 
     #[test]
     fn test_conflict_detection_and_invalid_yaml_handling() {
-        let temp_dir = std::env::temp_dir().join(format!("test_ws_conflict_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "test_ws_conflict_{}",
+            uuid::Uuid::new_v4().simple()
+        ));
         let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
         store.init_workspace("Conflict WS").unwrap();
 
-        let (_slug, rel_path) = store.create_request(None, "Login", HttpMethod::Post, "https://api.example.com/login").unwrap();
+        let (_slug, rel_path) = store
+            .create_request(
+                None,
+                "Login",
+                HttpMethod::Post,
+                "https://api.example.com/login",
+            )
+            .unwrap();
 
         let mut ws_state = WorkspaceDataState::new_for_path(temp_dir.clone(), store.clone());
         ws_state.reload_tree();
@@ -188,7 +219,10 @@ mod tests {
         // 1. External modification while dirty triggers conflict
         per_state.unsaved_requests.insert(rel_path.clone());
         if per_state.unsaved_requests.contains(&rel_path) {
-            per_state.conflicts.insert(rel_path.clone(), "File was modified externally while you have unsaved changes.".to_string());
+            per_state.conflicts.insert(
+                rel_path.clone(),
+                "File was modified externally while you have unsaved changes.".to_string(),
+            );
         }
         assert!(per_state.conflicts.contains_key(&rel_path));
 
@@ -203,7 +237,9 @@ mod tests {
         match store.read_request(&rel_path) {
             Ok(_) => panic!("Expected parse error"),
             Err(e) => {
-                ws_state.parse_errors.insert(rel_path.clone(), e.to_string());
+                ws_state
+                    .parse_errors
+                    .insert(rel_path.clone(), e.to_string());
             }
         }
         assert!(ws_state.parse_errors.contains_key(&rel_path));
@@ -216,24 +252,38 @@ mod tests {
 
     #[test]
     fn test_rename_example() {
-        let temp_dir = std::env::temp_dir().join(format!("test_ws_rename_ex_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "test_ws_rename_ex_{}",
+            uuid::Uuid::new_v4().simple()
+        ));
         let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
         store.init_workspace("Rename Ex WS").unwrap();
 
-        let (_slug, rel_path) = store.create_request(None, "Auth", HttpMethod::Post, "https://api.example.com/auth").unwrap();
+        let (_slug, rel_path) = store
+            .create_request(
+                None,
+                "Auth",
+                HttpMethod::Post,
+                "https://api.example.com/auth",
+            )
+            .unwrap();
         let mut req_file = store.read_request(&rel_path).unwrap();
-        req_file.examples.push(restclient_core::storage::models::RequestExampleFile {
-            name: "Success".to_string(),
-            status: 200,
-            headers: Vec::new(),
-            body: Some("{}".to_string()),
-        });
-        req_file.examples.push(restclient_core::storage::models::RequestExampleFile {
-            name: "Error".to_string(),
-            status: 400,
-            headers: Vec::new(),
-            body: Some("{}".to_string()),
-        });
+        req_file
+            .examples
+            .push(restclient_core::storage::models::RequestExampleFile {
+                name: "Success".to_string(),
+                status: 200,
+                headers: Vec::new(),
+                body: Some("{}".to_string()),
+            });
+        req_file
+            .examples
+            .push(restclient_core::storage::models::RequestExampleFile {
+                name: "Error".to_string(),
+                status: 400,
+                headers: Vec::new(),
+                body: Some("{}".to_string()),
+            });
         store.write_request(&rel_path, &req_file).unwrap();
 
         let mut ws_state = WorkspaceDataState::new_for_path(temp_dir.clone(), store.clone());
@@ -245,7 +295,14 @@ mod tests {
         let renamed = ws_state.rename_example_internal(&rel_path, "Success", "Auth OK");
         assert!(renamed);
         assert_eq!(ws_state.requests[0].examples[0].name, "Auth OK");
-        assert_eq!(ws_state.last_renamed_example, Some((rel_path.clone(), "Success".to_string(), "Auth OK".to_string())));
+        assert_eq!(
+            ws_state.last_renamed_example,
+            Some((
+                rel_path.clone(),
+                "Success".to_string(),
+                "Auth OK".to_string()
+            ))
+        );
 
         // Verify persisted on disk
         let disk_req = store.read_request(&rel_path).unwrap();
@@ -255,29 +312,49 @@ mod tests {
         let renamed2 = ws_state.rename_example_internal(&rel_path, "Error", "Auth OK");
         assert!(renamed2);
         assert_eq!(ws_state.requests[0].examples[1].name, "Auth OK-2");
-        assert_eq!(ws_state.last_renamed_example, Some((rel_path.clone(), "Error".to_string(), "Auth OK-2".to_string())));
+        assert_eq!(
+            ws_state.last_renamed_example,
+            Some((
+                rel_path.clone(),
+                "Error".to_string(),
+                "Auth OK-2".to_string()
+            ))
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
     fn test_create_and_reload_subfolder() {
-        let temp_dir = std::env::temp_dir().join(format!("restclient-test-subfolder-{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "restclient-test-subfolder-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
         let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
         store.init_workspace("Test Workspace").unwrap();
 
         let (_parent_slug, parent_rel) = store.create_group(None, "Parent Folder").unwrap();
-        let (_child_slug, child_rel) = store.create_group(Some(&parent_rel), "Child Folder").unwrap();
+        let (_child_slug, child_rel) = store
+            .create_group(Some(&parent_rel), "Child Folder")
+            .unwrap();
 
         let mut ws_state = WorkspaceDataState::new_for_path(temp_dir.clone(), store);
         ws_state.reload_tree();
 
         assert_eq!(ws_state.folders.len(), 2);
-        let parent = ws_state.folders.iter().find(|f| f.id == parent_rel).expect("Parent folder should exist");
+        let parent = ws_state
+            .folders
+            .iter()
+            .find(|f| f.id == parent_rel)
+            .expect("Parent folder should exist");
         assert_eq!(parent.name, "Parent Folder");
         assert!(parent.parent_id.is_none());
 
-        let child = ws_state.folders.iter().find(|f| f.id == child_rel).expect("Child folder should exist");
+        let child = ws_state
+            .folders
+            .iter()
+            .find(|f| f.id == child_rel)
+            .expect("Child folder should exist");
         assert_eq!(child.name, "Child Folder");
         assert_eq!(child.parent_id.as_deref(), Some(parent_rel.as_str()));
 
@@ -286,7 +363,10 @@ mod tests {
 
     #[test]
     fn test_flush_environments() {
-        let temp_dir = std::env::temp_dir().join(format!("restclient_test_flush_env_{}", uuid::Uuid::new_v4()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "restclient_test_flush_env_{}",
+            uuid::Uuid::new_v4()
+        ));
         let store: Arc<dyn WorkspaceStore> = Arc::new(FsWorkspaceStore::new(&temp_dir));
         let _ = store.init_workspace("Test WS");
 
@@ -317,7 +397,8 @@ mod tests {
 
     #[test]
     fn test_rename_workspace() {
-        let temp_dir = std::env::temp_dir().join(format!("test_ws_rename_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_ws_rename_{}", uuid::Uuid::new_v4().simple()));
         let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
         store.init_workspace("Original Name").unwrap();
 
@@ -333,7 +414,10 @@ mod tests {
         let success = ws_state.rename_workspace_internal("Production API");
         assert!(success);
         assert_eq!(ws_state.workspace_meta.name, "Production API");
-        assert_eq!(ws_state.active_workspace.as_ref().unwrap().name, "Production API");
+        assert_eq!(
+            ws_state.active_workspace.as_ref().unwrap().name,
+            "Production API"
+        );
 
         // Verify persisted to storage
         let meta = store.load_workspace_meta().unwrap();
@@ -352,13 +436,16 @@ mod tests {
 
     #[test]
     fn test_workspace_and_folder_scope_hierarchy() {
-        let temp_dir = std::env::temp_dir().join(format!("test_ws_scope_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_ws_scope_{}", uuid::Uuid::new_v4().simple()));
         let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
         let _ = store.init_workspace("Hierarchy Test WS");
 
         let mut ws = Workspace::new("Hierarchy Test WS");
         ws.headers = vec![KeyValuePair::new("X-Workspace", "ws1")];
-        ws.auth = Auth::Bearer { token: "ws-token".to_string() };
+        ws.auth = Auth::Bearer {
+            token: "ws-token".to_string(),
+        };
 
         let mut folder_users = Folder::new("ws", "Users");
         folder_users.id = "users".to_string();
@@ -369,41 +456,68 @@ mod tests {
         folder_admin.id = "users/admin".to_string();
         folder_admin.parent_id = Some("users".to_string());
         folder_admin.headers = vec![KeyValuePair::new("X-Admin", "true")];
-        folder_admin.auth = Auth::Basic { username: "admin".to_string(), password: "secret".to_string() };
+        folder_admin.auth = Auth::Basic {
+            username: "admin".to_string(),
+            password: "secret".to_string(),
+        };
 
         let mut ws_state = WorkspaceDataState::new_for_path(temp_dir.clone(), store);
         ws_state.active_workspace = Some(ws);
         ws_state.folders = vec![folder_users, folder_admin];
 
         // Case 1: Request in subfolder (users/admin) with Inherit auth
-        let mut req1 = HttpRequestItem::new("ws", "Admin Req", HttpMethod::Get, "https://api.com/admin");
+        let mut req1 =
+            HttpRequestItem::new("ws", "Admin Req", HttpMethod::Get, "https://api.com/admin");
         req1.folder_id = Some("users/admin".to_string());
         req1.headers = vec![KeyValuePair::new("X-Req", "1")];
         req1.auth = Auth::Inherit;
 
         let (headers1, auth1) = ws_state.resolve_request_hierarchy(&req1);
         assert_eq!(headers1.len(), 4); // X-Workspace, X-Folder, X-Admin, X-Req
-        assert_eq!(auth1, Auth::Basic { username: "admin".to_string(), password: "secret".to_string() });
+        assert_eq!(
+            auth1,
+            Auth::Basic {
+                username: "admin".to_string(),
+                password: "secret".to_string()
+            }
+        );
 
         // Case 2: Request in top folder (users) with Inherit auth
-        let mut req2 = HttpRequestItem::new("ws", "Users Req", HttpMethod::Get, "https://api.com/users");
+        let mut req2 =
+            HttpRequestItem::new("ws", "Users Req", HttpMethod::Get, "https://api.com/users");
         req2.folder_id = Some("users".to_string());
         req2.auth = Auth::Inherit;
 
         let (headers2, auth2) = ws_state.resolve_request_hierarchy(&req2);
         assert_eq!(headers2.len(), 2); // X-Workspace, X-Folder
-        assert_eq!(auth2, Auth::Bearer { token: "ws-token".to_string() }); // Inherited from Workspace!
+        assert_eq!(
+            auth2,
+            Auth::Bearer {
+                token: "ws-token".to_string()
+            }
+        ); // Inherited from Workspace!
 
         // Case 3: Root request (no folder) with Inherit auth
-        let mut req3 = HttpRequestItem::new("ws", "Root Req", HttpMethod::Get, "https://api.com/root");
+        let mut req3 =
+            HttpRequestItem::new("ws", "Root Req", HttpMethod::Get, "https://api.com/root");
         req3.auth = Auth::Inherit;
 
         let (headers3, auth3) = ws_state.resolve_request_hierarchy(&req3);
         assert_eq!(headers3.len(), 1); // X-Workspace
-        assert_eq!(auth3, Auth::Bearer { token: "ws-token".to_string() });
+        assert_eq!(
+            auth3,
+            Auth::Bearer {
+                token: "ws-token".to_string()
+            }
+        );
 
         // Case 4: Request in subfolder with explicit None auth
-        let mut req4 = HttpRequestItem::new("ws", "Public Req", HttpMethod::Get, "https://api.com/public");
+        let mut req4 = HttpRequestItem::new(
+            "ws",
+            "Public Req",
+            HttpMethod::Get,
+            "https://api.com/public",
+        );
         req4.folder_id = Some("users/admin".to_string());
         req4.auth = Auth::None;
 
@@ -415,7 +529,10 @@ mod tests {
 
     #[test]
     fn test_incremental_crud_operations() {
-        let temp_dir = std::env::temp_dir().join(format!("restclient-test-crud-{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "restclient-test-crud-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
         let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
         store.init_workspace("Incremental WS").unwrap();
 
@@ -428,35 +545,56 @@ mod tests {
         assert_eq!(ws_state.requests[0].name, "New Request");
 
         // 2. Rename Request
-        let new_id = ws_state.rename_request_internal(&req1.id, "Get Users").expect("rename request should succeed");
+        let new_id = ws_state
+            .rename_request_internal(&req1.id, "Get Users")
+            .expect("rename request should succeed");
         assert_eq!(ws_state.requests.len(), 1);
         assert_eq!(ws_state.requests[0].id, new_id);
         assert_eq!(ws_state.requests[0].name, "Get Users");
-        assert_eq!(ws_state.last_renamed_request, Some((req1.id.clone(), new_id.clone())));
+        assert_eq!(
+            ws_state.last_renamed_request,
+            Some((req1.id.clone(), new_id.clone()))
+        );
 
         // 3. Duplicate Request
-        let dup = ws_state.duplicate_request_internal(&new_id).expect("duplicate should succeed");
+        let dup = ws_state
+            .duplicate_request_internal(&new_id)
+            .expect("duplicate should succeed");
         assert_eq!(ws_state.requests.len(), 2);
         assert!(dup.name.contains("(Copy)"));
 
         // 4. Create Folder
-        let folder_id = ws_state.create_folder_internal(None, "Auth".to_string()).expect("create folder should succeed");
+        let folder_id = ws_state
+            .create_folder_internal(None, "Auth".to_string())
+            .expect("create folder should succeed");
         assert_eq!(ws_state.folders.len(), 1);
         assert_eq!(ws_state.folders[0].name, "Auth");
         assert_eq!(ws_state.folders[0].id, folder_id);
 
         // 5. Move Request to Folder
-        let moved_id = ws_state.move_request_to_folder_internal(&dup.id, Some(folder_id.clone())).expect("move should succeed");
-        let moved_req = ws_state.requests.iter().find(|r| r.id == moved_id).expect("moved request should be found");
+        let moved_id = ws_state
+            .move_request_to_folder_internal(&dup.id, Some(folder_id.clone()))
+            .expect("move should succeed");
+        let moved_req = ws_state
+            .requests
+            .iter()
+            .find(|r| r.id == moved_id)
+            .expect("moved request should be found");
         assert_eq!(moved_req.folder_id, Some(folder_id.clone()));
 
         // 6. Rename Folder
-        let new_folder_id = ws_state.rename_folder_internal(&folder_id, "Authentication").expect("rename folder should succeed");
+        let new_folder_id = ws_state
+            .rename_folder_internal(&folder_id, "Authentication")
+            .expect("rename folder should succeed");
         assert_eq!(ws_state.folders[0].name, "Authentication");
         assert_eq!(ws_state.folders[0].id, new_folder_id);
 
         // Nested request should have its folder_id and id updated with new prefix
-        let nested_req = ws_state.requests.iter().find(|r| r.folder_id == Some(new_folder_id.clone())).expect("nested request should reflect new folder_id");
+        let nested_req = ws_state
+            .requests
+            .iter()
+            .find(|r| r.folder_id == Some(new_folder_id.clone()))
+            .expect("nested request should reflect new folder_id");
         assert!(nested_req.id.starts_with(&format!("{}/", new_folder_id)));
 
         // 7. Delete Folder: Should remove folder and its nested request
@@ -479,17 +617,21 @@ mod tests {
 
     #[test]
     fn test_effective_environment_caching_and_invalidation() {
-        let temp_dir = std::env::temp_dir().join(format!("test_env_cache_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_env_cache_{}", uuid::Uuid::new_v4().simple()));
         let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
         let _ = store.init_workspace("Test Cache");
 
         let mut env_state = EnvironmentState::new(store.clone(), "Test Cache".to_string(), None);
-        env_state.global_environment.variables.push(EnvironmentVariable {
-            key: "API_URL".to_string(),
-            initial_value: "https://api.dev.com".to_string(),
-            current_value: "".to_string(),
-            secret: false,
-        });
+        env_state
+            .global_environment
+            .variables
+            .push(EnvironmentVariable {
+                key: "API_URL".to_string(),
+                initial_value: "https://api.dev.com".to_string(),
+                current_value: "".to_string(),
+                secret: false,
+            });
 
         // 1. Initial call populates cache
         let arc1 = env_state.effective_environment();
@@ -498,7 +640,10 @@ mod tests {
 
         // 2. Subsequent call returns the exact same Arc (O(1) pointer reuse, no allocation/clone)
         let arc2 = env_state.effective_environment();
-        assert!(Arc::ptr_eq(&arc1, &arc2), "Subsequent effective_environment calls must reuse the cached Arc");
+        assert!(
+            Arc::ptr_eq(&arc1, &arc2),
+            "Subsequent effective_environment calls must reuse the cached Arc"
+        );
 
         // 3. Mutating global environment invalidates cache
         let mut new_global = env_state.global_environment.clone();
@@ -512,13 +657,19 @@ mod tests {
 
         // 4. Next call produces fresh Arc with updated values
         let arc3 = env_state.effective_environment();
-        assert!(!Arc::ptr_eq(&arc1, &arc3), "Cache must be invalidated after modifying global environment");
+        assert!(
+            !Arc::ptr_eq(&arc1, &arc3),
+            "Cache must be invalidated after modifying global environment"
+        );
         assert_eq!(arc3.variables.len(), 2);
 
         // 5. Explicit invalidate_cache works
         env_state.invalidate_cache();
         let arc4 = env_state.effective_environment();
-        assert!(!Arc::ptr_eq(&arc3, &arc4), "Explicit invalidate_cache must trigger recomputation");
+        assert!(
+            !Arc::ptr_eq(&arc3, &arc4),
+            "Explicit invalidate_cache must trigger recomputation"
+        );
         assert_eq!(arc4.variables.len(), 2);
 
         let _ = std::fs::remove_dir_all(&temp_dir);

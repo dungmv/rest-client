@@ -5,14 +5,14 @@ use crate::state::{
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement, RenderOnce,
-    StatefulInteractiveElement as _, Styled, Window, div, px, uniform_list,
+    div, px, uniform_list, AnyElement, App, Entity, InteractiveElement as _, IntoElement,
+    ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
-use gpui_component::Icon;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{Editor, EditorState as CodeEditorState, Textarea, TextareaState};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::scroll::ScrollableElement as _;
+use gpui_component::Icon;
 use gpui_kit::assets::IconName;
 use restclient_core::models::HttpResponseRecord;
 use restclient_core::storage::models::{RequestExampleFile, RequestFile, RequestKvItem};

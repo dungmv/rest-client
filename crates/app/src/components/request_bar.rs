@@ -7,9 +7,8 @@ use crate::state::{EnvironmentState, ModalState, RequestSessionState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    deferred, div, px, App, AppContext as _, Entity, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement, RenderOnce,
-    StatefulInteractiveElement as _, Styled, Window,
+    deferred, div, px, App, AppContext as _, Entity, FontWeight, InteractiveElement as _,
+    IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::input::{Input, InputState};
 use gpui_component::scroll::ScrollableElement as _;
@@ -150,21 +149,10 @@ impl RenderOnce for RequestBar {
                                 });
                             })
                             .child(MethodBadge::new(method).font_weight(gpui::FontWeight::SEMIBOLD))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(t.text_muted)
-                                    .child("▾"),
-                            )
+                            .child(div().text_xs().text_color(t.text_muted).child("▾"))
                     })
                     // Subtle vertical separator
-                    .child(
-                        div()
-                            .w(px(1.))
-                            .h(px(16.))
-                            .bg(t.border)
-                            .mx(px(2.)),
-                    )
+                    .child(div().w(px(1.)).h(px(16.)).bg(t.border).mx(px(2.)))
                     // URL Input Box - with inline tokens for environment variables
                     .child(
                         div()
@@ -192,11 +180,16 @@ impl RenderOnce for RequestBar {
                                     .token(move |token_ctx, _window, cx| {
                                         let var_name = token_ctx.token().id().to_string();
                                         let ws = ws_env.read(cx);
-                                        let (_val, scope, is_res) = get_variable_details(ws, &var_name);
-                                        let (_kind, color, bg_tint) = get_variable_kind_and_color(&scope, is_res);
+                                        let (_val, scope, is_res) =
+                                            get_variable_details(ws, &var_name);
+                                        let (_kind, color, bg_tint) =
+                                            get_variable_kind_and_color(&scope, is_res);
 
                                         div()
-                                            .id(gpui::SharedString::from(format!("inline-token-{}", var_name)))
+                                            .id(gpui::SharedString::from(format!(
+                                                "inline-token-{}",
+                                                var_name
+                                            )))
                                             .flex()
                                             .items_center()
                                             .px(px(6.))
@@ -289,7 +282,8 @@ impl RenderOnce for RequestBar {
                                     .child(if is_res {
                                         format!("= \"{}\"", val)
                                     } else {
-                                        "Variable not found in active or global environments".to_string()
+                                        "Variable not found in active or global environments"
+                                            .to_string()
                                     }),
                             )
                             .child(
@@ -304,7 +298,10 @@ impl RenderOnce for RequestBar {
             })
             // Autocomplete Dropdown popup when user types {{
             .when(show_autocomplete, |this| {
-                let (start_idx, end_idx) = unclosed.as_ref().map(|(pos, end, _)| (*pos, *end)).unwrap_or((0, 0));
+                let (start_idx, end_idx) = unclosed
+                    .as_ref()
+                    .map(|(pos, end, _)| (*pos, *end))
+                    .unwrap_or((0, 0));
                 let current_url = url.clone();
                 let inp_target = url_input_clone.clone();
                 let ed_target = ed_clone.clone();
@@ -371,10 +368,14 @@ impl RenderOnce for RequestBar {
                                         let ws_c = ws_clone.clone();
                                         let ws_data_c = ws_data_target.clone();
                                         let req_id_c = req_id_str.clone();
-                                        let (_kind, cand_color, cand_bg_tint) = get_variable_kind_and_color(&cand_scope, true);
+                                        let (_kind, cand_color, cand_bg_tint) =
+                                            get_variable_kind_and_color(&cand_scope, true);
 
                                         div()
-                                            .id(gpui::SharedString::from(format!("cand-{}", cand.name)))
+                                            .id(gpui::SharedString::from(format!(
+                                                "cand-{}",
+                                                cand.name
+                                            )))
                                             .cursor_pointer()
                                             .px(px(8.))
                                             .py(px(5.))
@@ -385,8 +386,14 @@ impl RenderOnce for RequestBar {
                                             .justify_between()
                                             .on_click(move |_, window, cx| {
                                                 let mut new_u = url_c.clone();
-                                                if start_idx <= new_u.len() && end_idx <= new_u.len() && start_idx <= end_idx {
-                                                    new_u.replace_range(start_idx..end_idx, &format!("{{{{{}}}}}", cand_name));
+                                                if start_idx <= new_u.len()
+                                                    && end_idx <= new_u.len()
+                                                    && start_idx <= end_idx
+                                                {
+                                                    new_u.replace_range(
+                                                        start_idx..end_idx,
+                                                        &format!("{{{{{}}}}}", cand_name),
+                                                    );
                                                     let content = {
                                                         let ws = ws_c.read(cx);
                                                         build_tokenized_content(&new_u, ws)
@@ -415,7 +422,10 @@ impl RenderOnce for RequestBar {
                                                             .font_weight(gpui::FontWeight::BOLD)
                                                             .font_family(".SystemMonoFont")
                                                             .text_color(cand_color)
-                                                            .child(format!("{{{{{}}}}}", cand.name)),
+                                                            .child(format!(
+                                                                "{{{{{}}}}}",
+                                                                cand.name
+                                                            )),
                                                     )
                                                     .child(
                                                         div()

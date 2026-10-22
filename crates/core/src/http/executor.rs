@@ -1,4 +1,3 @@
-use crate::interpolation::interpolate;
 use crate::models::{
     Auth, Environment, HttpMethod, HttpRequestItem, HttpResponseRecord, KeyValuePair,
     MultipartItem, RequestBody, RequestSentInfo, RequestSettings, TimingBreakdown,
@@ -290,8 +289,8 @@ impl ResolvedRequest {
                         "application/octet-stream".to_string(),
                     ));
                 }
-                let interpolated_path = interpolate(file_path, env).text;
-                std::fs::read(&interpolated_path).ok()
+                let interpolated_path = interpolator.interpolate_cow(file_path);
+                std::fs::read(interpolated_path.as_ref()).ok()
             }
         };
 
@@ -340,9 +339,9 @@ impl ResolvedRequest {
         })
     }
 
-    /// Áp dụng các thay đổi từ Pre-request Script (headers, body JSON override)
+    /// Apply mutations from Pre-request Script (headers, body JSON override)
     pub fn apply_pre_script_mutations(&mut self, pre_output: &crate::scripting::PreRequestOutput) {
-        // Ghi đè hoặc thêm headers mới
+        // Override or append new headers
         for (k, v) in &pre_output.header_mutations {
             self.headers
                 .retain(|(name, _)| !name.eq_ignore_ascii_case(k));
@@ -353,7 +352,7 @@ impl ResolvedRequest {
             self.sent_info.headers.push((k.clone(), v.clone()));
         }
 
-        // Ghi đè body nếu có
+        // Override body if provided
         if let Some(new_body_str) = &pre_output.body_override {
             let bytes = new_body_str.clone().into_bytes();
             self.sent_info.body_size_bytes = bytes.len();

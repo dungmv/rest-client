@@ -18,14 +18,12 @@ pub struct WorkspaceWatcher {
     _watcher: RecommendedWatcher,
 }
 
-fn normalize_path_for_compare(p: &Path) -> String {
-    let s = p.to_string_lossy().replace('/', "\\");
-    let trimmed = if let Some(stripped) = s.strip_prefix(r"\\?\") {
+fn strip_unc_str(s: &str) -> &str {
+    if let Some(stripped) = s.strip_prefix(r"\\?\") {
         stripped
     } else {
-        &s
-    };
-    trimmed.to_lowercase()
+        s
+    }
 }
 
 fn strip_unc_prefix(p: &Path) -> PathBuf {
@@ -38,7 +36,22 @@ fn strip_unc_prefix(p: &Path) -> PathBuf {
 }
 
 fn path_matches(p1: &Path, p2: &Path) -> bool {
-    normalize_path_for_compare(p1) == normalize_path_for_compare(p2)
+    let s1 = p1.to_string_lossy();
+    let s2 = p2.to_string_lossy();
+    let t1 = strip_unc_str(&s1);
+    let t2 = strip_unc_str(&s2);
+
+    let normalize_ch = |c: char| -> char {
+        if c == '/' {
+            '\\'
+        } else {
+            c.to_ascii_lowercase()
+        }
+    };
+
+    t1.chars()
+        .map(normalize_ch)
+        .eq(t2.chars().map(normalize_ch))
 }
 
 pub fn start_workspace_watcher(
@@ -118,9 +131,11 @@ pub fn start_workspace_watcher(
 
                         if rel_str == "workspace.yaml" {
                             pending_events.insert(FsEvent::TreeChanged);
-                        } else if rel_str.starts_with("environments/") && rel_str.ends_with(".yaml") {
+                        } else if rel_str.starts_with("environments/") && rel_str.ends_with(".yaml")
+                        {
                             if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                                pending_events.insert(FsEvent::EnvironmentChanged(stem.to_string()));
+                                pending_events
+                                    .insert(FsEvent::EnvironmentChanged(stem.to_string()));
                             }
                         } else if rel_str.starts_with("collections/") {
                             let sub_rel = rel_str.trim_start_matches("collections/");
@@ -129,10 +144,12 @@ pub fn start_workspace_watcher(
                             } else if sub_rel.ends_with(".yaml") {
                                 match event.kind {
                                     EventKind::Remove(_) => {
-                                        pending_events.insert(FsEvent::RequestDeleted(sub_rel.to_string()));
+                                        pending_events
+                                            .insert(FsEvent::RequestDeleted(sub_rel.to_string()));
                                     }
                                     _ => {
-                                        pending_events.insert(FsEvent::RequestChanged(sub_rel.to_string()));
+                                        pending_events
+                                            .insert(FsEvent::RequestChanged(sub_rel.to_string()));
                                     }
                                 }
                             } else if path.is_dir() {
@@ -150,4 +167,25 @@ pub fn start_workspace_watcher(
         })?;
 
     Ok(WorkspaceWatcher { _watcher: watcher })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_path_matches_cross_platform() {
+        assert!(path_matches(
+            Path::new(r"C:\workspace\collections\req.yaml"),
+            Path::new("C:/workspace/collections/req.yaml")
+        ));
+        assert!(path_matches(
+            Path::new(r"\\?\C:\workspace\collections\req.yaml"),
+            Path::new(r"C:\Workspace\Collections\Req.yaml")
+        ));
+        assert!(!path_matches(
+            Path::new(r"C:\workspace\collections\req.yaml"),
+            Path::new(r"C:\workspace\collections\other.yaml")
+        ));
+    }
 }

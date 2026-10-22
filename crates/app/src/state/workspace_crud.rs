@@ -10,7 +10,12 @@ impl WorkspaceDataState {
         let (_slug, rel_path) = self
             .store
             .create_request(folder_rel.as_deref(), "New Request", HttpMethod::Get, "")
-            .unwrap_or_else(|_| (format!("req-{}", uuid::Uuid::new_v4().simple()), "new-request.yaml".to_string()));
+            .unwrap_or_else(|_| {
+                (
+                    format!("req-{}", uuid::Uuid::new_v4().simple()),
+                    "new-request.yaml".to_string(),
+                )
+            });
 
         let ws_name = self.workspace_meta.name.clone();
         let mut item = HttpRequestItem::new(&ws_name, "New Request", HttpMethod::Get, "");
@@ -21,7 +26,11 @@ impl WorkspaceDataState {
         item
     }
 
-    pub fn create_request(&mut self, folder_rel: Option<String>, cx: &mut Context<Self>) -> HttpRequestItem {
+    pub fn create_request(
+        &mut self,
+        folder_rel: Option<String>,
+        cx: &mut Context<Self>,
+    ) -> HttpRequestItem {
         let item = self.create_request_internal(folder_rel);
         cx.notify();
         item
@@ -29,12 +38,15 @@ impl WorkspaceDataState {
 
     pub fn duplicate_request_internal(&mut self, req_id: &str) -> Option<HttpRequestItem> {
         let existing = self.requests.iter().find(|r| r.id == req_id)?.clone();
-        let mut req_file = self.store.read_request(req_id).unwrap_or_else(|_| RequestFile {
-            name: existing.name.clone(),
-            method: existing.method,
-            url: existing.url.clone(),
-            ..Default::default()
-        });
+        let mut req_file = self
+            .store
+            .read_request(req_id)
+            .unwrap_or_else(|_| RequestFile {
+                name: existing.name.clone(),
+                method: existing.method,
+                url: existing.url.clone(),
+                ..Default::default()
+            });
 
         let new_name = format!("{} (Copy)", req_file.name);
         req_file.name = new_name.clone();
@@ -42,7 +54,12 @@ impl WorkspaceDataState {
         let folder_rel = existing.folder_id.clone();
         let (_slug, rel_path) = self
             .store
-            .create_request(folder_rel.as_deref(), &new_name, req_file.method, &req_file.url)
+            .create_request(
+                folder_rel.as_deref(),
+                &new_name,
+                req_file.method,
+                &req_file.url,
+            )
             .ok()?;
 
         let _ = self.store.write_request(&rel_path, &req_file);
@@ -53,7 +70,11 @@ impl WorkspaceDataState {
         Some(dup)
     }
 
-    pub fn duplicate_request(&mut self, req_id: &str, cx: &mut Context<Self>) -> Option<HttpRequestItem> {
+    pub fn duplicate_request(
+        &mut self,
+        req_id: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<HttpRequestItem> {
         let res = self.duplicate_request_internal(req_id);
         if res.is_some() {
             cx.notify();
@@ -102,7 +123,12 @@ impl WorkspaceDataState {
         }
     }
 
-    pub fn rename_request(&mut self, req_id: &str, new_name: &str, cx: &mut Context<Self>) -> Option<String> {
+    pub fn rename_request(
+        &mut self,
+        req_id: &str,
+        new_name: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<String> {
         let res = self.rename_request_internal(req_id, new_name);
         if res.is_some() {
             cx.notify();
@@ -110,10 +136,16 @@ impl WorkspaceDataState {
         res
     }
 
-    pub fn create_folder_internal(&mut self, parent_id: Option<String>, name: String) -> Option<String> {
+    pub fn create_folder_internal(
+        &mut self,
+        parent_id: Option<String>,
+        name: String,
+    ) -> Option<String> {
         let trimmed = name.trim();
         if !trimmed.is_empty() {
-            if let Ok((_dir_name, rel_path)) = self.store.create_group(parent_id.as_deref(), trimmed) {
+            if let Ok((_dir_name, rel_path)) =
+                self.store.create_group(parent_id.as_deref(), trimmed)
+            {
                 let ws_name = self.workspace_meta.name.clone();
                 let mut f = Folder::new(&ws_name, trimmed);
                 f.id = rel_path.clone();
@@ -125,7 +157,12 @@ impl WorkspaceDataState {
         None
     }
 
-    pub fn create_folder(&mut self, parent_id: Option<String>, name: String, cx: &mut Context<Self>) -> Option<String> {
+    pub fn create_folder(
+        &mut self,
+        parent_id: Option<String>,
+        name: String,
+        cx: &mut Context<Self>,
+    ) -> Option<String> {
         let res = self.create_folder_internal(parent_id, name);
         if res.is_some() {
             cx.notify();
@@ -136,7 +173,8 @@ impl WorkspaceDataState {
     pub fn delete_folder_internal(&mut self, folder_id: &str) {
         let _ = self.store.delete_group(folder_id);
         let prefix = format!("{}/", folder_id);
-        self.folders.retain(|f| f.id != folder_id && !f.id.starts_with(&prefix));
+        self.folders
+            .retain(|f| f.id != folder_id && !f.id.starts_with(&prefix));
         self.requests.retain(|r| {
             if let Some(fid) = &r.folder_id {
                 fid != folder_id && !fid.starts_with(&prefix)
@@ -144,7 +182,8 @@ impl WorkspaceDataState {
                 !r.id.starts_with(&prefix)
             }
         });
-        self.pins.retain(|p| p != folder_id && !p.starts_with(&prefix));
+        self.pins
+            .retain(|p| p != folder_id && !p.starts_with(&prefix));
         let _ = self.store.save_pins(&self.pins);
     }
 
@@ -208,7 +247,12 @@ impl WorkspaceDataState {
         }
     }
 
-    pub fn move_folder(&mut self, src_folder_id: &str, target_folder_id: &str, cx: &mut Context<Self>) {
+    pub fn move_folder(
+        &mut self,
+        src_folder_id: &str,
+        target_folder_id: &str,
+        cx: &mut Context<Self>,
+    ) {
         if src_folder_id == target_folder_id {
             return;
         }
@@ -216,7 +260,11 @@ impl WorkspaceDataState {
         let target_pos = self.folders.iter().position(|f| f.id == target_folder_id);
         if let (Some(s_idx), Some(_)) = (src_pos, target_pos) {
             let folder = self.folders.remove(s_idx);
-            let new_t_idx = self.folders.iter().position(|f| f.id == target_folder_id).unwrap_or(self.folders.len());
+            let new_t_idx = self
+                .folders
+                .iter()
+                .position(|f| f.id == target_folder_id)
+                .unwrap_or(self.folders.len());
             self.folders.insert(new_t_idx, folder);
             cx.notify();
         }
@@ -227,11 +275,18 @@ impl WorkspaceDataState {
             return;
         }
         let src_req = self.requests.iter().find(|r| r.id == src_req_id).cloned();
-        let target_req = self.requests.iter().find(|r| r.id == target_req_id).cloned();
+        let target_req = self
+            .requests
+            .iter()
+            .find(|r| r.id == target_req_id)
+            .cloned();
 
         if let (Some(src), Some(target)) = (src_req, target_req) {
             if src.folder_id != target.folder_id {
-                if let Ok(new_rel_path) = self.store.move_request(src_req_id, target.folder_id.as_deref()) {
+                if let Ok(new_rel_path) = self
+                    .store
+                    .move_request(src_req_id, target.folder_id.as_deref())
+                {
                     if let Some(r) = self.requests.iter_mut().find(|r| r.id == src_req_id) {
                         r.id = new_rel_path.clone();
                         r.folder_id = target.folder_id.clone();
@@ -269,7 +324,10 @@ impl WorkspaceDataState {
 
                 if let Some(s_pos) = stems.iter().position(|s| s == &src_stem) {
                     stems.remove(s_pos);
-                    let t_pos = stems.iter().position(|s| s == &target_stem).unwrap_or(stems.len());
+                    let t_pos = stems
+                        .iter()
+                        .position(|s| s == &target_stem)
+                        .unwrap_or(stems.len());
                     stems.insert(t_pos, src_stem);
                     let _ = self.store.reorder_folder(folder_id.as_deref(), &stems);
                     let src_idx = self.requests.iter().position(|r| r.id == src_req_id);
@@ -289,7 +347,10 @@ impl WorkspaceDataState {
         src_req_id: &str,
         target_folder_id: Option<String>,
     ) -> Option<String> {
-        if let Ok(new_rel_path) = self.store.move_request(src_req_id, target_folder_id.as_deref()) {
+        if let Ok(new_rel_path) = self
+            .store
+            .move_request(src_req_id, target_folder_id.as_deref())
+        {
             if let Some(r) = self.requests.iter_mut().find(|r| r.id == src_req_id) {
                 r.id = new_rel_path.clone();
                 r.folder_id = target_folder_id;
@@ -310,12 +371,20 @@ impl WorkspaceDataState {
         target_folder_id: Option<String>,
         cx: &mut Context<Self>,
     ) {
-        if self.move_request_to_folder_internal(src_req_id, target_folder_id).is_some() {
+        if self
+            .move_request_to_folder_internal(src_req_id, target_folder_id)
+            .is_some()
+        {
             cx.notify();
         }
     }
 
-    pub fn rename_example_internal(&mut self, req_id: &str, old_name: &str, new_name: &str) -> bool {
+    pub fn rename_example_internal(
+        &mut self,
+        req_id: &str,
+        old_name: &str,
+        new_name: &str,
+    ) -> bool {
         let trimmed = new_name.trim();
         if trimmed.is_empty() || trimmed == old_name {
             return false;
@@ -324,14 +393,22 @@ impl WorkspaceDataState {
         if let Ok(mut req_file) = self.store.read_request(req_id) {
             let mut unique_name = trimmed.to_string();
             let mut idx = 2;
-            while req_file.examples.iter().any(|e| e.name == unique_name && e.name != old_name) {
+            while req_file
+                .examples
+                .iter()
+                .any(|e| e.name == unique_name && e.name != old_name)
+            {
                 unique_name = format!("{}-{}", trimmed, idx);
                 idx += 1;
             }
             if let Some(ex) = req_file.examples.iter_mut().find(|e| e.name == old_name) {
                 ex.name = unique_name.clone();
             }
-            self.last_renamed_example = Some((req_id.to_string(), old_name.to_string(), unique_name.clone()));
+            self.last_renamed_example = Some((
+                req_id.to_string(),
+                old_name.to_string(),
+                unique_name.clone(),
+            ));
             let _ = self.store.write_request(req_id, &req_file);
             if let Some(r) = self.requests.iter_mut().find(|r| r.id == req_id) {
                 if let Some(ex) = r.examples.iter_mut().find(|e| e.name == old_name) {
@@ -343,7 +420,13 @@ impl WorkspaceDataState {
         false
     }
 
-    pub fn rename_example(&mut self, req_id: &str, old_name: &str, new_name: &str, cx: &mut Context<Self>) {
+    pub fn rename_example(
+        &mut self,
+        req_id: &str,
+        old_name: &str,
+        new_name: &str,
+        cx: &mut Context<Self>,
+    ) {
         if self.rename_example_internal(req_id, old_name, new_name) {
             cx.notify();
         }
@@ -429,7 +512,12 @@ impl WorkspaceDataState {
         }
     }
 
-    pub fn save_request_file(&mut self, req_id: &str, req_file: &RequestFile, cx: &mut Context<Self>) {
+    pub fn save_request_file(
+        &mut self,
+        req_id: &str,
+        req_file: &RequestFile,
+        cx: &mut Context<Self>,
+    ) {
         self.save_request_file_internal(req_id, req_file);
         cx.notify();
     }

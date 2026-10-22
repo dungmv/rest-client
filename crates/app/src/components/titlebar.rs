@@ -5,9 +5,9 @@ use crate::state::{
 use crate::theme::{hex_to_hsla, theme};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Context, Entity, Image, ImageFormat, InteractiveElement as _, IntoElement, MouseButton,
-    ParentElement, Render, RenderOnce, StatefulInteractiveElement as _, Styled, Window,
-    WindowControlArea, div, img, px,
+    div, img, px, App, Context, Entity, Image, ImageFormat, InteractiveElement as _, IntoElement,
+    MouseButton, ParentElement, Render, RenderOnce, StatefulInteractiveElement as _, Styled,
+    Window, WindowControlArea,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};

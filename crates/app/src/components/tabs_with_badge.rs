@@ -1,7 +1,7 @@
 use crate::theme::theme;
 use gpui::{
-    div, px, App, ClickEvent, ElementId, InteractiveElement as _, IntoElement,
-    ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Window,
+    div, px, App, ClickEvent, ElementId, InteractiveElement as _, IntoElement, ParentElement,
+    RenderOnce, StatefulInteractiveElement as _, Styled, Window,
 };
 use std::rc::Rc;
 
@@ -44,7 +44,10 @@ impl TabItem {
         self
     }
 
-    pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_click = Some(Rc::new(handler));
         self
     }
@@ -61,11 +64,7 @@ impl RenderOnce for TabItem {
             t.text_secondary
         };
 
-        let border_bottom = if active {
-            t.primary
-        } else {
-            t.transparent
-        };
+        let border_bottom = if active { t.primary } else { t.transparent };
 
         let mut el = div()
             .id(self.id)
@@ -76,7 +75,11 @@ impl RenderOnce for TabItem {
             .gap(px(6.))
             .cursor_pointer()
             .text_xs()
-            .font_weight(if active { gpui::FontWeight::SEMIBOLD } else { gpui::FontWeight::NORMAL })
+            .font_weight(if active {
+                gpui::FontWeight::SEMIBOLD
+            } else {
+                gpui::FontWeight::NORMAL
+            })
             .text_color(fg)
             .border_b_2()
             .border_color(border_bottom)
@@ -88,12 +91,7 @@ impl RenderOnce for TabItem {
         }
 
         if self.has_dropdown {
-            el = el.child(
-                div()
-                    .text_xs()
-                    .text_color(t.text_muted)
-                    .child("▾"),
-            );
+            el = el.child(div().text_xs().text_color(t.text_muted).child("▾"));
         }
 
         if let Some(badge_text) = self.badge {

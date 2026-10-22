@@ -11,7 +11,8 @@ pub fn save_active_request_without_redraw(
     if req_id != "scratch" && !req_id.is_empty() {
         let ed = editor.clone();
         let ws = workspace.clone();
-        persistence.update(cx, |per, cx| per.schedule_save_active_request(req_id, ed, ws, cx));
+        persistence.update(cx, |per, cx| {
+            per.schedule_save_active_request(req_id, ed, ws, cx)
+        });
     }
 }
-

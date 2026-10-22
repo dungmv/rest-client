@@ -83,7 +83,11 @@ pub fn calculate_folder_git_status(
     for req in requests {
         if let Some(ref fid) = req.folder_id {
             if descendant_folders.contains(fid) {
-                let st = calculate_request_git_status(&req.id, git_status, unsaved_requests.contains(&req.id));
+                let st = calculate_request_git_status(
+                    &req.id,
+                    git_status,
+                    unsaved_requests.contains(&req.id),
+                );
                 if st == SidebarGitStatus::Modified {
                     return SidebarGitStatus::Modified;
                 }

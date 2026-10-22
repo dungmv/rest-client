@@ -150,9 +150,10 @@ impl GitState {
     pub fn refresh_remotes(&mut self, cx: &mut Context<Self>) {
         let ws_path = self.repo_path.clone();
         cx.spawn(async move |this, cx| {
-            let remotes = cx.background_executor().spawn(async move {
-                restclient_core::git::git_get_remotes(&ws_path).ok()
-            }).await;
+            let remotes = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_get_remotes(&ws_path).ok() })
+                .await;
             if let Some(remotes) = remotes {
                 if let Some(this) = this.upgrade() {
                     this.update(cx, |git, cx| {
@@ -161,7 +162,8 @@ impl GitState {
                     });
                 }
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn add_remote(&mut self, name: &str, url: &str, cx: &mut Context<Self>) {
@@ -176,9 +178,10 @@ impl GitState {
         let n = name.to_string();
         let u = url.to_string();
         cx.spawn(async move |this, cx| {
-            let res = cx.background_executor().spawn(async move {
-                restclient_core::git::git_add_remote(&ws_path, &n, &u)
-            }).await;
+            let res = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_add_remote(&ws_path, &n, &u) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.loading = false;
@@ -194,7 +197,8 @@ impl GitState {
                     }
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn remove_remote(&mut self, name: &str, cx: &mut Context<Self>) {
@@ -208,9 +212,10 @@ impl GitState {
         let ws_path = self.repo_path.clone();
         let n = name.to_string();
         cx.spawn(async move |this, cx| {
-            let res = cx.background_executor().spawn(async move {
-                restclient_core::git::git_remove_remote(&ws_path, &n)
-            }).await;
+            let res = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_remove_remote(&ws_path, &n) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.loading = false;
@@ -226,7 +231,8 @@ impl GitState {
                     }
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn delete_branch(&mut self, name: &str, cx: &mut Context<Self>) {
@@ -240,9 +246,10 @@ impl GitState {
         let ws_path = self.repo_path.clone();
         let n = name.to_string();
         cx.spawn(async move |this, cx| {
-            let res = cx.background_executor().spawn(async move {
-                restclient_core::git::git_delete_branch(&ws_path, &n, false)
-            }).await;
+            let res = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_delete_branch(&ws_path, &n, false) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.loading = false;
@@ -258,7 +265,8 @@ impl GitState {
                     }
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn fetch(&mut self, toast: Option<Entity<ToastState>>, cx: &mut Context<Self>) {
@@ -271,9 +279,10 @@ impl GitState {
 
         let ws_path = self.repo_path.clone();
         cx.spawn(async move |this, cx| {
-            let res = cx.background_executor().spawn(async move {
-                restclient_core::git::git_fetch(&ws_path)
-            }).await;
+            let res = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_fetch(&ws_path) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     git.is_syncing = false;
@@ -309,7 +318,8 @@ impl GitState {
                     }
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn refresh_status(&mut self, cx: &mut Context<Self>) {
@@ -319,15 +329,24 @@ impl GitState {
 
         cx.spawn(async move |this, cx| {
             let ws_status = ws_path.clone();
-            let status_res = cx.background_executor().spawn(async move {
-                restclient_core::git::git_status(&ws_status)
-            }).await;
+            let status_res = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_status(&ws_status) })
+                .await;
 
-            let Ok(st) = status_res else { return; };
+            let Ok(st) = status_res else {
+                return;
+            };
 
             let diff_result = if show_modal {
-                let valid_staged: HashSet<String> = st.staged_files.iter().map(|f| f.path.clone()).collect();
-                let valid_unstaged: HashSet<String> = st.unstaged_files.iter().chain(&st.untracked_files).map(|f| f.path.clone()).collect();
+                let valid_staged: HashSet<String> =
+                    st.staged_files.iter().map(|f| f.path.clone()).collect();
+                let valid_unstaged: HashSet<String> = st
+                    .unstaged_files
+                    .iter()
+                    .chain(&st.untracked_files)
+                    .map(|f| f.path.clone())
+                    .collect();
 
                 let file_and_staged = if let Some((path, staged)) = selected_file {
                     if valid_staged.contains(&path) {
@@ -342,18 +361,23 @@ impl GitState {
                 } else if let Some(first) = st.unstaged_files.first() {
                     Some((first.path.clone(), false))
                 } else {
-                    st.untracked_files.first().map(|first| (first.path.clone(), false))
+                    st.untracked_files
+                        .first()
+                        .map(|first| (first.path.clone(), false))
                 };
 
                 if let Some((path, staged)) = file_and_staged {
                     let ws_diff = ws_path.clone();
                     let p = path.clone();
-                    let diff_content = cx.background_executor().spawn(async move {
-                        match restclient_core::git::git_diff(&ws_diff, Some(&p), staged) {
-                            Ok(d) => Some(d),
-                            Err(e) => Some(format!("Error loading diff: {}", e)),
-                        }
-                    }).await;
+                    let diff_content = cx
+                        .background_executor()
+                        .spawn(async move {
+                            match restclient_core::git::git_diff(&ws_diff, Some(&p), staged) {
+                                Ok(d) => Some(d),
+                                Err(e) => Some(format!("Error loading diff: {}", e)),
+                            }
+                        })
+                        .await;
                     Some((Some((path, staged)), diff_content))
                 } else {
                     Some((None, None))
@@ -366,9 +390,9 @@ impl GitState {
                 let need_branches = this_ent.read_with(cx, |this, _| this.branches.is_empty());
                 if need_branches {
                     let ws_b = ws_path.clone();
-                    cx.background_executor().spawn(async move {
-                        restclient_core::git::git_branches(&ws_b).ok()
-                    }).await
+                    cx.background_executor()
+                        .spawn(async move { restclient_core::git::git_branches(&ws_b).ok() })
+                        .await
                 } else {
                     None
                 }
@@ -381,11 +405,19 @@ impl GitState {
                     if st.is_repo && !st.branch.is_empty() {
                         git.branch = Some(st.branch.clone());
                     }
-                    let valid_unstaged: HashSet<String> = st.unstaged_files.iter().chain(&st.untracked_files).map(|f| f.path.clone()).collect();
-                    git.selected_unstaged_files.retain(|p| valid_unstaged.contains(p));
+                    let valid_unstaged: HashSet<String> = st
+                        .unstaged_files
+                        .iter()
+                        .chain(&st.untracked_files)
+                        .map(|f| f.path.clone())
+                        .collect();
+                    git.selected_unstaged_files
+                        .retain(|p| valid_unstaged.contains(p));
 
-                    let valid_staged: HashSet<String> = st.staged_files.iter().map(|f| f.path.clone()).collect();
-                    git.selected_staged_files.retain(|p| valid_staged.contains(p));
+                    let valid_staged: HashSet<String> =
+                        st.staged_files.iter().map(|f| f.path.clone()).collect();
+                    git.selected_staged_files
+                        .retain(|p| valid_staged.contains(p));
 
                     if let Some((file_sel, diff_content)) = diff_result {
                         git.selected_file = file_sel;
@@ -399,16 +431,18 @@ impl GitState {
                     cx.notify();
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn load_diff(&mut self, file_path: &str, staged: bool, cx: &mut Context<Self>) {
         let ws_path = self.repo_path.clone();
         let path = file_path.to_string();
         cx.spawn(async move |this, cx| {
-            let res = cx.background_executor().spawn(async move {
-                restclient_core::git::git_diff(&ws_path, Some(&path), staged)
-            }).await;
+            let res = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_diff(&ws_path, Some(&path), staged) })
+                .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
                     match res {
@@ -418,7 +452,8 @@ impl GitState {
                     cx.notify();
                 });
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn refresh_history(&mut self, cx: &mut Context<Self>) {
@@ -426,17 +461,20 @@ impl GitState {
         let needs_first = self.selected_commit.is_none();
         cx.spawn(async move |this, cx| {
             let ws_hist = ws_path.clone();
-            let commits = cx.background_executor().spawn(async move {
-                restclient_core::git::git_history(&ws_hist, 50).ok()
-            }).await;
+            let commits = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_history(&ws_hist, 50).ok() })
+                .await;
             if let Some(commits) = commits {
                 let first_detail = if needs_first {
                     if let Some(first) = commits.first() {
                         let ws_p = ws_path.clone();
                         let h = first.hash.clone();
-                        cx.background_executor().spawn(async move {
-                            restclient_core::git::git_commit_detail(&ws_p, &h).ok()
-                        }).await
+                        cx.background_executor()
+                            .spawn(async move {
+                                restclient_core::git::git_commit_detail(&ws_p, &h).ok()
+                            })
+                            .await
                     } else {
                         None
                     }
@@ -454,15 +492,17 @@ impl GitState {
                     });
                 }
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn refresh_branches(&mut self, cx: &mut Context<Self>) {
         let ws_path = self.repo_path.clone();
         cx.spawn(async move |this, cx| {
-            let branches = cx.background_executor().spawn(async move {
-                restclient_core::git::git_branches(&ws_path).ok()
-            }).await;
+            let branches = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_branches(&ws_path).ok() })
+                .await;
             if let Some(branches) = branches {
                 if let Some(this) = this.upgrade() {
                     this.update(cx, |git, cx| {
@@ -471,7 +511,8 @@ impl GitState {
                     });
                 }
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn select_file(&mut self, path: String, staged: bool, cx: &mut Context<Self>) {
@@ -484,9 +525,10 @@ impl GitState {
         let ws_path = self.repo_path.clone();
         let h = hash.to_string();
         cx.spawn(async move |this, cx| {
-            let detail = cx.background_executor().spawn(async move {
-                restclient_core::git::git_commit_detail(&ws_path, &h).ok()
-            }).await;
+            let detail = cx
+                .background_executor()
+                .spawn(async move { restclient_core::git::git_commit_detail(&ws_path, &h).ok() })
+                .await;
             if let Some(detail) = detail {
                 if let Some(this) = this.upgrade() {
                     this.update(cx, |git, cx| {
@@ -495,7 +537,8 @@ impl GitState {
                     });
                 }
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn toggle_history_file_expansion(&mut self, file_path: &str, cx: &mut Context<Self>) {

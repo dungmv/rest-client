@@ -60,11 +60,16 @@ pub fn folder_has_matches(
         r.folder_id.as_deref() == Some(folder_id)
             && (r.name.to_lowercase().contains(query)
                 || r.url.to_lowercase().contains(query)
-                || r.examples.iter().any(|e| e.name.to_lowercase().contains(query)))
+                || r.examples
+                    .iter()
+                    .any(|e| e.name.to_lowercase().contains(query)))
     }) {
         return true;
     }
-    for child in folders.iter().filter(|f| f.parent_id.as_deref() == Some(folder_id)) {
+    for child in folders
+        .iter()
+        .filter(|f| f.parent_id.as_deref() == Some(folder_id))
+    {
         if folder_has_matches(&child.id, folders, requests, query) {
             return true;
         }

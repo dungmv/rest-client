@@ -103,9 +103,7 @@ pub fn render_remotes_view(
                                         .text_color(t.text_muted)
                                         .hover(|s| s.bg(t.bg_card).text_color(t.status_5xx))
                                 })
-                                .when(is_loading, |s| {
-                                    s.text_color(t.text_muted)
-                                })
+                                .when(is_loading, |s| s.text_color(t.text_muted))
                                 .text_xs()
                                 .on_click(move |_, _, cx| {
                                     if is_loading {
@@ -164,10 +162,7 @@ pub fn render_remotes_view(
                                 .text_color(t.primary_foreground)
                                 .hover(|s| s.opacity(0.9))
                         })
-                        .when(is_loading, |s| {
-                            s.bg(t.bg_hover)
-                                .text_color(t.text_muted)
-                        })
+                        .when(is_loading, |s| s.bg(t.bg_hover).text_color(t.text_muted))
                         .flex()
                         .items_center()
                         .justify_center()
@@ -232,7 +227,8 @@ impl RenderOnce for GitRemotesModal {
             cx,
             |window, cx| {
                 let inp = cx.new(|cx| {
-                    InputState::new(window, cx).placeholder("https://github.com/owner/repository.git")
+                    InputState::new(window, cx)
+                        .placeholder("https://github.com/owner/repository.git")
                 });
                 (inp, ())
             },
@@ -243,7 +239,10 @@ impl RenderOnce for GitRemotesModal {
             .id("git-remotes-modal-overlay")
             .absolute()
             .inset_0()
-            .bg(gpui::Hsla { a: 0.65, ..t.bg_app })
+            .bg(gpui::Hsla {
+                a: 0.65,
+                ..t.bg_app
+            })
             .flex()
             .items_center()
             .justify_center()
@@ -305,12 +304,7 @@ impl RenderOnce for GitRemotesModal {
                                     .flex()
                                     .items_center()
                                     .gap(px(8.))
-                                    .child(
-                                        div()
-                                            .text_base()
-                                            .text_color(t.primary)
-                                            .child("⇄"),
-                                    )
+                                    .child(div().text_base().text_color(t.primary).child("⇄"))
                                     .child(
                                         div()
                                             .text_sm()
@@ -345,22 +339,17 @@ impl RenderOnce for GitRemotesModal {
                         this.child(render_error_banner(git_clone.clone(), err))
                     })
                     // Body
-                    .child(
-                        div()
-                            .flex_1()
-                            .overflow_hidden()
-                            .child(if !is_repo {
-                                render_not_a_repo_view(git_clone.clone(), is_loading)
-                            } else {
-                                render_remotes_view(
-                                    git_clone.clone(),
-                                    remotes,
-                                    remote_name_input,
-                                    remote_url_input,
-                                    is_loading,
-                                )
-                            }),
-                    ),
+                    .child(div().flex_1().overflow_hidden().child(if !is_repo {
+                        render_not_a_repo_view(git_clone.clone(), is_loading)
+                    } else {
+                        render_remotes_view(
+                            git_clone.clone(),
+                            remotes,
+                            remote_name_input,
+                            remote_url_input,
+                            is_loading,
+                        )
+                    })),
             )
             .into_any_element()
     }

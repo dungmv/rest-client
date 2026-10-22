@@ -21,7 +21,10 @@ pub fn render_status_badge(status: GitFileStatus) -> gpui::AnyElement {
         .w(px(16.))
         .h(px(16.))
         .rounded(px(3.))
-        .bg(gpui::Hsla { a: 0.15, ..color.into() })
+        .bg(gpui::Hsla {
+            a: 0.15,
+            ..color.into()
+        })
         .flex()
         .items_center()
         .justify_center()
@@ -63,7 +66,11 @@ pub fn render_checkbox(
         .cursor_pointer()
         .text_xs()
         .font_weight(gpui::FontWeight::BOLD)
-        .text_color(if is_active { t.primary_foreground } else { t.text_muted })
+        .text_color(if is_active {
+            t.primary_foreground
+        } else {
+            t.text_muted
+        })
         .on_click(move |ev, window, cx| {
             cx.stop_propagation();
             on_toggle(ev, window, cx);
@@ -79,17 +86,26 @@ pub fn render_error_banner(git_state: Entity<GitState>, err: String) -> gpui::An
     div()
         .px(px(16.))
         .py(px(8.))
-        .bg(gpui::Hsla { h: 0.0, s: 0.7, l: 0.45, a: 0.2 })
+        .bg(gpui::Hsla {
+            h: 0.0,
+            s: 0.7,
+            l: 0.45,
+            a: 0.2,
+        })
         .border_b_1()
         .border_color(t.status_5xx)
         .flex()
         .items_center()
         .justify_between()
         .child(
-            div()
-                .text_xs()
-                .text_color(t.status_5xx)
-                .child(div().flex().items_center().gap(px(4.)).child(Icon::new(IconName::TriangleAlert).size(px(14.))).child(format!("Git: {}", err))),
+            div().text_xs().text_color(t.status_5xx).child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.))
+                    .child(Icon::new(IconName::TriangleAlert).size(px(14.)))
+                    .child(format!("Git: {}", err)),
+            ),
         )
         .child(
             div()
@@ -120,12 +136,7 @@ pub fn render_not_a_repo_view(git_state: Entity<GitState>, is_loading: bool) -> 
         .items_center()
         .justify_center()
         .gap(px(14.))
-        .child(
-            div()
-                .text_2xl()
-                .text_color(t.text_muted)
-                .child("📦"),
-        )
+        .child(div().text_2xl().text_color(t.text_muted).child("📦"))
         .child(
             div()
                 .text_base()
@@ -139,7 +150,9 @@ pub fn render_not_a_repo_view(git_state: Entity<GitState>, is_loading: bool) -> 
                 .text_center()
                 .text_xs()
                 .text_color(t.text_muted)
-                .child("This workspace directory does not have Git version control initialized yet."),
+                .child(
+                    "This workspace directory does not have Git version control initialized yet.",
+                ),
         )
         .child(
             div()
@@ -154,10 +167,7 @@ pub fn render_not_a_repo_view(git_state: Entity<GitState>, is_loading: bool) -> 
                         .text_color(t.primary_foreground)
                         .hover(|s| s.opacity(0.9))
                 })
-                .when(is_loading, |s| {
-                    s.bg(t.bg_hover)
-                        .text_color(t.text_muted)
-                })
+                .when(is_loading, |s| s.bg(t.bg_hover).text_color(t.text_muted))
                 .text_xs()
                 .font_weight(gpui::FontWeight::BOLD)
                 .on_click(move |_, _, cx| {

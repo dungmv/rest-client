@@ -57,12 +57,10 @@ pub fn render_new_branch_view(
                         .p(px(6.))
                         .child(Input::new(&branch_input)),
                 )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(t.text_muted)
-                        .child(format!("Branch will be created based on \"{}\"", current_branch)),
-                ),
+                .child(div().text_xs().text_color(t.text_muted).child(format!(
+                    "Branch will be created based on \"{}\"",
+                    current_branch
+                ))),
         )
         .child(
             div()
@@ -102,10 +100,7 @@ pub fn render_new_branch_view(
                                 .text_color(t.primary_foreground)
                                 .hover(|s| s.opacity(0.9))
                         })
-                        .when(is_loading, |s| {
-                            s.bg(t.bg_hover)
-                                .text_color(t.text_muted)
-                        })
+                        .when(is_loading, |s| s.bg(t.bg_hover).text_color(t.text_muted))
                         .text_xs()
                         .font_weight(gpui::FontWeight::BOLD)
                         .on_click(move |_, window, cx| {
@@ -163,7 +158,10 @@ impl RenderOnce for GitBranchModal {
             .id("git-branch-modal-overlay")
             .absolute()
             .inset_0()
-            .bg(gpui::Hsla { a: 0.65, ..t.bg_app })
+            .bg(gpui::Hsla {
+                a: 0.65,
+                ..t.bg_app
+            })
             .flex()
             .items_center()
             .justify_center()
@@ -224,12 +222,7 @@ impl RenderOnce for GitBranchModal {
                                     .flex()
                                     .items_center()
                                     .gap(px(8.))
-                                    .child(
-                                        div()
-                                            .text_base()
-                                            .text_color(t.primary)
-                                            .child("🌱"),
-                                    )
+                                    .child(div().text_base().text_color(t.primary).child("🌱"))
                                     .child(
                                         div()
                                             .text_sm()
@@ -267,7 +260,12 @@ impl RenderOnce for GitBranchModal {
                     .child(if !is_repo {
                         render_not_a_repo_view(git_clone.clone(), is_loading)
                     } else {
-                        render_new_branch_view(git_clone.clone(), current_branch, branch_input, is_loading)
+                        render_new_branch_view(
+                            git_clone.clone(),
+                            current_branch,
+                            branch_input,
+                            is_loading,
+                        )
                     }),
             )
             .into_any_element()

@@ -4,8 +4,8 @@ use gpui::{App, Entity, Task, Window};
 use gpui_component::input::{CompletionProvider, InlineToken, InputContent};
 use gpui_component::RopeExt;
 use lsp_types::{
-    CompletionContext, CompletionItem, CompletionItemKind, CompletionResponse,
-    CompletionTextEdit, Documentation, Range as LspRange, TextEdit,
+    CompletionContext, CompletionItem, CompletionItemKind, CompletionResponse, CompletionTextEdit,
+    Documentation, Range as LspRange, TextEdit,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,7 +23,10 @@ pub fn detect_unclosed_env_var(text: &str) -> Option<(usize, usize, String)> {
 }
 
 /// Detects an unclosed `{{` in `text`, optionally taking `cursor_pos` into account.
-pub fn detect_unclosed_env_var_at(text: &str, cursor_pos: Option<usize>) -> Option<(usize, usize, String)> {
+pub fn detect_unclosed_env_var_at(
+    text: &str,
+    cursor_pos: Option<usize>,
+) -> Option<(usize, usize, String)> {
     let mut matches = Vec::new();
     let bytes = text.as_bytes();
     let mut i = 0;
@@ -36,12 +39,25 @@ pub fn detect_unclosed_env_var_at(text: &str, cursor_pos: Option<usize>) -> Opti
             let mut is_closed = false;
 
             while query_end < text.len() {
-                if query_end + 1 < text.len() && bytes[query_end] == b'}' && bytes[query_end + 1] == b'}' {
+                if query_end + 1 < text.len()
+                    && bytes[query_end] == b'}'
+                    && bytes[query_end + 1] == b'}'
+                {
                     is_closed = true;
                     break;
                 }
                 let c = text[query_end..].chars().next().unwrap();
-                if c == '/' || c == '?' || c == '&' || c == '=' || c == ' ' || c == '\n' || c == '\t' || c == '"' || c == '\'' || c == '{' {
+                if c == '/'
+                    || c == '?'
+                    || c == '&'
+                    || c == '='
+                    || c == ' '
+                    || c == '\n'
+                    || c == '\t'
+                    || c == '"'
+                    || c == '\''
+                    || c == '{'
+                {
                     break;
                 }
                 query_end += c.len_utf8();
@@ -86,7 +102,11 @@ pub fn get_env_completions(env: &EnvironmentState, query: &str) -> Vec<EnvVarCan
                 if q.is_empty() || v.key.to_lowercase().contains(&q) {
                     candidates.push(EnvVarCandidate {
                         name: v.key.clone(),
-                        value: if v.secret { "••••••••".to_string() } else { v.resolved_value().to_string() },
+                        value: if v.secret {
+                            "••••••••".to_string()
+                        } else {
+                            v.resolved_value().to_string()
+                        },
                         scope: format!("Active: {}", active_env.name),
                         is_secret: v.secret,
                     });
@@ -102,7 +122,11 @@ pub fn get_env_completions(env: &EnvironmentState, query: &str) -> Vec<EnvVarCan
             if q.is_empty() || v.key.to_lowercase().contains(&q) {
                 candidates.push(EnvVarCandidate {
                     name: v.key.clone(),
-                    value: if v.secret { "••••••••".to_string() } else { v.resolved_value().to_string() },
+                    value: if v.secret {
+                        "••••••••".to_string()
+                    } else {
+                        v.resolved_value().to_string()
+                    },
                     scope: "Global".to_string(),
                     is_secret: v.secret,
                 });
@@ -145,14 +169,27 @@ pub fn get_variable_details(env: &EnvironmentState, var_name: &str) -> (String, 
     // 1. Check Active Env
     if let Some(active_env) = env.active_environment() {
         if let Some(v) = active_env.variables.iter().find(|x| x.key == var_name) {
-            let val = if v.secret { "••••••••".to_string() } else { v.resolved_value().to_string() };
+            let val = if v.secret {
+                "••••••••".to_string()
+            } else {
+                v.resolved_value().to_string()
+            };
             return (val, format!("Active: {}", active_env.name), true);
         }
     }
 
     // 2. Check Global Env
-    if let Some(v) = env.global_environment.variables.iter().find(|x| x.key == var_name) {
-        let val = if v.secret { "••••••••".to_string() } else { v.resolved_value().to_string() };
+    if let Some(v) = env
+        .global_environment
+        .variables
+        .iter()
+        .find(|x| x.key == var_name)
+    {
+        let val = if v.secret {
+            "••••••••".to_string()
+        } else {
+            v.resolved_value().to_string()
+        };
         return (val, "Global".to_string(), true);
     }
 
@@ -163,7 +200,11 @@ pub fn get_variable_details(env: &EnvironmentState, var_name: &str) -> (String, 
         }
     }
 
-    ("Unresolved variable".to_string(), "Missing".to_string(), false)
+    (
+        "Unresolved variable".to_string(),
+        "Missing".to_string(),
+        false,
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,7 +216,10 @@ pub enum EnvVarKind {
 }
 
 /// Returns `(EnvVarKind, text_and_border_color, background_tint_color)`
-pub fn get_variable_kind_and_color(scope: &str, is_res: bool) -> (EnvVarKind, gpui::Hsla, gpui::Hsla) {
+pub fn get_variable_kind_and_color(
+    scope: &str,
+    is_res: bool,
+) -> (EnvVarKind, gpui::Hsla, gpui::Hsla) {
     if !is_res {
         // Red / Unresolved
         (
@@ -218,8 +262,8 @@ pub fn build_tokenized_content(text: &str, env: &EnvironmentState) -> InputConte
     for span in spans {
         if span.start < text.len() && span.end <= text.len() {
             let matched_text = &text[span.start..span.end];
-            let token = InlineToken::new(span.name.clone(), matched_text)
-                .with_label(span.name.clone());
+            let token =
+                InlineToken::new(span.name.clone(), matched_text).with_label(span.name.clone());
             if let Ok(new_content) = content.clone().with_token(span.start..span.end, token) {
                 content = new_content;
             }
@@ -294,7 +338,10 @@ impl CompletionProvider for EnvCompletionProvider {
     }
 
     fn is_completion_trigger(&self, _offset: usize, new_text: &str, _cx: &mut App) -> bool {
-        new_text.contains('{') || new_text.chars().any(|c| c.is_alphanumeric() || c == '_' || c == '$')
+        new_text.contains('{')
+            || new_text
+                .chars()
+                .any(|c| c.is_alphanumeric() || c == '_' || c == '$')
     }
 }
 
@@ -304,23 +351,47 @@ mod tests {
 
     #[test]
     fn test_detect_unclosed_env_var() {
-        assert_eq!(detect_unclosed_env_var("https://api.com/{{"), Some((16, 18, "".to_string())));
-        assert_eq!(detect_unclosed_env_var("https://api.com/{{host"), Some((16, 22, "host".to_string())));
+        assert_eq!(
+            detect_unclosed_env_var("https://api.com/{{"),
+            Some((16, 18, "".to_string()))
+        );
+        assert_eq!(
+            detect_unclosed_env_var("https://api.com/{{host"),
+            Some((16, 22, "host".to_string()))
+        );
         assert_eq!(detect_unclosed_env_var("https://api.com/{{host}}"), None);
-        assert_eq!(detect_unclosed_env_var("https://api.com/{{host}}/{{user"), Some((25, 31, "user".to_string())));
+        assert_eq!(
+            detect_unclosed_env_var("https://api.com/{{host}}/{{user"),
+            Some((25, 31, "user".to_string()))
+        );
         assert_eq!(detect_unclosed_env_var("no braces"), None);
         // Middle variable with path after it
-        assert_eq!(detect_unclosed_env_var("https://api.com/{{host/users"), Some((16, 22, "host".to_string())));
+        assert_eq!(
+            detect_unclosed_env_var("https://api.com/{{host/users"),
+            Some((16, 22, "host".to_string()))
+        );
         // Middle variable while second variable is already closed
-        assert_eq!(detect_unclosed_env_var("https://api.com/{{host/users/{{id}}"), Some((16, 22, "host".to_string())));
+        assert_eq!(
+            detect_unclosed_env_var("https://api.com/{{host/users/{{id}}"),
+            Some((16, 22, "host".to_string()))
+        );
         // Variable at start unclosed
-        assert_eq!(detect_unclosed_env_var("{{base/api"), Some((0, 6, "base".to_string())));
+        assert_eq!(
+            detect_unclosed_env_var("{{base/api"),
+            Some((0, 6, "base".to_string()))
+        );
         // Variable at start closed
         assert_eq!(detect_unclosed_env_var("{{base_url}}/api"), None);
         // Variable at end
-        assert_eq!(detect_unclosed_env_var("{{base_url"), Some((0, 10, "base_url".to_string())));
+        assert_eq!(
+            detect_unclosed_env_var("{{base_url"),
+            Some((0, 10, "base_url".to_string()))
+        );
         // Dynamic variable unclosed
-        assert_eq!(detect_unclosed_env_var("https://api.com/{{$guid"), Some((16, 23, "$guid".to_string())));
+        assert_eq!(
+            detect_unclosed_env_var("https://api.com/{{$guid"),
+            Some((16, 23, "$guid".to_string()))
+        );
 
         // Test replacement in middle preserves prefix and suffix
         let text = "https://api.com/{{host/users";
@@ -332,36 +403,48 @@ mod tests {
 
     #[test]
     fn test_get_env_completions_and_details() {
-        let store = std::sync::Arc::new(restclient_core::storage::FsWorkspaceStore::new(std::path::Path::new("./test-env-comp")));
+        let store = std::sync::Arc::new(restclient_core::storage::FsWorkspaceStore::new(
+            std::path::Path::new("./test-env-comp"),
+        ));
         let mut env = EnvironmentState::new(store, "default".to_string(), None);
-        env.global_environment.variables.push(restclient_core::models::EnvironmentVariable {
-            key: "apiKey".to_string(),
-            initial_value: "secret-123".to_string(),
-            current_value: "".to_string(),
-            secret: true,
-        });
+        env.global_environment
+            .variables
+            .push(restclient_core::models::EnvironmentVariable {
+                key: "apiKey".to_string(),
+                initial_value: "secret-123".to_string(),
+                current_value: "".to_string(),
+                secret: true,
+            });
 
         let mut custom_env = restclient_core::models::Environment::new("default", "Staging");
-        custom_env.variables.push(restclient_core::models::EnvironmentVariable {
-            key: "baseUrl".to_string(),
-            initial_value: "https://staging.api.com".to_string(),
-            current_value: "".to_string(),
-            secret: false,
-        });
+        custom_env
+            .variables
+            .push(restclient_core::models::EnvironmentVariable {
+                key: "baseUrl".to_string(),
+                initial_value: "https://staging.api.com".to_string(),
+                current_value: "".to_string(),
+                secret: false,
+            });
         let env_id = custom_env.id.clone();
         env.environments.push(custom_env);
         env.active_environment_id = Some(env_id);
 
         // 1. Completion test
         let completions = get_env_completions(&env, "base");
-        assert!(completions.iter().any(|c| c.name == "baseUrl" && c.scope.contains("Staging")));
+        assert!(completions
+            .iter()
+            .any(|c| c.name == "baseUrl" && c.scope.contains("Staging")));
 
         let global_comp = get_env_completions(&env, "api");
-        assert!(global_comp.iter().any(|c| c.name == "apiKey" && c.is_secret));
+        assert!(global_comp
+            .iter()
+            .any(|c| c.name == "apiKey" && c.is_secret));
 
         // Dynamic completion test
         let dyn_comp = get_env_completions(&env, "guid");
-        assert!(dyn_comp.iter().any(|c| c.name == "$guid" && c.scope == "Dynamic"));
+        assert!(dyn_comp
+            .iter()
+            .any(|c| c.name == "$guid" && c.scope == "Dynamic"));
 
         // 2. Variable details test
         let (val, scope, is_res) = get_variable_details(&env, "baseUrl");

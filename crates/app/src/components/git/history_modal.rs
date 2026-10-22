@@ -1,5 +1,7 @@
 use super::common::{render_error_banner, render_not_a_repo_view};
-use super::diff_view::{render_diff_content, render_diff_view_toggle, split_diff_into_files, DiffViewMode};
+use super::diff_view::{
+    render_diff_content, render_diff_view_toggle, split_diff_into_files, DiffViewMode,
+};
 use crate::state::GitState;
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
@@ -325,7 +327,10 @@ impl RenderOnce for GitHistoryModal {
             .id("git-history-modal-overlay")
             .absolute()
             .inset_0()
-            .bg(gpui::Hsla { a: 0.65, ..t.bg_app })
+            .bg(gpui::Hsla {
+                a: 0.65,
+                ..t.bg_app
+            })
             .flex()
             .items_center()
             .justify_center()
@@ -387,12 +392,7 @@ impl RenderOnce for GitHistoryModal {
                                     .flex()
                                     .items_center()
                                     .gap(px(10.))
-                                    .child(
-                                        div()
-                                            .text_base()
-                                            .text_color(t.primary)
-                                            .child("◷"),
-                                    )
+                                    .child(div().text_base().text_color(t.primary).child("◷"))
                                     .child(
                                         div()
                                             .text_sm()
@@ -423,30 +423,26 @@ impl RenderOnce for GitHistoryModal {
                                     }),
                             )
                             .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(8.))
-                                    .child(
-                                        div()
-                                            .id("btn-git-history-close")
-                                            .px(px(8.))
-                                            .py(px(4.))
-                                            .rounded(px(4.))
-                                            .cursor_pointer()
-                                            .text_sm()
-                                            .text_color(t.text_muted)
-                                            .hover(|s| s.text_color(t.text_primary))
-                                            .on_click({
-                                                let git_s = git_clone.clone();
-                                                move |_, _, cx| {
-                                                    git_s.update(cx, |state, cx| {
-                                                        state.close_modal(cx);
-                                                    });
-                                                }
-                                            })
-                                            .child("✕"),
-                                    ),
+                                div().flex().items_center().gap(px(8.)).child(
+                                    div()
+                                        .id("btn-git-history-close")
+                                        .px(px(8.))
+                                        .py(px(4.))
+                                        .rounded(px(4.))
+                                        .cursor_pointer()
+                                        .text_sm()
+                                        .text_color(t.text_muted)
+                                        .hover(|s| s.text_color(t.text_primary))
+                                        .on_click({
+                                            let git_s = git_clone.clone();
+                                            move |_, _, cx| {
+                                                git_s.update(cx, |state, cx| {
+                                                    state.close_modal(cx);
+                                                });
+                                            }
+                                        })
+                                        .child("✕"),
+                                ),
                             ),
                     )
                     // Error banner
@@ -454,16 +450,18 @@ impl RenderOnce for GitHistoryModal {
                         this.child(render_error_banner(git_clone.clone(), err))
                     })
                     // Body
-                    .child(
-                        div()
-                            .flex_1()
-                            .overflow_hidden()
-                            .child(if !is_repo {
-                                render_not_a_repo_view(git_clone.clone(), is_loading)
-                            } else {
-                                render_history_view(git_clone.clone(), history, selected_commit, view_mode, view_mode_entity, expanded_files)
-                            }),
-                    ),
+                    .child(div().flex_1().overflow_hidden().child(if !is_repo {
+                        render_not_a_repo_view(git_clone.clone(), is_loading)
+                    } else {
+                        render_history_view(
+                            git_clone.clone(),
+                            history,
+                            selected_commit,
+                            view_mode,
+                            view_mode_entity,
+                            expanded_files,
+                        )
+                    })),
             )
             .into_any_element()
     }

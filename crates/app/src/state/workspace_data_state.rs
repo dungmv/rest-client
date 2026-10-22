@@ -187,8 +187,10 @@ impl WorkspaceDataState {
     pub fn reload_tree(&mut self) {
         if let Ok(tree) = self.store.scan_tree() {
             let ws_name = self.workspace_meta.name.clone();
-            let mut all_requests = Vec::new();
-            let mut all_folders = Vec::new();
+            let total_reqs = tree.count_requests();
+            let total_folders = tree.count_folders();
+            let mut all_requests = Vec::with_capacity(total_reqs);
+            let mut all_folders = Vec::with_capacity(total_folders);
             let mut errors = HashMap::new();
 
             for req_node in tree.root_requests {

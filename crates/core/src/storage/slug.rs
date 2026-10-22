@@ -78,7 +78,8 @@ mod tests {
 
     #[test]
     fn test_unique_slug_and_stem_pairing() {
-        let temp_dir = std::env::temp_dir().join(format!("test_slug_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_slug_{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&temp_dir).unwrap();
 
         let s1 = unique_slug(&temp_dir, "login", "yaml");

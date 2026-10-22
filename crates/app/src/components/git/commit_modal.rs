@@ -1,4 +1,6 @@
-use super::common::{render_checkbox, render_error_banner, render_not_a_repo_view, render_status_badge};
+use super::common::{
+    render_checkbox, render_error_banner, render_not_a_repo_view, render_status_badge,
+};
 use super::diff_view::{render_diff_content, render_diff_view_toggle, DiffViewMode};
 use crate::state::{GitState, WorkspaceDataState};
 use crate::theme::theme;
@@ -21,7 +23,10 @@ pub struct GitCommitModal {
 
 impl GitCommitModal {
     pub fn new(git_state: Entity<GitState>, workspace_state: Entity<WorkspaceDataState>) -> Self {
-        Self { git_state, workspace_state }
+        Self {
+            git_state,
+            workspace_state,
+        }
     }
 }
 
@@ -52,9 +57,21 @@ pub fn render_changes_view(props: ChangesViewProps) -> gpui::AnyElement {
     let selected_unstaged = props.selected_unstaged;
     let is_loading = props.is_loading;
 
-    let staged_files = props.status_opt.as_ref().map(|s| s.staged_files.clone()).unwrap_or_default();
-    let unstaged_files = props.status_opt.as_ref().map(|s| s.unstaged_files.clone()).unwrap_or_default();
-    let untracked_files = props.status_opt.as_ref().map(|s| s.untracked_files.clone()).unwrap_or_default();
+    let staged_files = props
+        .status_opt
+        .as_ref()
+        .map(|s| s.staged_files.clone())
+        .unwrap_or_default();
+    let unstaged_files = props
+        .status_opt
+        .as_ref()
+        .map(|s| s.unstaged_files.clone())
+        .unwrap_or_default();
+    let untracked_files = props
+        .status_opt
+        .as_ref()
+        .map(|s| s.untracked_files.clone())
+        .unwrap_or_default();
 
     let total_staged = staged_files.len();
 
@@ -517,7 +534,17 @@ impl RenderOnce for GitCommitModal {
         let git_clone = self.git_state.clone();
         let ws_clone = self.workspace_state.clone();
 
-        let (is_repo, branch_name, status_opt, selected_file, diff_content, git_error, selected_unstaged, selected_staged, is_loading) = {
+        let (
+            is_repo,
+            branch_name,
+            status_opt,
+            selected_file,
+            diff_content,
+            git_error,
+            selected_unstaged,
+            selected_staged,
+            is_loading,
+        ) = {
             let git = self.git_state.read(cx);
             (
                 git.status.as_ref().map(|s| s.is_repo).unwrap_or(false),
@@ -532,9 +559,18 @@ impl RenderOnce for GitCommitModal {
             )
         };
 
-        let staged_count = status_opt.as_ref().map(|s| s.staged_files.len()).unwrap_or(0);
-        let unstaged_count = status_opt.as_ref().map(|s| s.unstaged_files.len()).unwrap_or(0);
-        let untracked_count = status_opt.as_ref().map(|s| s.untracked_files.len()).unwrap_or(0);
+        let staged_count = status_opt
+            .as_ref()
+            .map(|s| s.staged_files.len())
+            .unwrap_or(0);
+        let unstaged_count = status_opt
+            .as_ref()
+            .map(|s| s.unstaged_files.len())
+            .unwrap_or(0);
+        let untracked_count = status_opt
+            .as_ref()
+            .map(|s| s.untracked_files.len())
+            .unwrap_or(0);
         let total_changes = staged_count + unstaged_count + untracked_count;
 
         let commit_input_holder = window.use_keyed_state(
@@ -542,7 +578,8 @@ impl RenderOnce for GitCommitModal {
             cx,
             |window, cx| {
                 let inp = cx.new(|cx| {
-                    InputState::new(window, cx).placeholder("Commit message (e.g. feat: add login endpoint)")
+                    InputState::new(window, cx)
+                        .placeholder("Commit message (e.g. feat: add login endpoint)")
                 });
                 (inp, ())
             },
@@ -564,7 +601,10 @@ impl RenderOnce for GitCommitModal {
             .id("git-commit-modal-overlay")
             .absolute()
             .inset_0()
-            .bg(gpui::Hsla { a: 0.65, ..t.bg_app })
+            .bg(gpui::Hsla {
+                a: 0.65,
+                ..t.bg_app
+            })
             .flex()
             .items_center()
             .justify_center()
@@ -626,12 +666,7 @@ impl RenderOnce for GitCommitModal {
                                     .flex()
                                     .items_center()
                                     .gap(px(10.))
-                                    .child(
-                                        div()
-                                            .text_base()
-                                            .text_color(t.primary)
-                                            .child("⎇"),
-                                    )
+                                    .child(div().text_base().text_color(t.primary).child("⎇"))
                                     .child(
                                         div()
                                             .text_sm()
@@ -662,30 +697,26 @@ impl RenderOnce for GitCommitModal {
                                     }),
                             )
                             .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(8.))
-                                    .child(
-                                        div()
-                                            .id("btn-git-commit-close")
-                                            .px(px(8.))
-                                            .py(px(4.))
-                                            .rounded(px(4.))
-                                            .cursor_pointer()
-                                            .text_sm()
-                                            .text_color(t.text_muted)
-                                            .hover(|s| s.text_color(t.text_primary))
-                                            .on_click({
-                                                let git_s = git_clone.clone();
-                                                move |_, _, cx| {
-                                                    git_s.update(cx, |state, cx| {
-                                                        state.close_modal(cx);
-                                                    });
-                                                }
-                                            })
-                                            .child("✕"),
-                                    ),
+                                div().flex().items_center().gap(px(8.)).child(
+                                    div()
+                                        .id("btn-git-commit-close")
+                                        .px(px(8.))
+                                        .py(px(4.))
+                                        .rounded(px(4.))
+                                        .cursor_pointer()
+                                        .text_sm()
+                                        .text_color(t.text_muted)
+                                        .hover(|s| s.text_color(t.text_primary))
+                                        .on_click({
+                                            let git_s = git_clone.clone();
+                                            move |_, _, cx| {
+                                                git_s.update(cx, |state, cx| {
+                                                    state.close_modal(cx);
+                                                });
+                                            }
+                                        })
+                                        .child("✕"),
+                                ),
                             ),
                     )
                     // Error banner
@@ -693,28 +724,23 @@ impl RenderOnce for GitCommitModal {
                         this.child(render_error_banner(git_clone.clone(), err))
                     })
                     // Body
-                    .child(
-                        div()
-                            .flex_1()
-                            .overflow_hidden()
-                            .child(if !is_repo {
-                                render_not_a_repo_view(git_clone.clone(), is_loading)
-                            } else {
-                                render_changes_view(ChangesViewProps {
-                                    git_clone: git_clone.clone(),
-                                    ws_clone: ws_clone.clone(),
-                                    status_opt,
-                                    selected_file,
-                                    diff_content,
-                                    commit_input,
-                                    view_mode,
-                                    mode_entity: view_mode_entity,
-                                    selected_staged,
-                                    selected_unstaged,
-                                    is_loading,
-                                })
-                            }),
-                    ),
+                    .child(div().flex_1().overflow_hidden().child(if !is_repo {
+                        render_not_a_repo_view(git_clone.clone(), is_loading)
+                    } else {
+                        render_changes_view(ChangesViewProps {
+                            git_clone: git_clone.clone(),
+                            ws_clone: ws_clone.clone(),
+                            status_opt,
+                            selected_file,
+                            diff_content,
+                            commit_input,
+                            view_mode,
+                            mode_entity: view_mode_entity,
+                            selected_staged,
+                            selected_unstaged,
+                            is_loading,
+                        })
+                    })),
             )
             .into_any_element()
     }

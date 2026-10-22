@@ -76,10 +76,24 @@ impl RenderOnce for ScopeSettingsModal {
                 }
                 ScopeSettingsTarget::Folder(f_id) => {
                     let folder = ws.folders.iter().find(|f| &f.id == f_id).cloned();
-                    let name = folder.as_ref().map(|f| f.name.clone()).unwrap_or_else(|| f_id.clone());
-                    let headers = folder.as_ref().map(|f| f.headers.clone()).unwrap_or_default();
-                    let auth = folder.as_ref().map(|f| f.auth.clone()).unwrap_or(Auth::Inherit);
-                    (format!("Folder Settings: {}", name), Some(f_id.clone()), headers, auth)
+                    let name = folder
+                        .as_ref()
+                        .map(|f| f.name.clone())
+                        .unwrap_or_else(|| f_id.clone());
+                    let headers = folder
+                        .as_ref()
+                        .map(|f| f.headers.clone())
+                        .unwrap_or_default();
+                    let auth = folder
+                        .as_ref()
+                        .map(|f| f.auth.clone())
+                        .unwrap_or(Auth::Inherit);
+                    (
+                        format!("Folder Settings: {}", name),
+                        Some(f_id.clone()),
+                        headers,
+                        auth,
+                    )
                 }
             }
         };
@@ -114,7 +128,8 @@ impl RenderOnce for ScopeSettingsModal {
                     Auth::Bearer { token } => token.clone(),
                     _ => String::new(),
                 };
-                let input = cx.new(|cx| InputState::new(window, cx).placeholder("Token or {{token}}"));
+                let input =
+                    cx.new(|cx| InputState::new(window, cx).placeholder("Token or {{token}}"));
                 input.update(cx, |s, cx| s.set_value(init_val, window, cx));
 
                 let inp = input.clone();
@@ -126,12 +141,27 @@ impl RenderOnce for ScopeSettingsModal {
                         let new_auth = Auth::Bearer { token };
                         match &tgt {
                             ScopeSettingsTarget::Workspace => {
-                                let cur_h = ws_s.read(cx).active_workspace.as_ref().map(|w| w.headers.clone()).unwrap_or_default();
-                                ws_s.update(cx, |state, cx| state.save_workspace_scope_settings(cur_h, new_auth, cx));
+                                let cur_h = ws_s
+                                    .read(cx)
+                                    .active_workspace
+                                    .as_ref()
+                                    .map(|w| w.headers.clone())
+                                    .unwrap_or_default();
+                                ws_s.update(cx, |state, cx| {
+                                    state.save_workspace_scope_settings(cur_h, new_auth, cx)
+                                });
                             }
                             ScopeSettingsTarget::Folder(fid) => {
-                                let cur_h = ws_s.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| f.headers.clone()).unwrap_or_default();
-                                ws_s.update(cx, |state, cx| state.save_folder_scope_settings(fid, cur_h, new_auth, cx));
+                                let cur_h = ws_s
+                                    .read(cx)
+                                    .folders
+                                    .iter()
+                                    .find(|f| &f.id == fid)
+                                    .map(|f| f.headers.clone())
+                                    .unwrap_or_default();
+                                ws_s.update(cx, |state, cx| {
+                                    state.save_folder_scope_settings(fid, cur_h, new_auth, cx)
+                                });
                             }
                         }
                     }
@@ -159,24 +189,50 @@ impl RenderOnce for ScopeSettingsModal {
                     if let InputEvent::Change = ev {
                         let u = inp.read(cx).value().to_string();
                         let p = match &tgt {
-                            ScopeSettingsTarget::Workspace => match &ws_s.read(cx).workspace_meta.auth {
-                                Auth::Basic { password, .. } => password.clone(),
-                                _ => String::new(),
-                            },
-                            ScopeSettingsTarget::Folder(fid) => match ws_s.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| &f.auth) {
+                            ScopeSettingsTarget::Workspace => {
+                                match &ws_s.read(cx).workspace_meta.auth {
+                                    Auth::Basic { password, .. } => password.clone(),
+                                    _ => String::new(),
+                                }
+                            }
+                            ScopeSettingsTarget::Folder(fid) => match ws_s
+                                .read(cx)
+                                .folders
+                                .iter()
+                                .find(|f| &f.id == fid)
+                                .map(|f| &f.auth)
+                            {
                                 Some(Auth::Basic { password, .. }) => password.clone(),
                                 _ => String::new(),
                             },
                         };
-                        let new_auth = Auth::Basic { username: u, password: p };
+                        let new_auth = Auth::Basic {
+                            username: u,
+                            password: p,
+                        };
                         match &tgt {
                             ScopeSettingsTarget::Workspace => {
-                                let cur_h = ws_s.read(cx).active_workspace.as_ref().map(|w| w.headers.clone()).unwrap_or_default();
-                                ws_s.update(cx, |state, cx| state.save_workspace_scope_settings(cur_h, new_auth, cx));
+                                let cur_h = ws_s
+                                    .read(cx)
+                                    .active_workspace
+                                    .as_ref()
+                                    .map(|w| w.headers.clone())
+                                    .unwrap_or_default();
+                                ws_s.update(cx, |state, cx| {
+                                    state.save_workspace_scope_settings(cur_h, new_auth, cx)
+                                });
                             }
                             ScopeSettingsTarget::Folder(fid) => {
-                                let cur_h = ws_s.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| f.headers.clone()).unwrap_or_default();
-                                ws_s.update(cx, |state, cx| state.save_folder_scope_settings(fid, cur_h, new_auth, cx));
+                                let cur_h = ws_s
+                                    .read(cx)
+                                    .folders
+                                    .iter()
+                                    .find(|f| &f.id == fid)
+                                    .map(|f| f.headers.clone())
+                                    .unwrap_or_default();
+                                ws_s.update(cx, |state, cx| {
+                                    state.save_folder_scope_settings(fid, cur_h, new_auth, cx)
+                                });
                             }
                         }
                     }
@@ -204,24 +260,50 @@ impl RenderOnce for ScopeSettingsModal {
                     if let InputEvent::Change = ev {
                         let p = inp.read(cx).value().to_string();
                         let u = match &tgt {
-                            ScopeSettingsTarget::Workspace => match &ws_s.read(cx).workspace_meta.auth {
-                                Auth::Basic { username, .. } => username.clone(),
-                                _ => String::new(),
-                            },
-                            ScopeSettingsTarget::Folder(fid) => match ws_s.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| &f.auth) {
+                            ScopeSettingsTarget::Workspace => {
+                                match &ws_s.read(cx).workspace_meta.auth {
+                                    Auth::Basic { username, .. } => username.clone(),
+                                    _ => String::new(),
+                                }
+                            }
+                            ScopeSettingsTarget::Folder(fid) => match ws_s
+                                .read(cx)
+                                .folders
+                                .iter()
+                                .find(|f| &f.id == fid)
+                                .map(|f| &f.auth)
+                            {
                                 Some(Auth::Basic { username, .. }) => username.clone(),
                                 _ => String::new(),
                             },
                         };
-                        let new_auth = Auth::Basic { username: u, password: p };
+                        let new_auth = Auth::Basic {
+                            username: u,
+                            password: p,
+                        };
                         match &tgt {
                             ScopeSettingsTarget::Workspace => {
-                                let cur_h = ws_s.read(cx).active_workspace.as_ref().map(|w| w.headers.clone()).unwrap_or_default();
-                                ws_s.update(cx, |state, cx| state.save_workspace_scope_settings(cur_h, new_auth, cx));
+                                let cur_h = ws_s
+                                    .read(cx)
+                                    .active_workspace
+                                    .as_ref()
+                                    .map(|w| w.headers.clone())
+                                    .unwrap_or_default();
+                                ws_s.update(cx, |state, cx| {
+                                    state.save_workspace_scope_settings(cur_h, new_auth, cx)
+                                });
                             }
                             ScopeSettingsTarget::Folder(fid) => {
-                                let cur_h = ws_s.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| f.headers.clone()).unwrap_or_default();
-                                ws_s.update(cx, |state, cx| state.save_folder_scope_settings(fid, cur_h, new_auth, cx));
+                                let cur_h = ws_s
+                                    .read(cx)
+                                    .folders
+                                    .iter()
+                                    .find(|f| &f.id == fid)
+                                    .map(|f| f.headers.clone())
+                                    .unwrap_or_default();
+                                ws_s.update(cx, |state, cx| {
+                                    state.save_folder_scope_settings(fid, cur_h, new_auth, cx)
+                                });
                             }
                         }
                     }
@@ -249,24 +331,55 @@ impl RenderOnce for ScopeSettingsModal {
                     if let InputEvent::Change = ev {
                         let k = inp.read(cx).value().to_string();
                         let (v, in_h) = match &tgt {
-                            ScopeSettingsTarget::Workspace => match &ws_s.read(cx).workspace_meta.auth {
-                                Auth::ApiKey { value, in_header, .. } => (value.clone(), *in_header),
-                                _ => (String::new(), true),
-                            },
-                            ScopeSettingsTarget::Folder(fid) => match ws_s.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| &f.auth) {
-                                Some(Auth::ApiKey { value, in_header, .. }) => (value.clone(), *in_header),
+                            ScopeSettingsTarget::Workspace => {
+                                match &ws_s.read(cx).workspace_meta.auth {
+                                    Auth::ApiKey {
+                                        value, in_header, ..
+                                    } => (value.clone(), *in_header),
+                                    _ => (String::new(), true),
+                                }
+                            }
+                            ScopeSettingsTarget::Folder(fid) => match ws_s
+                                .read(cx)
+                                .folders
+                                .iter()
+                                .find(|f| &f.id == fid)
+                                .map(|f| &f.auth)
+                            {
+                                Some(Auth::ApiKey {
+                                    value, in_header, ..
+                                }) => (value.clone(), *in_header),
                                 _ => (String::new(), true),
                             },
                         };
-                        let new_auth = Auth::ApiKey { key: k, value: v, in_header: in_h };
+                        let new_auth = Auth::ApiKey {
+                            key: k,
+                            value: v,
+                            in_header: in_h,
+                        };
                         match &tgt {
                             ScopeSettingsTarget::Workspace => {
-                                let cur_h = ws_s.read(cx).active_workspace.as_ref().map(|w| w.headers.clone()).unwrap_or_default();
-                                ws_s.update(cx, |state, cx| state.save_workspace_scope_settings(cur_h, new_auth, cx));
+                                let cur_h = ws_s
+                                    .read(cx)
+                                    .active_workspace
+                                    .as_ref()
+                                    .map(|w| w.headers.clone())
+                                    .unwrap_or_default();
+                                ws_s.update(cx, |state, cx| {
+                                    state.save_workspace_scope_settings(cur_h, new_auth, cx)
+                                });
                             }
                             ScopeSettingsTarget::Folder(fid) => {
-                                let cur_h = ws_s.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| f.headers.clone()).unwrap_or_default();
-                                ws_s.update(cx, |state, cx| state.save_folder_scope_settings(fid, cur_h, new_auth, cx));
+                                let cur_h = ws_s
+                                    .read(cx)
+                                    .folders
+                                    .iter()
+                                    .find(|f| &f.id == fid)
+                                    .map(|f| f.headers.clone())
+                                    .unwrap_or_default();
+                                ws_s.update(cx, |state, cx| {
+                                    state.save_folder_scope_settings(fid, cur_h, new_auth, cx)
+                                });
                             }
                         }
                     }
@@ -294,24 +407,55 @@ impl RenderOnce for ScopeSettingsModal {
                     if let InputEvent::Change = ev {
                         let v = inp.read(cx).value().to_string();
                         let (k, in_h) = match &tgt {
-                            ScopeSettingsTarget::Workspace => match &ws_s.read(cx).workspace_meta.auth {
-                                Auth::ApiKey { key, in_header, .. } => (key.clone(), *in_header),
-                                _ => ("X-API-Key".to_string(), true),
-                            },
-                            ScopeSettingsTarget::Folder(fid) => match ws_s.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| &f.auth) {
-                                Some(Auth::ApiKey { key, in_header, .. }) => (key.clone(), *in_header),
+                            ScopeSettingsTarget::Workspace => {
+                                match &ws_s.read(cx).workspace_meta.auth {
+                                    Auth::ApiKey { key, in_header, .. } => {
+                                        (key.clone(), *in_header)
+                                    }
+                                    _ => ("X-API-Key".to_string(), true),
+                                }
+                            }
+                            ScopeSettingsTarget::Folder(fid) => match ws_s
+                                .read(cx)
+                                .folders
+                                .iter()
+                                .find(|f| &f.id == fid)
+                                .map(|f| &f.auth)
+                            {
+                                Some(Auth::ApiKey { key, in_header, .. }) => {
+                                    (key.clone(), *in_header)
+                                }
                                 _ => ("X-API-Key".to_string(), true),
                             },
                         };
-                        let new_auth = Auth::ApiKey { key: k, value: v, in_header: in_h };
+                        let new_auth = Auth::ApiKey {
+                            key: k,
+                            value: v,
+                            in_header: in_h,
+                        };
                         match &tgt {
                             ScopeSettingsTarget::Workspace => {
-                                let cur_h = ws_s.read(cx).active_workspace.as_ref().map(|w| w.headers.clone()).unwrap_or_default();
-                                ws_s.update(cx, |state, cx| state.save_workspace_scope_settings(cur_h, new_auth, cx));
+                                let cur_h = ws_s
+                                    .read(cx)
+                                    .active_workspace
+                                    .as_ref()
+                                    .map(|w| w.headers.clone())
+                                    .unwrap_or_default();
+                                ws_s.update(cx, |state, cx| {
+                                    state.save_workspace_scope_settings(cur_h, new_auth, cx)
+                                });
                             }
                             ScopeSettingsTarget::Folder(fid) => {
-                                let cur_h = ws_s.read(cx).folders.iter().find(|f| &f.id == fid).map(|f| f.headers.clone()).unwrap_or_default();
-                                ws_s.update(cx, |state, cx| state.save_folder_scope_settings(fid, cur_h, new_auth, cx));
+                                let cur_h = ws_s
+                                    .read(cx)
+                                    .folders
+                                    .iter()
+                                    .find(|f| &f.id == fid)
+                                    .map(|f| f.headers.clone())
+                                    .unwrap_or_default();
+                                ws_s.update(cx, |state, cx| {
+                                    state.save_folder_scope_settings(fid, cur_h, new_auth, cx)
+                                });
                             }
                         }
                     }

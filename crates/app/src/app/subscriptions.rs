@@ -51,8 +51,8 @@ pub fn setup_app_subscriptions(
     let ed_url = editor_state.clone();
     let ws_url = workspace_state.clone();
     let per_url = persistence_state.clone();
-    subscriptions.push(cx.subscribe(url_input, move |this, input, event, cx| {
-        match event {
+    subscriptions.push(
+        cx.subscribe(url_input, move |this, input, event, cx| match event {
             InputEvent::Change => {
                 let val = input.read(cx).value().to_string();
                 let active_id = ed_url.read(cx).active_request_id().to_string();
@@ -119,8 +119,8 @@ pub fn setup_app_subscriptions(
                 this.send_current_request(cx);
             }
             _ => {}
-        }
-    }));
+        }),
+    );
 
     // 2. Subscribe to JSON editor change
     let ed_json = editor_state.clone();
@@ -147,7 +147,9 @@ pub fn setup_app_subscriptions(
             let val = txt.read(cx).value().to_string();
             let active_id = ed_xml.read(cx).active_request_id().to_string();
             ws_xml.update(cx, |ws, _| {
-                ws.update_active_request(&active_id, |r| r.set_raw_body(val, "application/xml".to_string()));
+                ws.update_active_request(&active_id, |r| {
+                    r.set_raw_body(val, "application/xml".to_string())
+                });
             });
             ed_xml.update(cx, |ed, cx| ed.mark_dirty(cx));
             save_active_request_without_redraw(&ed_xml, &per_xml, &ws_xml, cx);
@@ -218,7 +220,9 @@ pub fn setup_app_subscriptions(
             ws_basic_u.update(cx, |ws, _| {
                 ws.update_active_request(&active_id, |r| {
                     let had_template = match &r.auth {
-                        Auth::Basic { username, password } => username.contains("{{") || password.contains("{{"),
+                        Auth::Basic { username, password } => {
+                            username.contains("{{") || password.contains("{{")
+                        }
                         _ => false,
                     };
                     needs_refresh = had_template || u.contains("{{") || p.contains("{{");
@@ -248,7 +252,9 @@ pub fn setup_app_subscriptions(
             ws_basic_p.update(cx, |ws, _| {
                 ws.update_active_request(&active_id, |r| {
                     let had_template = match &r.auth {
-                        Auth::Basic { username, password } => username.contains("{{") || password.contains("{{"),
+                        Auth::Basic { username, password } => {
+                            username.contains("{{") || password.contains("{{")
+                        }
                         _ => false,
                     };
                     needs_refresh = had_template || u.contains("{{") || p.contains("{{");
@@ -278,7 +284,11 @@ pub fn setup_app_subscriptions(
             ws_ak_k.update(cx, |ws, _| {
                 ws.update_active_request(&active_id, |r| {
                     let (had_template, in_header) = match &r.auth {
-                        Auth::ApiKey { key, value, in_header } => (key.contains("{{") || value.contains("{{"), *in_header),
+                        Auth::ApiKey {
+                            key,
+                            value,
+                            in_header,
+                        } => (key.contains("{{") || value.contains("{{"), *in_header),
                         _ => (false, true),
                     };
                     needs_refresh = had_template || k.contains("{{") || v.contains("{{");
@@ -308,7 +318,11 @@ pub fn setup_app_subscriptions(
             ws_ak_v.update(cx, |ws, _| {
                 ws.update_active_request(&active_id, |r| {
                     let (had_template, in_header) = match &r.auth {
-                        Auth::ApiKey { key, value, in_header } => (key.contains("{{") || value.contains("{{"), *in_header),
+                        Auth::ApiKey {
+                            key,
+                            value,
+                            in_header,
+                        } => (key.contains("{{") || value.contains("{{"), *in_header),
                         _ => (false, true),
                     };
                     needs_refresh = had_template || k.contains("{{") || v.contains("{{");
@@ -361,103 +375,117 @@ pub fn setup_app_subscriptions(
     let per_clone = persistence_state.clone();
     let resp_clone = response_state.clone();
     let mut last_req_id = initial_req.map(|r| r.id.clone());
-    subscriptions.push(cx.observe_in(editor_state, window, move |this, ed, window, cx| {
-        this.composer_inputs.sync_active_request_editors(
-            &ed,
-            &this.state.workspace,
-            &this.state.env,
-            window,
-            cx,
-        );
+    subscriptions.push(
+        cx.observe_in(editor_state, window, move |this, ed, window, cx| {
+            this.composer_inputs.sync_active_request_editors(
+                &ed,
+                &this.state.workspace,
+                &this.state.env,
+                window,
+                cx,
+            );
 
-        let (active_id, is_dirty) = {
-            let ed_ref = ed.read(cx);
-            (ed_ref.active_request_id().to_string(), ed_ref.is_dirty)
-        };
-        let is_scratch = active_id == "scratch" || active_id.is_empty();
-        if last_req_id.as_deref() != Some(&active_id) {
-            last_req_id = Some(active_id.clone());
-            let ws_store = ws_clone.read(cx).store.clone();
-            resp_clone.update(cx, |r_state, cx| {
-                r_state.load_for_request(&active_id, ws_store.as_ref(), cx);
-            });
-        } else if !is_scratch && is_dirty {
-            // Debounced auto-save active request to workspace storage
-            let ed_ent = ed.clone();
-            let ws_ent = ws_clone.clone();
-            per_clone.update(cx, |per, cx| {
-                per.schedule_save_active_request(active_id, ed_ent, ws_ent, cx);
-            });
-        }
-    }));
+            let (active_id, is_dirty) = {
+                let ed_ref = ed.read(cx);
+                (ed_ref.active_request_id().to_string(), ed_ref.is_dirty)
+            };
+            let is_scratch = active_id == "scratch" || active_id.is_empty();
+            if last_req_id.as_deref() != Some(&active_id) {
+                last_req_id = Some(active_id.clone());
+                let ws_store = ws_clone.read(cx).store.clone();
+                resp_clone.update(cx, |r_state, cx| {
+                    r_state.load_for_request(&active_id, ws_store.as_ref(), cx);
+                });
+            } else if !is_scratch && is_dirty {
+                // Debounced auto-save active request to workspace storage
+                let ed_ent = ed.clone();
+                let ws_ent = ws_clone.clone();
+                per_clone.update(cx, |per, cx| {
+                    per.schedule_save_active_request(active_id, ed_ent, ws_ent, cx);
+                });
+            }
+        }),
+    );
 
     // 5. Observe workspace_state: synchronize workspace changes
     let ed_sync = editor_state.clone();
     let resp_sync = response_state.clone();
     let per_sync = persistence_state.clone();
     let mut last_workspace_path = workspace_state.read(cx).workspace_path.clone();
-    subscriptions.push(cx.observe_in(workspace_state, window, move |this, ws, window, cx| {
-        this.composer_inputs.sync_active_request_editors(
-            &this.state.session,
-            &ws,
-            &this.state.env,
-            window,
-            cx,
-        );
+    subscriptions.push(
+        cx.observe_in(workspace_state, window, move |this, ws, window, cx| {
+            this.composer_inputs.sync_active_request_editors(
+                &this.state.session,
+                &ws,
+                &this.state.env,
+                window,
+                cx,
+            );
 
-        let current_ws_path = ws.read(cx).workspace_path.clone();
-        if current_ws_path != last_workspace_path {
-            last_workspace_path = current_ws_path;
-            let (next_id, ws_store) = {
-                let ws_ref = ws.read(cx);
-                let per_ref = per_sync.read(cx);
-                let id = per_ref
-                    .local_state
-                    .active_request
-                    .as_ref()
-                    .and_then(|act_id| ws_ref.requests.iter().find(|r| &r.id == act_id).map(|r| r.id.clone()))
-                    .or_else(|| ws_ref.requests.first().map(|r| r.id.clone()))
-                    .unwrap_or_else(|| "scratch".to_string());
-                (id, ws_ref.store.clone())
-            };
-            ed_sync.update(cx, |ed, cx| {
-                ed.set_active_request_id(&next_id, cx);
-            });
-            resp_sync.update(cx, |resp, cx| {
-                resp.load_for_request(&next_id, ws_store.as_ref(), cx);
-            });
-            return;
-        }
-
-        let last_renamed = ws.read(cx).last_renamed_request.clone();
-        if let Some((old_id, new_id)) = last_renamed {
-            resp_sync.update(cx, |resp, _cx| {
-                resp.rename_request(&old_id, &new_id);
-            });
-            ed_sync.update(cx, |ed, cx| {
-                if ed.active_request_id.as_deref() == Some(&old_id) {
-                    ed.active_request_id = Some(new_id);
-                    cx.notify();
-                }
-            });
-        }
-
-        if ws.read(cx).last_renamed_example.is_some() {
-            let last_renamed_ex = ws.update(cx, |ws, _cx| ws.last_renamed_example.take());
-            if let Some((_req_id, old_ex, new_ex)) = last_renamed_ex {
+            let current_ws_path = ws.read(cx).workspace_path.clone();
+            if current_ws_path != last_workspace_path {
+                last_workspace_path = current_ws_path;
+                let (next_id, ws_store) = {
+                    let ws_ref = ws.read(cx);
+                    let per_ref = per_sync.read(cx);
+                    let id = per_ref
+                        .local_state
+                        .active_request
+                        .as_ref()
+                        .and_then(|act_id| {
+                            ws_ref
+                                .requests
+                                .iter()
+                                .find(|r| &r.id == act_id)
+                                .map(|r| r.id.clone())
+                        })
+                        .or_else(|| ws_ref.requests.first().map(|r| r.id.clone()))
+                        .unwrap_or_else(|| "scratch".to_string());
+                    (id, ws_ref.store.clone())
+                };
+                ed_sync.update(cx, |ed, cx| {
+                    ed.set_active_request_id(&next_id, cx);
+                });
                 resp_sync.update(cx, |resp, cx| {
-                    resp.rename_example(&old_ex, &new_ex, cx);
+                    resp.load_for_request(&next_id, ws_store.as_ref(), cx);
+                });
+                return;
+            }
+
+            let last_renamed = ws.read(cx).last_renamed_request.clone();
+            if let Some((old_id, new_id)) = last_renamed {
+                resp_sync.update(cx, |resp, _cx| {
+                    resp.rename_request(&old_id, &new_id);
+                });
+                ed_sync.update(cx, |ed, cx| {
+                    if ed.active_request_id.as_deref() == Some(&old_id) {
+                        ed.active_request_id = Some(new_id);
+                        cx.notify();
+                    }
                 });
             }
-        }
-    }));
+
+            if ws.read(cx).last_renamed_example.is_some() {
+                let last_renamed_ex = ws.update(cx, |ws, _cx| ws.last_renamed_example.take());
+                if let Some((_req_id, old_ex, new_ex)) = last_renamed_ex {
+                    resp_sync.update(cx, |resp, cx| {
+                        resp.rename_example(&old_ex, &new_ex, cx);
+                    });
+                }
+            }
+        }),
+    );
 
     // 6. Observe response_state: synchronize displays & re-render on response/example changes
-    subscriptions.push(cx.observe_in(response_state, window, move |this, resp, window, cx| {
-        this.inspector_displays.sync_response_editor(&resp, window, cx);
-        this.inspector_displays.sync_sent_request_preview(&resp, window, cx);
-        cx.notify();
-    }));
+    subscriptions.push(
+        cx.observe_in(response_state, window, move |this, resp, window, cx| {
+            this.inspector_displays
+                .sync_response_editor(&resp, window, cx);
+            this.inspector_displays
+                .sync_sent_request_preview(&resp, window, cx);
+            cx.notify();
+        }),
+    );
 
     // 7. Observe sidebar_state, modal_state, git_state, env_state, persistence_state: re-render AppView on UI changes
     subscriptions.push(cx.observe(targets.sidebar_state, |_, _, cx| {

@@ -1,6 +1,8 @@
-use restclient_core::http::{HttpError, HttpExecutor, HttpProgress, ReqwestExecutor, ResolvedRequest};
+use restclient_core::http::{
+    HttpError, HttpExecutor, HttpProgress, ReqwestExecutor, ResolvedRequest,
+};
 use restclient_core::models::{
-    Environment, EnvironmentVariable, HttpResponseRecord, HttpRequestItem,
+    Environment, EnvironmentVariable, HttpRequestItem, HttpResponseRecord,
 };
 use restclient_core::scripting::{
     resolve_fake_vars_in_request, PostResponseContext, PostResponseOutput, PreRequestContext,
@@ -19,8 +21,8 @@ pub enum ExecEvent {
     Progress(String),
     Success {
         record: Arc<HttpResponseRecord>,
-        pre_output: PreRequestOutput,
-        post_output: PostResponseOutput,
+        pre_output: Box<PreRequestOutput>,
+        post_output: Box<PostResponseOutput>,
     },
     Cancelled,
     Error(String),
@@ -44,95 +46,97 @@ impl HttpEngine {
     ) -> mpsc::UnboundedReceiver<ExecEvent> {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let executor = self.executor.clone();
+        let send_event_tx = event_tx.clone();
 
-        // 1. Resolve Dynamic Fake Variables
-        resolve_fake_vars_in_request(&mut req_item);
-
-        // 2. Pre-request Script execution
-        let pre_script_code = req_item.script.as_ref().and_then(|s| s.pre_request.clone());
-        let post_script_code = req_item.script.as_ref().and_then(|s| s.post_response.clone());
-
-        let pre_output = if let Some(code) = pre_script_code {
-            let pre_ctx = PreRequestContext::from_request_and_env(&req_item, env.as_deref());
-            ScriptSandbox::run_pre_request(&code, pre_ctx)
-        } else {
-            PreRequestOutput::default()
-        };
-
-        let initial_logs = pre_output.console_entries.clone();
-        let pre_script_error = pre_output.error.clone();
-        let _ = event_tx.send(ExecEvent::Started {
-            request_id: req_item.id.clone(),
-            initial_logs,
-            pre_script_error,
-        });
-
-        // 3. Merge pre-script env mutations into effective environment
-        let mut mutated_env = None;
-        let effective_env_ref = if !pre_output.env_mutations.is_empty() {
-            let mut temp_env = env
-                .as_ref()
-                .map(|e| (**e).clone())
-                .unwrap_or_else(|| Environment::new("temp", "Temp"));
-            for (k, v_opt) in &pre_output.env_mutations {
-                if let Some(val) = v_opt {
-                    if let Some(v_item) = temp_env.variables.iter_mut().find(|v| v.key == *k) {
-                        v_item.current_value = val.clone();
-                    } else {
-                        temp_env.variables.push(EnvironmentVariable {
-                            key: k.clone(),
-                            initial_value: "".to_string(),
-                            current_value: val.clone(),
-                            secret: false,
-                        });
-                    }
-                } else {
-                    temp_env.variables.retain(|v| v.key != *k);
-                }
-            }
-            mutated_env = Some(temp_env);
-            mutated_env.as_ref()
-        } else {
-            env.as_deref()
-        };
-
-        // 4. Resolve Request with effective environment & apply pre-script mutations
-        let mut resolved = match ResolvedRequest::from_item(&req_item, effective_env_ref) {
-            Ok(r) => r,
-            Err(e) => {
-                let _ = event_tx.send(ExecEvent::Error(e.to_string()));
-                return event_rx;
-            }
-        };
-        resolved.apply_pre_script_mutations(&pre_output);
-
-        let (progress_tx, mut progress_rx) = mpsc::unbounded_channel();
-        let progress_event_tx = event_tx.clone();
-
-        // Forward progress events
         self.tokio_rt.spawn(async move {
-            while let Some(prog) = progress_rx.recv().await {
-                let text = match prog {
-                    HttpProgress::Connecting => "Connecting...".to_string(),
-                    HttpProgress::Sending => "Sending...".to_string(),
-                    HttpProgress::WaitingResponse => "Waiting for response...".to_string(),
-                    HttpProgress::Downloading { received_bytes, total_bytes } => {
-                        if let Some(total) = total_bytes {
-                            format!("Downloading ({}/{} B)...", received_bytes, total)
+            // 1. Resolve Dynamic Fake Variables
+            resolve_fake_vars_in_request(&mut req_item);
+
+            // 2. Pre-request Script execution
+            let pre_script_code = req_item.script.as_ref().and_then(|s| s.pre_request.clone());
+            let post_script_code = req_item.script.as_ref().and_then(|s| s.post_response.clone());
+
+            let pre_output = if let Some(code) = pre_script_code {
+                let pre_ctx = PreRequestContext::from_request_and_env(&req_item, env.as_deref());
+                ScriptSandbox::run_pre_request(&code, pre_ctx)
+            } else {
+                PreRequestOutput::default()
+            };
+
+            let initial_logs = pre_output.console_entries.clone();
+            let pre_script_error = pre_output.error.clone();
+            let _ = send_event_tx.send(ExecEvent::Started {
+                request_id: req_item.id.clone(),
+                initial_logs,
+                pre_script_error,
+            });
+
+            // 3. Merge pre-script env mutations into effective environment
+            let mut mutated_env = None;
+            let effective_env_ref = if !pre_output.env_mutations.is_empty() {
+                let mut temp_env = env
+                    .as_ref()
+                    .map(|e| (**e).clone())
+                    .unwrap_or_else(|| Environment::new("temp", "Temp"));
+                for (k, v_opt) in &pre_output.env_mutations {
+                    if let Some(val) = v_opt {
+                        if let Some(v_item) = temp_env.variables.iter_mut().find(|v| v.key == *k) {
+                            v_item.current_value = val.clone();
                         } else {
-                            format!("Downloading ({} B)...", received_bytes)
+                            temp_env.variables.push(EnvironmentVariable {
+                                key: k.clone(),
+                                initial_value: "".to_string(),
+                                current_value: val.clone(),
+                                secret: false,
+                            });
                         }
+                    } else {
+                        temp_env.variables.retain(|v| v.key != *k);
                     }
-                };
-                let _ = progress_event_tx.send(ExecEvent::Progress(text));
-            }
-        });
+                }
+                mutated_env = Some(temp_env);
+                mutated_env.as_ref()
+            } else {
+                env.as_deref()
+            };
 
-        let eff_env_for_post = mutated_env.map(Arc::new).or(env);
-        let pre_console_entries = pre_output.console_entries.clone();
-        let send_event_tx = event_tx;
+            // 4. Resolve Request with effective environment & apply pre-script mutations
+            let mut resolved = match ResolvedRequest::from_item(&req_item, effective_env_ref) {
+                Ok(r) => r,
+                Err(e) => {
+                    let _ = send_event_tx.send(ExecEvent::Error(e.to_string()));
+                    return;
+                }
+            };
+            resolved.apply_pre_script_mutations(&pre_output);
 
-        self.tokio_rt.spawn(async move {
+            let (progress_tx, mut progress_rx) = mpsc::unbounded_channel();
+            let progress_event_tx = send_event_tx.clone();
+
+            tokio::spawn(async move {
+                while let Some(prog) = progress_rx.recv().await {
+                    let text = match prog {
+                        HttpProgress::Connecting => "Connecting...".to_string(),
+                        HttpProgress::Sending => "Sending...".to_string(),
+                        HttpProgress::WaitingResponse => "Waiting for response...".to_string(),
+                        HttpProgress::Downloading {
+                            received_bytes,
+                            total_bytes,
+                        } => {
+                            if let Some(total) = total_bytes {
+                                format!("Downloading ({}/{} B)...", received_bytes, total)
+                            } else {
+                                format!("Downloading ({} B)...", received_bytes)
+                            }
+                        }
+                    };
+                    let _ = progress_event_tx.send(ExecEvent::Progress(text));
+                }
+            });
+
+            let eff_env_for_post = mutated_env.map(Arc::new).or(env);
+            let pre_console_entries = pre_output.console_entries.clone();
+
             tokio::select! {
                 _ = cancel_rx => {
                     let _ = send_event_tx.send(ExecEvent::Cancelled);
@@ -155,8 +159,8 @@ impl HttpEngine {
 
                             let _ = send_event_tx.send(ExecEvent::Success {
                                 record: Arc::new(record),
-                                pre_output,
-                                post_output,
+                                pre_output: Box::new(pre_output),
+                                post_output: Box::new(post_output),
                             });
                         }
                         Err(HttpError::Cancelled) => {
@@ -207,7 +211,12 @@ mod tests {
         let executor = Arc::new(ReqwestExecutor::new());
         let engine = HttpEngine::new(executor, rt.clone());
 
-        let req = HttpRequestItem::new("test-cancel", "Cancel Test", HttpMethod::Get, "http://10.255.255.1");
+        let req = HttpRequestItem::new(
+            "test-cancel",
+            "Cancel Test",
+            HttpMethod::Get,
+            "http://10.255.255.1",
+        );
         let (cancel_tx, cancel_rx) = oneshot::channel();
         let mut rx = engine.execute(req, None, cancel_rx);
 

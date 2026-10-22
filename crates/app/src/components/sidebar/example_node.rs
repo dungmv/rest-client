@@ -116,29 +116,30 @@ pub fn render_example_node(
                 let ex_del_name = ex_name_ctx.clone();
 
                 let mut m = menu
-                    .item(
-                        gpui_component::menu::PopupMenuItem::new("Rename").on_click(
-                            move |_, window, cx| {
-                                let ws_c = ws_ren.clone();
-                                sb_ren.update(cx, |state, cx| {
-                                    state.start_renaming_example(
-                                        r_id_ren.clone(),
-                                        ex_ren_name.clone(),
-                                        ws_c,
-                                        window,
-                                        cx,
-                                    );
-                                });
-                            },
-                        ),
-                    )
+                    .item(gpui_component::menu::PopupMenuItem::new("Rename").on_click(
+                        move |_, window, cx| {
+                            let ws_c = ws_ren.clone();
+                            sb_ren.update(cx, |state, cx| {
+                                state.start_renaming_example(
+                                    r_id_ren.clone(),
+                                    ex_ren_name.clone(),
+                                    ws_c,
+                                    window,
+                                    cx,
+                                );
+                            });
+                        },
+                    ))
                     .item(
                         gpui_component::menu::PopupMenuItem::new("Duplicate").on_click(
                             move |_, _, cx| {
                                 ws_dup.update(cx, |ws, cx| {
                                     if let Some(mut rf) = ws.get_request_file(&r_id_dup) {
-                                        if let Some(orig_ex) =
-                                            rf.examples.iter().find(|e| e.name == ex_dup_name).cloned()
+                                        if let Some(orig_ex) = rf
+                                            .examples
+                                            .iter()
+                                            .find(|e| e.name == ex_dup_name)
+                                            .cloned()
                                         {
                                             let base_name = orig_ex.name.clone();
                                             let mut name = format!("{}-copy", base_name);
@@ -196,22 +197,23 @@ pub fn render_example_node(
                     );
                 }
 
-                m.separator().item(
-                    gpui_component::menu::PopupMenuItem::new("Delete").on_click(move |_, _, cx| {
-                        ws_del.update(cx, |ws, cx| {
-                            if let Some(mut rf) = ws.get_request_file(&r_id_del) {
-                                rf.examples.retain(|e| e.name != ex_del_name);
-                                ws.save_request_file(&r_id_del, &rf, cx);
-                            }
-                            if is_this_ex_active {
-                                let store = ws.store.clone();
-                                resp_del.update(cx, |s, cx| {
-                                    s.load_for_request(&r_id_del, store.as_ref(), cx);
-                                });
-                            }
-                        });
-                    }),
-                )
+                m.separator()
+                    .item(gpui_component::menu::PopupMenuItem::new("Delete").on_click(
+                        move |_, _, cx| {
+                            ws_del.update(cx, |ws, cx| {
+                                if let Some(mut rf) = ws.get_request_file(&r_id_del) {
+                                    rf.examples.retain(|e| e.name != ex_del_name);
+                                    ws.save_request_file(&r_id_del, &rf, cx);
+                                }
+                                if is_this_ex_active {
+                                    let store = ws.store.clone();
+                                    resp_del.update(cx, |s, cx| {
+                                        s.load_for_request(&r_id_del, store.as_ref(), cx);
+                                    });
+                                }
+                            });
+                        },
+                    ))
             }
         })
         .child(
@@ -222,12 +224,7 @@ pub fn render_example_node(
                 .items_center()
                 .gap(px(6.))
                 .overflow_hidden()
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(t.text_muted)
-                        .child("↳"),
-                )
+                .child(div().text_xs().text_color(t.text_muted).child("↳"))
                 .child(
                     if let (true, Some(inp)) = (is_renaming_this_ex, ctx.rename_example_input) {
                         let sb_esc = ctx.sidebar.clone();

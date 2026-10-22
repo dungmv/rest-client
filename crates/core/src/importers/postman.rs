@@ -1,5 +1,5 @@
 use super::models::{
-    ImportFormat, ImportedEnvironment, ImportedFolder, ImportedRequest, ImportResult,
+    ImportFormat, ImportResult, ImportedEnvironment, ImportedFolder, ImportedRequest,
 };
 use crate::models::{
     Auth, EnvironmentVariable, HttpMethod, KeyValuePair, MultipartItem, RequestBody, ScriptConfig,
@@ -112,7 +112,10 @@ fn parse_items(
             folders.push(ImportedFolder {
                 path: current_path.clone(),
                 name: name.clone(),
-                description: item.get("description").and_then(|d| d.as_str()).map(String::from),
+                description: item
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .map(String::from),
             });
 
             parse_items(
@@ -180,7 +183,10 @@ fn parse_single_request(
             if let Some(key) = h.get("key").and_then(|k| k.as_str()) {
                 let val = h.get("value").and_then(|v| v.as_str()).unwrap_or("");
                 let enabled = !h.get("disabled").and_then(|d| d.as_bool()).unwrap_or(false);
-                let desc = h.get("description").and_then(|d| d.as_str()).map(String::from);
+                let desc = h
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .map(String::from);
                 headers.push(KeyValuePair {
                     enabled,
                     key: key.to_string(),
@@ -273,7 +279,10 @@ fn extract_url_and_params(url_val: Option<&Value>) -> (String, Vec<KeyValuePair>
             if let Some(k) = q.get("key").and_then(|k| k.as_str()) {
                 let v = q.get("value").and_then(|v| v.as_str()).unwrap_or("");
                 let enabled = !q.get("disabled").and_then(|d| d.as_bool()).unwrap_or(false);
-                let desc = q.get("description").and_then(|d| d.as_str()).map(String::from);
+                let desc = q
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .map(String::from);
                 query_params.push(KeyValuePair {
                     enabled,
                     key: k.to_string(),
@@ -315,9 +324,11 @@ fn extract_postman_auth(auth_val: Option<&Value>) -> Auth {
             Auth::Basic { username, password }
         }
         "apikey" => {
-            let key = extract_auth_kv(val.get("apikey"), "key").unwrap_or_else(|| "X-API-Key".to_string());
+            let key = extract_auth_kv(val.get("apikey"), "key")
+                .unwrap_or_else(|| "X-API-Key".to_string());
             let value = extract_auth_kv(val.get("apikey"), "value").unwrap_or_default();
-            let where_in = extract_auth_kv(val.get("apikey"), "in").unwrap_or_else(|| "header".to_string());
+            let where_in =
+                extract_auth_kv(val.get("apikey"), "in").unwrap_or_else(|| "header".to_string());
             Auth::ApiKey {
                 key,
                 value,
@@ -380,8 +391,14 @@ fn extract_postman_body(body_val: Option<&Value>) -> RequestBody {
                 for item in arr {
                     if let Some(k) = item.get("key").and_then(|k| k.as_str()) {
                         let v = item.get("value").and_then(|v| v.as_str()).unwrap_or("");
-                        let enabled = !item.get("disabled").and_then(|d| d.as_bool()).unwrap_or(false);
-                        let desc = item.get("description").and_then(|d| d.as_str()).map(String::from);
+                        let enabled = !item
+                            .get("disabled")
+                            .and_then(|d| d.as_bool())
+                            .unwrap_or(false);
+                        let desc = item
+                            .get("description")
+                            .and_then(|d| d.as_str())
+                            .map(String::from);
                         items.push(KeyValuePair {
                             enabled,
                             key: k.to_string(),
@@ -399,7 +416,10 @@ fn extract_postman_body(body_val: Option<&Value>) -> RequestBody {
                 for item in arr {
                     if let Some(k) = item.get("key").and_then(|k| k.as_str()) {
                         let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("text");
-                        let enabled = !item.get("disabled").and_then(|d| d.as_bool()).unwrap_or(false);
+                        let enabled = !item
+                            .get("disabled")
+                            .and_then(|d| d.as_bool())
+                            .unwrap_or(false);
                         if item_type == "file" {
                             let src = item.get("src").and_then(|s| s.as_str()).unwrap_or("");
                             let mut m = MultipartItem::new_file(k, src);

@@ -3,8 +3,8 @@ use restclient_core::cache::ResponseCache;
 use restclient_core::models::{
     ConsoleLogEntry, ConsoleLogLevel, ConsoleLogSource, HttpResponseRecord, TestResult,
 };
-use restclient_core::storage::WorkspaceStore;
 use restclient_core::storage::models::RequestExampleFile;
+use restclient_core::storage::WorkspaceStore;
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]

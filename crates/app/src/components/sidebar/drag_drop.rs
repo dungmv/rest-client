@@ -1,8 +1,6 @@
 use crate::components::MethodBadge;
 use crate::theme::theme;
-use gpui::{
-    div, px, Context, IntoElement, ParentElement, Render, Styled, Window,
-};
+use gpui::{div, px, Context, IntoElement, ParentElement, Render, Styled, Window};
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
 use restclient_core::models::HttpMethod;

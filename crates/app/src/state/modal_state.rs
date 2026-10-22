@@ -26,8 +26,6 @@ pub struct ModalState {
 
 impl Default for ModalState {
     fn default() -> Self {
-        let settings = AppSettings::load();
-        let theme_preference = crate::theme::ThemePreference::from_str_opt(settings.theme.as_deref());
         Self {
             show_env_modal: false,
             selected_env_modal_id: None,
@@ -40,7 +38,7 @@ impl Default for ModalState {
             show_rename_workspace_modal: false,
             show_import_modal: false,
             import_target_folder_rel: None,
-            theme_preference,
+            theme_preference: crate::theme::ThemePreference::System,
             split_layout_vertical: false,
         }
     }
@@ -48,7 +46,11 @@ impl Default for ModalState {
 
 impl ModalState {
     pub fn new() -> Self {
-        Self::default()
+        let mut state = Self::default();
+        let settings = AppSettings::load();
+        state.theme_preference =
+            crate::theme::ThemePreference::from_str_opt(settings.theme.as_deref());
+        state
     }
 
     pub fn toggle_split_layout(&mut self, cx: &mut Context<Self>) {
@@ -176,7 +178,11 @@ impl ModalState {
         cx.notify();
     }
 
-    pub fn set_theme_preference(&mut self, pref: crate::theme::ThemePreference, cx: &mut Context<Self>) {
+    pub fn set_theme_preference(
+        &mut self,
+        pref: crate::theme::ThemePreference,
+        cx: &mut Context<Self>,
+    ) {
         self.theme_preference = pref;
         let appearance = cx.window_appearance();
         let mode = crate::theme::resolve_theme_mode(pref, appearance);

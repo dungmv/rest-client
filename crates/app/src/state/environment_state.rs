@@ -17,7 +17,11 @@ pub struct EnvironmentState {
 }
 
 impl EnvironmentState {
-    pub fn new(store: Arc<dyn WorkspaceStore>, workspace_name: String, initial_active_id: Option<String>) -> Self {
+    pub fn new(
+        store: Arc<dyn WorkspaceStore>,
+        workspace_name: String,
+        initial_active_id: Option<String>,
+    ) -> Self {
         let mut state = Self {
             store,
             workspace_name: workspace_name.clone(),
@@ -32,7 +36,12 @@ impl EnvironmentState {
         state
     }
 
-    pub fn set_workspace(&mut self, store: Arc<dyn WorkspaceStore>, workspace_name: String, active_env: Option<String>) {
+    pub fn set_workspace(
+        &mut self,
+        store: Arc<dyn WorkspaceStore>,
+        workspace_name: String,
+        active_env: Option<String>,
+    ) {
         self.store = store;
         self.workspace_name = workspace_name.clone();
         self.active_environment_id = active_env;
@@ -65,7 +74,11 @@ impl EnvironmentState {
         self.environments = envs;
 
         if let Some(act) = &self.active_environment_id {
-            if !self.environments.iter().any(|e| &e.name == act || &e.id == act) {
+            if !self
+                .environments
+                .iter()
+                .any(|e| &e.name == act || &e.id == act)
+            {
                 self.active_environment_id = self.environments.first().map(|e| e.id.clone());
             }
         } else if self.active_environment_id.is_none() {
@@ -75,7 +88,9 @@ impl EnvironmentState {
 
     pub fn active_environment(&self) -> Option<&Environment> {
         if let Some(env_id) = &self.active_environment_id {
-            self.environments.iter().find(|e| &e.id == env_id || &e.name == env_id)
+            self.environments
+                .iter()
+                .find(|e| &e.id == env_id || &e.name == env_id)
         } else {
             None
         }
@@ -84,7 +99,9 @@ impl EnvironmentState {
     pub fn active_environment_mut(&mut self) -> Option<&mut Environment> {
         self.invalidate_cache();
         if let Some(env_id) = &self.active_environment_id {
-            self.environments.iter_mut().find(|e| &e.id == env_id || &e.name == env_id)
+            self.environments
+                .iter_mut()
+                .find(|e| &e.id == env_id || &e.name == env_id)
         } else {
             None
         }
@@ -163,8 +180,16 @@ impl EnvironmentState {
         env_name
     }
 
-    pub fn duplicate_environment(&mut self, env_id: &str, cx: &mut Context<Self>) -> Option<String> {
-        let existing = self.environments.iter().find(|e| e.id == env_id || e.name == env_id)?.clone();
+    pub fn duplicate_environment(
+        &mut self,
+        env_id: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<String> {
+        let existing = self
+            .environments
+            .iter()
+            .find(|e| e.id == env_id || e.name == env_id)?
+            .clone();
         let new_name = format!("{}-copy", existing.name);
         let (env_file, secrets) = EnvironmentFile::from_environment(&existing);
         let _ = self.store.save_environment(&new_name, &env_file);

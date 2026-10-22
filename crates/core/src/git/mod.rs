@@ -1,6 +1,7 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -103,6 +104,11 @@ pub struct GitRemote {
 
 /// Helper to configure and execute a Git command safely
 pub fn run_git_cmd(repo_dir: &Path, args: &[&str]) -> Result<String> {
+    run_git_cmd_timeout(repo_dir, args, Duration::from_secs(30))
+}
+
+/// Helper to execute a Git command safely with a custom timeout
+pub fn run_git_cmd_timeout(repo_dir: &Path, args: &[&str], timeout: Duration) -> Result<String> {
     let mut cmd = Command::new("git");
     cmd.args(args);
     cmd.current_dir(repo_dir);
@@ -111,23 +117,43 @@ pub fn run_git_cmd(repo_dir: &Path, args: &[&str]) -> Result<String> {
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let output = cmd
-        .output()
-        .with_context(|| format!("Failed to execute 'git {}'", args.join(" ")))?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    let args_str = args.join(" ");
 
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let out = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let msg = if !err.is_empty() {
-            err
-        } else if !out.is_empty() {
-            out
-        } else {
-            format!("git exited with status {}", output.status)
-        };
-        Err(anyhow!(msg))
+    std::thread::Builder::new()
+        .name("git-cmd-runner".to_string())
+        .spawn(move || {
+            let output = cmd.output();
+            let _ = tx.send(output);
+        })
+        .map_err(|e| anyhow!("Failed to spawn git worker thread: {}", e))?;
+
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(output)) => {
+            if output.status.success() {
+                Ok(String::from_utf8_lossy(&output.stdout).to_string())
+            } else {
+                let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                let out = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let msg = if !err.is_empty() {
+                    err
+                } else if !out.is_empty() {
+                    out
+                } else {
+                    format!("git exited with status {}", output.status)
+                };
+                Err(anyhow!(msg))
+            }
+        }
+        Ok(Err(e)) => Err(anyhow!("Failed to execute 'git {}': {}", args_str, e)),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(anyhow!(
+            "Git command timed out after {:?}: git {}",
+            timeout,
+            args_str
+        )),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(anyhow!(
+            "Git command worker thread disconnected unexpectedly"
+        )),
     }
 }
 
@@ -381,9 +407,15 @@ pub fn git_discard_file(repo_dir: &Path, file_path: &str) -> Result<()> {
     let in_head = run_git_cmd(&root, &["cat-file", "-e", &format!("HEAD:{}", norm_path)]).is_ok();
 
     if !in_head || res.is_err() {
-        // File never existed in HEAD, so it was a newly added or untracked file. Delete it.
-        if full.is_file() {
-            let _ = std::fs::remove_file(full);
+        // File never existed in HEAD, so it was a newly added or untracked file.
+        // First try git clean to remove safely via git
+        if run_git_cmd(&root, &["clean", "-f", "--", &norm_path]).is_err() {
+            // Fallback: only delete if canonical path is verified to reside strictly within root
+            if let (Ok(can_full), Ok(can_root)) = (full.canonicalize(), root.canonicalize()) {
+                if can_full.starts_with(&can_root) && can_full.is_file() {
+                    let _ = std::fs::remove_file(can_full);
+                }
+            }
         }
     }
 
@@ -460,8 +492,8 @@ pub fn git_commit_detail(repo_dir: &Path, hash: &str) -> Result<GitCommitDetail>
     };
 
     // 2. Get changed files
-    let files_out = run_git_cmd(&root, &["show", "--name-only", "--format=", hash])
-        .unwrap_or_default();
+    let files_out =
+        run_git_cmd(&root, &["show", "--name-only", "--format=", hash]).unwrap_or_default();
     let changed_files = files_out
         .lines()
         .map(|l| l.trim().to_string())
@@ -571,7 +603,8 @@ pub fn git_init(repo_dir: &Path) -> Result<()> {
 pub fn git_get_remotes(repo_dir: &Path) -> Result<Vec<GitRemote>> {
     let root = find_git_root(repo_dir).unwrap_or_else(|| repo_dir.to_path_buf());
     let output = run_git_cmd(&root, &["remote", "-v"])?;
-    let mut map: std::collections::BTreeMap<String, (String, String)> = std::collections::BTreeMap::new();
+    let mut map: std::collections::BTreeMap<String, (String, String)> =
+        std::collections::BTreeMap::new();
 
     for line in output.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -579,7 +612,9 @@ pub fn git_get_remotes(repo_dir: &Path) -> Result<Vec<GitRemote>> {
             let name = parts[0].to_string();
             let url = parts[1].to_string();
             let kind = parts[2];
-            let entry = map.entry(name).or_insert_with(|| (String::new(), String::new()));
+            let entry = map
+                .entry(name)
+                .or_insert_with(|| (String::new(), String::new()));
             if kind.contains("fetch") {
                 entry.0 = url;
             } else if kind.contains("push") {
@@ -591,7 +626,11 @@ pub fn git_get_remotes(repo_dir: &Path) -> Result<Vec<GitRemote>> {
     Ok(map
         .into_iter()
         .map(|(name, (fetch_url, push_url))| {
-            let push_url = if push_url.is_empty() { fetch_url.clone() } else { push_url };
+            let push_url = if push_url.is_empty() {
+                fetch_url.clone()
+            } else {
+                push_url
+            };
             GitRemote {
                 name,
                 fetch_url,
@@ -672,7 +711,10 @@ mod tests {
 
     #[test]
     fn test_git_operations_lifecycle() {
-        let temp_dir = std::env::temp_dir().join(format!("test_git_lifecycle_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "test_git_lifecycle_{}",
+            uuid::Uuid::new_v4().simple()
+        ));
         std::fs::create_dir_all(&temp_dir).unwrap();
 
         // 1. init
@@ -728,7 +770,9 @@ mod tests {
         // 9. branch and checkout
         assert!(git_create_branch(&temp_dir, "feature-branch").is_ok());
         let branches = git_branches(&temp_dir).unwrap();
-        assert!(branches.iter().any(|b| b.name == "feature-branch" && b.is_current));
+        assert!(branches
+            .iter()
+            .any(|b| b.name == "feature-branch" && b.is_current));
 
         // 10. discard modified file
         assert!(git_discard_file(&temp_dir, "request.yaml").is_ok());
@@ -749,7 +793,9 @@ mod tests {
         assert_eq!(remotes[0].name, "origin");
         assert_eq!(remotes[0].fetch_url, "https://github.com/test/repo.git");
 
-        assert!(git_set_remote_url(&temp_dir, "origin", "https://github.com/test/new-repo.git").is_ok());
+        assert!(
+            git_set_remote_url(&temp_dir, "origin", "https://github.com/test/new-repo.git").is_ok()
+        );
         let remotes = git_get_remotes(&temp_dir).unwrap();
         assert_eq!(remotes[0].fetch_url, "https://github.com/test/new-repo.git");
 

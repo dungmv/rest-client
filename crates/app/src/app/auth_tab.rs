@@ -1,9 +1,7 @@
 use super::auth_input::render_auth_input;
 use crate::state::{EnvironmentState, ModalState, RequestSessionState, WorkspaceDataState};
 use crate::theme::theme;
-use gpui::{
-    div, px, App, Div, Entity, ParentElement, Styled, Window,
-};
+use gpui::{div, px, App, Div, Entity, ParentElement, Styled, Window};
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::InputState;
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
@@ -19,18 +17,26 @@ pub struct AuthTabInputs<'a> {
     pub apikey_val_input: &'a Entity<InputState>,
 }
 
-#[allow(clippy::too_many_arguments)]
+pub struct AuthTabContext<'a> {
+    pub workspace_state: &'a Entity<WorkspaceDataState>,
+    pub env_state: &'a Entity<EnvironmentState>,
+    pub modal_state: &'a Entity<ModalState>,
+    pub editor_state: &'a Entity<RequestSessionState>,
+}
+
 pub fn render_auth_tab(
     auth: &Auth,
     folder_id: Option<&str>,
-    workspace_state: &Entity<WorkspaceDataState>,
-    env_state: &Entity<EnvironmentState>,
-    modal_state: &Entity<ModalState>,
-    editor_state: &Entity<RequestSessionState>,
+    ctx: AuthTabContext,
     inputs: AuthTabInputs,
     window: &mut Window,
     cx: &mut App,
 ) -> Div {
+    let workspace_state = ctx.workspace_state;
+    let env_state = ctx.env_state;
+    let modal_state = ctx.modal_state;
+    let editor_state = ctx.editor_state;
+
     let t = theme();
     let ed_c = editor_state.clone();
     let ws_c = workspace_state.clone();
@@ -104,34 +110,30 @@ pub fn render_auth_tab(
                             let ws_apikey = ws_m.clone();
                             let req_apikey = req_id_m.clone();
 
-                            menu.item(
-                                PopupMenuItem::new("Inherit")
-                                    .checked(is_inherit)
-                                    .on_click(move |_, _, cx| {
-                                        ws_inh.update(cx, |ws, _| {
-                                            ws.update_active_request(&req_inh, |r| {
-                                                r.set_auth(Auth::Inherit);
-                                            });
+                            menu.item(PopupMenuItem::new("Inherit").checked(is_inherit).on_click(
+                                move |_, _, cx| {
+                                    ws_inh.update(cx, |ws, _| {
+                                        ws.update_active_request(&req_inh, |r| {
+                                            r.set_auth(Auth::Inherit);
                                         });
-                                        ed_inh.update(cx, |ed, cx| {
-                                            ed.mark_dirty(cx);
+                                    });
+                                    ed_inh.update(cx, |ed, cx| {
+                                        ed.mark_dirty(cx);
+                                    });
+                                },
+                            ))
+                            .item(PopupMenuItem::new("None").checked(is_none).on_click(
+                                move |_, _, cx| {
+                                    ws_none.update(cx, |ws, _| {
+                                        ws.update_active_request(&req_none, |r| {
+                                            r.set_auth(Auth::None);
                                         });
-                                    }),
-                            )
-                            .item(
-                                PopupMenuItem::new("None")
-                                    .checked(is_none)
-                                    .on_click(move |_, _, cx| {
-                                        ws_none.update(cx, |ws, _| {
-                                            ws.update_active_request(&req_none, |r| {
-                                                r.set_auth(Auth::None);
-                                            });
-                                        });
-                                        ed_none.update(cx, |ed, cx| {
-                                            ed.mark_dirty(cx);
-                                        });
-                                    }),
-                            )
+                                    });
+                                    ed_none.update(cx, |ed, cx| {
+                                        ed.mark_dirty(cx);
+                                    });
+                                },
+                            ))
                             .item(
                                 PopupMenuItem::new("Bearer Token")
                                     .checked(is_bearer)
@@ -148,27 +150,24 @@ pub fn render_auth_tab(
                                         });
                                     }),
                             )
-                            .item(
-                                PopupMenuItem::new("Basic Auth")
-                                    .checked(is_basic)
-                                    .on_click(move |_, _, cx| {
-                                        ws_basic.update(cx, |ws, _| {
-                                            ws.update_active_request(&req_basic, |r| {
-                                                r.set_auth(Auth::Basic {
-                                                    username: "".to_string(),
-                                                    password: "".to_string(),
-                                                });
+                            .item(PopupMenuItem::new("Basic Auth").checked(is_basic).on_click(
+                                move |_, _, cx| {
+                                    ws_basic.update(cx, |ws, _| {
+                                        ws.update_active_request(&req_basic, |r| {
+                                            r.set_auth(Auth::Basic {
+                                                username: "".to_string(),
+                                                password: "".to_string(),
                                             });
                                         });
-                                        ed_basic.update(cx, |ed, cx| {
-                                            ed.mark_dirty(cx);
-                                        });
-                                    }),
-                            )
+                                    });
+                                    ed_basic.update(cx, |ed, cx| {
+                                        ed.mark_dirty(cx);
+                                    });
+                                },
+                            ))
                             .item(
-                                PopupMenuItem::new("API Key")
-                                    .checked(is_apikey)
-                                    .on_click(move |_, _, cx| {
+                                PopupMenuItem::new("API Key").checked(is_apikey).on_click(
+                                    move |_, _, cx| {
                                         ws_apikey.update(cx, |ws, _| {
                                             ws.update_active_request(&req_apikey, |r| {
                                                 r.set_auth(Auth::ApiKey {
@@ -181,7 +180,8 @@ pub fn render_auth_tab(
                                         ed_apikey.update(cx, |ed, cx| {
                                             ed.mark_dirty(cx);
                                         });
-                                    }),
+                                    },
+                                ),
                             )
                         })
                 }),
@@ -202,12 +202,7 @@ pub fn render_auth_tab(
                         .items_center()
                         .gap(px(8.))
                         .child(Icon::new(IconName::Info).size(px(16.)))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(t.text_secondary)
-                                .child(desc),
-                        )
+                        .child(div().text_xs().text_color(t.text_secondary).child(desc))
                 }
                 Auth::None => div()
                     .pt(px(4.))
@@ -231,29 +226,24 @@ pub fn render_auth_tab(
                                 .text_color(t.text_secondary)
                                 .child("Token:"),
                         )
-                        .child(
-                            div()
-                                .w_full()
-                                .max_w(px(400.))
-                                .child(render_auth_input(
-                                    "auth-bearer-token-input",
-                                    inputs.bearer_token_input,
-                                    env_state,
-                                    modal_state,
-                                    window,
-                                    cx,
-                                    move |new_token, _window, cx| {
-                                        ws_b.update(cx, |ws, _| {
-                                            ws.update_active_request(&req_b, |r| {
-                                                r.set_bearer_token(new_token);
-                                            });
-                                        });
-                                        ed_b.update(cx, |ed, cx| {
-                                            ed.mark_dirty(cx);
-                                        });
-                                    },
-                                )),
-                        )
+                        .child(div().w_full().max_w(px(400.)).child(render_auth_input(
+                            "auth-bearer-token-input",
+                            inputs.bearer_token_input,
+                            env_state,
+                            modal_state,
+                            window,
+                            cx,
+                            move |new_token, _window, cx| {
+                                ws_b.update(cx, |ws, _| {
+                                    ws.update_active_request(&req_b, |r| {
+                                        r.set_bearer_token(new_token);
+                                    });
+                                });
+                                ed_b.update(cx, |ed, cx| {
+                                    ed.mark_dirty(cx);
+                                });
+                            },
+                        )))
                 }
                 Auth::Basic { .. } => {
                     let ed_u = ed_c.clone();
@@ -281,30 +271,25 @@ pub fn render_auth_tab(
                                         .text_color(t.text_secondary)
                                         .child("Username:"),
                                 )
-                                .child(
-                                    div()
-                                        .w_full()
-                                        .max_w(px(400.))
-                                        .child(render_auth_input(
-                                            "auth-basic-user-input",
-                                            inputs.basic_user_input,
-                                            env_state,
-                                            modal_state,
-                                            window,
-                                            cx,
-                                            move |new_user, _window, cx| {
-                                                let pass = p_in.read(cx).value().to_string();
-                                                ws_u.update(cx, |ws, _| {
-                                                    ws.update_active_request(&req_u, |r| {
-                                                        r.set_basic_auth(new_user, pass);
-                                                    });
-                                                });
-                                                ed_u.update(cx, |ed, cx| {
-                                                    ed.mark_dirty(cx);
-                                                });
-                                            },
-                                        )),
-                                ),
+                                .child(div().w_full().max_w(px(400.)).child(render_auth_input(
+                                    "auth-basic-user-input",
+                                    inputs.basic_user_input,
+                                    env_state,
+                                    modal_state,
+                                    window,
+                                    cx,
+                                    move |new_user, _window, cx| {
+                                        let pass = p_in.read(cx).value().to_string();
+                                        ws_u.update(cx, |ws, _| {
+                                            ws.update_active_request(&req_u, |r| {
+                                                r.set_basic_auth(new_user, pass);
+                                            });
+                                        });
+                                        ed_u.update(cx, |ed, cx| {
+                                            ed.mark_dirty(cx);
+                                        });
+                                    },
+                                ))),
                         )
                         .child(
                             div()
@@ -319,30 +304,25 @@ pub fn render_auth_tab(
                                         .text_color(t.text_secondary)
                                         .child("Password:"),
                                 )
-                                .child(
-                                    div()
-                                        .w_full()
-                                        .max_w(px(400.))
-                                        .child(render_auth_input(
-                                            "auth-basic-pass-input",
-                                            inputs.basic_pass_input,
-                                            env_state,
-                                            modal_state,
-                                            window,
-                                            cx,
-                                            move |new_pass, _window, cx| {
-                                                let user = u_in.read(cx).value().to_string();
-                                                ws_p.update(cx, |ws, _| {
-                                                    ws.update_active_request(&req_p, |r| {
-                                                        r.set_basic_auth(user, new_pass);
-                                                    });
-                                                });
-                                                ed_p.update(cx, |ed, cx| {
-                                                    ed.mark_dirty(cx);
-                                                });
-                                            },
-                                        )),
-                                ),
+                                .child(div().w_full().max_w(px(400.)).child(render_auth_input(
+                                    "auth-basic-pass-input",
+                                    inputs.basic_pass_input,
+                                    env_state,
+                                    modal_state,
+                                    window,
+                                    cx,
+                                    move |new_pass, _window, cx| {
+                                        let user = u_in.read(cx).value().to_string();
+                                        ws_p.update(cx, |ws, _| {
+                                            ws.update_active_request(&req_p, |r| {
+                                                r.set_basic_auth(user, new_pass);
+                                            });
+                                        });
+                                        ed_p.update(cx, |ed, cx| {
+                                            ed.mark_dirty(cx);
+                                        });
+                                    },
+                                ))),
                         )
                 }
                 Auth::ApiKey { in_header, .. } => {
@@ -381,34 +361,25 @@ pub fn render_auth_tab(
                                         .text_color(t.text_secondary)
                                         .child("Key:"),
                                 )
-                                .child(
-                                    div()
-                                        .w_full()
-                                        .max_w(px(400.))
-                                        .child(render_auth_input(
-                                            "auth-apikey-key-input",
-                                            inputs.apikey_key_input,
-                                            env_state,
-                                            modal_state,
-                                            window,
-                                            cx,
-                                            move |new_key, _window, cx| {
-                                                let val = v_in.read(cx).value().to_string();
-                                                ws_k.update(cx, |ws, _| {
-                                                    ws.update_active_request(&req_k, |r| {
-                                                        r.set_api_key(
-                                                            new_key,
-                                                            val,
-                                                            in_header_val,
-                                                        );
-                                                    });
-                                                });
-                                                ed_k.update(cx, |ed, cx| {
-                                                    ed.mark_dirty(cx);
-                                                });
-                                            },
-                                        )),
-                                ),
+                                .child(div().w_full().max_w(px(400.)).child(render_auth_input(
+                                    "auth-apikey-key-input",
+                                    inputs.apikey_key_input,
+                                    env_state,
+                                    modal_state,
+                                    window,
+                                    cx,
+                                    move |new_key, _window, cx| {
+                                        let val = v_in.read(cx).value().to_string();
+                                        ws_k.update(cx, |ws, _| {
+                                            ws.update_active_request(&req_k, |r| {
+                                                r.set_api_key(new_key, val, in_header_val);
+                                            });
+                                        });
+                                        ed_k.update(cx, |ed, cx| {
+                                            ed.mark_dirty(cx);
+                                        });
+                                    },
+                                ))),
                         )
                         .child(
                             div()
@@ -423,34 +394,25 @@ pub fn render_auth_tab(
                                         .text_color(t.text_secondary)
                                         .child("Value:"),
                                 )
-                                .child(
-                                    div()
-                                        .w_full()
-                                        .max_w(px(400.))
-                                        .child(render_auth_input(
-                                            "auth-apikey-val-input",
-                                            inputs.apikey_val_input,
-                                            env_state,
-                                            modal_state,
-                                            window,
-                                            cx,
-                                            move |new_val, _window, cx| {
-                                                let key = k_in.read(cx).value().to_string();
-                                                ws_v.update(cx, |ws, _| {
-                                                    ws.update_active_request(&req_v, |r| {
-                                                        r.set_api_key(
-                                                            key,
-                                                            new_val,
-                                                            in_header_val,
-                                                        );
-                                                    });
-                                                });
-                                                ed_v.update(cx, |ed, cx| {
-                                                    ed.mark_dirty(cx);
-                                                });
-                                            },
-                                        )),
-                                ),
+                                .child(div().w_full().max_w(px(400.)).child(render_auth_input(
+                                    "auth-apikey-val-input",
+                                    inputs.apikey_val_input,
+                                    env_state,
+                                    modal_state,
+                                    window,
+                                    cx,
+                                    move |new_val, _window, cx| {
+                                        let key = k_in.read(cx).value().to_string();
+                                        ws_v.update(cx, |ws, _| {
+                                            ws.update_active_request(&req_v, |r| {
+                                                r.set_api_key(key, new_val, in_header_val);
+                                            });
+                                        });
+                                        ed_v.update(cx, |ed, cx| {
+                                            ed.mark_dirty(cx);
+                                        });
+                                    },
+                                ))),
                         )
                         .child(
                             div()
