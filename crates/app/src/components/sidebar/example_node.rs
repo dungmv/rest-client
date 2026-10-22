@@ -67,11 +67,9 @@ pub fn render_example_node(
                 sb_ex_click.update(cx, |state, cx| {
                     state.start_renaming_example(r_id.clone(), ex_name.clone(), ws_c, window, cx);
                 });
-                if let Some(r) = ws_ex_click.read(cx).find_request(&r_id).cloned() {
-                    ed_ex_click.update(cx, |state, cx| {
-                        state.set_active_request(r, false, cx);
-                    });
-                }
+                ed_ex_click.update(cx, |state, cx| {
+                    state.set_active_request_id(&r_id, false, cx);
+                });
                 if let Some(rf) = ws_ex_click.read(cx).get_request_file(&r_id) {
                     if let Some(ex_file) = rf.examples.iter().find(|e| e.name == ex_name) {
                         resp_ex_click.update(cx, |state, cx| {
@@ -83,11 +81,9 @@ pub fn render_example_node(
                 sb_ex_click.update(cx, |state, _cx| {
                     state.record_navigation(&r_id);
                 });
-                if let Some(r) = ws_ex_click.read(cx).find_request(&r_id).cloned() {
-                    ed_ex_click.update(cx, |state, cx| {
-                        state.set_active_request(r, false, cx);
-                    });
-                }
+                ed_ex_click.update(cx, |state, cx| {
+                    state.set_active_request_id(&r_id, false, cx);
+                });
                 if let Some(rf) = ws_ex_click.read(cx).get_request_file(&r_id) {
                     if let Some(ex_file) = rf.examples.iter().find(|e| e.name == ex_name) {
                         resp_ex_click.update(cx, |state, cx| {

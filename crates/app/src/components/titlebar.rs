@@ -97,9 +97,9 @@ impl RenderOnce for AppTitleBar {
             .map(|e| e.name.clone())
             .unwrap_or_else(|| "No Environment".to_string());
 
-        let req_title = ed
-            .active_request
-            .as_ref()
+        let active_id = ed.active_request_id();
+        let req_title = ws
+            .find_request(active_id)
             .map(crate::state::effective_request_name)
             .unwrap_or_default();
 

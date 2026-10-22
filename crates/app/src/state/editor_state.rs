@@ -1,8 +1,5 @@
 use gpui::{Context, Task};
-use restclient_core::http::parse_query_from_url;
-use restclient_core::models::{
-    Auth, HttpMethod, HttpRequestItem, KeyValuePair, MultipartItem, RequestBody, RequestSettings,
-};
+use restclient_core::models::HttpRequestItem;
 use std::collections::HashSet;
 use tokio::sync::oneshot;
 
@@ -18,7 +15,7 @@ pub enum RequestTabKind {
 }
 
 pub struct EditorState {
-    pub active_request: Option<HttpRequestItem>,
+    pub active_request_id: Option<String>,
     pub open_tabs: Vec<String>, // Request IDs
     pub pinned_tabs: HashSet<String>,
     pub active_tab_kind: RequestTabKind,
@@ -34,19 +31,12 @@ pub struct EditorState {
     pub body_version: usize,
     pub request_version: usize,
     input_refresh_task: Option<Task<()>>,
-    url_input_has_query: bool,
-    url_input_has_template: bool,
 }
 
 impl EditorState {
     pub fn new() -> Self {
         Self {
-            active_request: Some(HttpRequestItem::new(
-                "scratch",
-                "Untitled Request",
-                HttpMethod::Get,
-                "",
-            )),
+            active_request_id: Some("scratch".to_string()),
             open_tabs: Vec::new(),
             pinned_tabs: HashSet::new(),
             active_tab_kind: RequestTabKind::Body,
@@ -62,84 +52,25 @@ impl EditorState {
             body_version: 0,
             request_version: 0,
             input_refresh_task: None,
-            url_input_has_query: false,
-            url_input_has_template: false,
         }
     }
 
-    pub fn ensure_active_request(&mut self) -> &mut HttpRequestItem {
-        if self.active_request.is_none() {
-            self.active_request = Some(HttpRequestItem::new(
-                "scratch",
-                "Untitled Request",
-                HttpMethod::Get,
-                "",
-            ));
-        }
-        self.active_request.as_mut().unwrap()
+    pub fn active_request_id(&self) -> &str {
+        self.active_request_id.as_deref().unwrap_or("scratch")
     }
 
-    pub fn set_active_request(&mut self, mut req: HttpRequestItem, pin: bool, cx: &mut Context<Self>) {
-        let req_id = req.id.clone();
-        if !self.open_tabs.contains(&req_id) {
-            self.open_tabs.push(req_id.clone());
+    pub fn set_active_request_id(&mut self, req_id: &str, pin: bool, cx: &mut Context<Self>) {
+        let req_id_str = req_id.to_string();
+        if !self.open_tabs.contains(&req_id_str) {
+            self.open_tabs.push(req_id_str.clone());
         }
         if pin {
-            self.pinned_tabs.insert(req_id);
+            self.pinned_tabs.insert(req_id_str.clone());
         }
-        if req.url.contains('?') {
-            let (base, parsed) = parse_query_from_url(&req.url);
-            req.url = base;
-            if req.params.is_empty() && !parsed.is_empty() {
-                req.params = parsed;
-            }
-        }
-        self.url_input_has_query = false;
-        self.url_input_has_template = req.url.contains("{{");
-        self.active_request = Some(req);
+        self.active_request_id = Some(req_id_str);
         self.is_dirty = false;
         self.request_version = self.request_version.wrapping_add(1);
         self.body_version = self.body_version.wrapping_add(1);
-        cx.notify();
-    }
-
-    pub fn apply_imported_curl_data(&mut self, parsed: HttpRequestItem) {
-        if let Some(req) = &mut self.active_request {
-            if req.name == "New Request" || req.name == "Untitled Request" || req.name.is_empty() {
-                req.name = parsed.name;
-            }
-            req.method = parsed.method;
-            req.url = parsed.url;
-            req.params = parsed.params;
-            req.headers = parsed.headers;
-            req.auth = parsed.auth;
-            req.body = parsed.body;
-        } else {
-            self.active_request = Some(parsed);
-        }
-
-        // Switch to appropriate tab
-        if let Some(req) = &self.active_request {
-            if req.body != RequestBody::None {
-                self.active_tab_kind = RequestTabKind::Body;
-            } else if req.auth != Auth::None {
-                self.active_tab_kind = RequestTabKind::Auth;
-            } else if !req.params.is_empty() {
-                self.active_tab_kind = RequestTabKind::Params;
-            } else if !req.headers.is_empty() {
-                self.active_tab_kind = RequestTabKind::Headers;
-            }
-            self.url_input_has_query = false;
-            self.url_input_has_template = req.url.contains("{{");
-        }
-
-        self.is_dirty = true;
-        self.request_version = self.request_version.wrapping_add(1);
-        self.body_version = self.body_version.wrapping_add(1);
-    }
-
-    pub fn apply_imported_curl(&mut self, parsed: HttpRequestItem, cx: &mut Context<Self>) {
-        self.apply_imported_curl_data(parsed);
         cx.notify();
     }
 
@@ -148,101 +79,34 @@ impl EditorState {
         cx.notify();
     }
 
-    pub fn close_tab(&mut self, req_id: &str, cx: &mut Context<Self>) -> Option<String> {
+    pub fn close_tab_internal(&mut self, req_id: &str) -> Option<String> {
         let idx = self.open_tabs.iter().position(|id| id == req_id);
         if let Some(i) = idx {
             self.open_tabs.remove(i);
         }
         self.pinned_tabs.remove(req_id);
 
-        let next_active = if self.active_request.as_ref().map(|r| r.id.as_str()) == Some(req_id) {
-            self.active_request = None;
+        let next_active = if self.active_request_id.as_deref() == Some(req_id) {
             if !self.open_tabs.is_empty() {
                 let new_idx = idx.unwrap_or(0).min(self.open_tabs.len() - 1);
-                Some(self.open_tabs[new_idx].clone())
+                let next = self.open_tabs[new_idx].clone();
+                self.active_request_id = Some(next.clone());
+                Some(next)
             } else {
-                None
+                self.active_request_id = Some("scratch".to_string());
+                Some("scratch".to_string())
             }
         } else {
-            self.active_request.as_ref().map(|r| r.id.clone())
+            self.active_request_id.clone()
         };
 
-        cx.notify();
         next_active
     }
 
-    pub fn set_method(&mut self, method: HttpMethod, cx: &mut Context<Self>) {
-        if let Some(req) = &mut self.active_request {
-            req.method = method;
-            self.is_dirty = true;
-            self.method_dropdown_open = false;
-            cx.notify();
-        }
-    }
-
-    pub fn set_name(&mut self, name: String, cx: &mut Context<Self>) {
-        if let Some(req) = &mut self.active_request {
-            if req.name != name {
-                req.name = name;
-                self.is_dirty = true;
-                cx.notify();
-            }
-        }
-    }
-
-    /// Core logic to update URL and synchronize query parameters to params table.
-    /// When query parameters are present in the URL, they are extracted to `req.params`,
-    /// and stripped from `req.url` to keep the URL input clean and prevent duplication.
-    pub fn apply_url(&mut self, url: String) {
-        self.url_input_has_query = url.contains('?');
-        self.url_input_has_template = url.contains("{{");
-        if let Some(req) = &mut self.active_request {
-            if url.contains('?') {
-                let (base, parsed_params) = parse_query_from_url(&url);
-                req.url = base;
-                if !parsed_params.is_empty() {
-                    let mut disabled: Vec<KeyValuePair> =
-                        req.params.iter().filter(|p| !p.enabled).cloned().collect();
-                    let mut final_params = parsed_params;
-                    final_params.append(&mut disabled);
-                    req.params = final_params;
-                    self.active_tab_kind = RequestTabKind::Params;
-                }
-            } else {
-                req.url = url;
-            }
-            self.is_dirty = true;
-        }
-    }
-
-    pub fn schedule_input_refresh(&mut self, cx: &mut Context<Self>) {
-        let task = cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(150))
-                .await;
-            if let Some(this) = this.upgrade() {
-                this.update(cx, |_, cx| cx.notify());
-            }
-        });
-        self.input_refresh_task = Some(task);
-    }
-
-    /// Sets URL and synchronizes query parameters to params table.
-    pub fn set_url(&mut self, url: String, cx: &mut Context<Self>) {
-        self.apply_url(url);
+    pub fn close_tab(&mut self, req_id: &str, cx: &mut Context<Self>) -> Option<String> {
+        let next_active = self.close_tab_internal(req_id);
         cx.notify();
-    }
-
-    /// Updates URL from user typing.
-    /// Only calls cx.notify() if structural changes occur (e.g. '?' parses query params, or '{{' needs autocomplete popup).
-    pub fn update_url_from_input(&mut self, url: String, cx: &mut Context<Self>) {
-        let had_template = self.active_request.as_ref().map(|r| r.url.contains("{{")).unwrap_or(false);
-        let has_template = url.contains("{{");
-        let needs_notify = url.contains('?') || had_template || has_template;
-        self.apply_url(url);
-        if needs_notify {
-            self.schedule_input_refresh(cx);
-        }
+        next_active
     }
 
     pub fn set_active_tab_kind(&mut self, kind: RequestTabKind, cx: &mut Context<Self>) {
@@ -265,363 +129,33 @@ impl EditorState {
         cx.notify();
     }
 
-    // Params
-    pub fn apply_update_param(&mut self, index: usize, key: String, val: String, enabled: bool) {
-        if let Some(req) = &mut self.active_request {
-            if index < req.params.len() {
-                req.params[index].key = key;
-                req.params[index].value = val;
-                req.params[index].enabled = enabled;
-                self.is_dirty = true;
+    pub fn schedule_input_refresh(&mut self, cx: &mut Context<Self>) {
+        let task = cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(150))
+                .await;
+            if let Some(this) = this.upgrade() {
+                this.update(cx, |_, cx| cx.notify());
             }
-        }
-    }
-
-    pub fn update_param(&mut self, index: usize, key: String, val: String, enabled: bool, cx: &mut Context<Self>) {
-        let previous = self.active_request.as_ref().and_then(|r| r.params.get(index));
-        let prev_enabled = previous.map(|p| p.enabled);
-        let enabled_changed = prev_enabled != Some(enabled);
-        let has_template = key.contains("{{") || val.contains("{{");
-        self.apply_update_param(index, key, val, enabled);
-        if enabled_changed {
-            cx.notify();
-        } else if has_template {
-            self.schedule_input_refresh(cx);
-        }
-    }
-
-    pub fn add_param(&mut self, cx: &mut Context<Self>) {
-        if let Some(req) = &mut self.active_request {
-            req.params.push(KeyValuePair::new("", ""));
-            self.is_dirty = true;
-            cx.notify();
-        }
-    }
-
-    pub fn apply_remove_param(&mut self, index: usize) {
-        if let Some(req) = &mut self.active_request {
-            if index < req.params.len() {
-                req.params.remove(index);
-                self.is_dirty = true;
-            }
-        }
-    }
-
-    pub fn remove_param(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.apply_remove_param(index);
-        cx.notify();
-    }
-
-    // Headers
-    pub fn apply_update_header(&mut self, index: usize, key: String, val: String, enabled: bool) {
-        if let Some(req) = &mut self.active_request {
-            if index < req.headers.len() {
-                req.headers[index].key = key;
-                req.headers[index].value = val;
-                req.headers[index].enabled = enabled;
-                self.is_dirty = true;
-            }
-        }
-    }
-
-    pub fn update_header(&mut self, index: usize, key: String, val: String, enabled: bool, cx: &mut Context<Self>) {
-        let previous = self.active_request.as_ref().and_then(|r| r.headers.get(index));
-        let prev_enabled = previous.map(|h| h.enabled);
-        let enabled_changed = prev_enabled != Some(enabled);
-        let has_template = key.contains("{{") || val.contains("{{");
-        self.apply_update_header(index, key, val, enabled);
-        if enabled_changed {
-            cx.notify();
-        } else if has_template {
-            self.schedule_input_refresh(cx);
-        }
-    }
-
-    pub fn add_header(&mut self, cx: &mut Context<Self>) {
-        if let Some(req) = &mut self.active_request {
-            req.headers.push(KeyValuePair::new("", ""));
-            self.is_dirty = true;
-            cx.notify();
-        }
-    }
-
-    pub fn remove_header(&mut self, index: usize, cx: &mut Context<Self>) {
-        if let Some(req) = &mut self.active_request {
-            if index < req.headers.len() {
-                req.headers.remove(index);
-                self.is_dirty = true;
-                cx.notify();
-            }
-        }
-    }
-
-    // Body
-    pub fn apply_set_body_json(&mut self, json_str: String) {
-        if let Some(req) = &mut self.active_request {
-            req.body = RequestBody::json(json_str);
-            self.is_dirty = true;
-        }
-    }
-
-    pub fn set_body_json(&mut self, json_str: String, cx: &mut Context<Self>) {
-        self.apply_set_body_json(json_str);
-        cx.notify();
-    }
-
-    pub fn set_body_type(&mut self, body: RequestBody, cx: &mut Context<Self>) {
-        if let Some(req) = &mut self.active_request {
-            req.body = body;
-            self.body_dropdown_open = false;
-            self.is_dirty = true;
-            self.body_version = self.body_version.wrapping_add(1);
-            cx.notify();
-        }
-    }
-
-    // Form Urlencoded
-    pub fn update_form_param(&mut self, index: usize, key: String, val: String, enabled: bool, cx: &mut Context<Self>) {
-        let prev_enabled = self.active_request.as_ref().and_then(|r| match &r.body {
-            RequestBody::FormUrlEncoded { params } => params.get(index).map(|p| p.enabled),
-            _ => None,
         });
-        let had_template = self.active_request.as_ref().and_then(|r| match &r.body {
-            RequestBody::FormUrlEncoded { params } => params.get(index).map(|p| p.key.contains("{{") || p.value.contains("{{")),
-            _ => None,
-        }).unwrap_or(false);
-        let starts_template = !had_template && (key.contains("{{") || val.contains("{{"));
-        let enabled_changed = prev_enabled != Some(enabled);
-        if let Some(req) = &mut self.active_request {
-            if let RequestBody::FormUrlEncoded { params } = &mut req.body {
-                if index < params.len() {
-                    params[index].key = key;
-                    params[index].value = val;
-                    params[index].enabled = enabled;
-                    self.is_dirty = true;
-                    if enabled_changed {
-                        cx.notify();
-                    } else if starts_template {
-                        self.schedule_input_refresh(cx);
-                    }
-                }
-            }
-        }
+        self.input_refresh_task = Some(task);
     }
 
-    pub fn add_form_param(&mut self, cx: &mut Context<Self>) {
-        if let Some(req) = &mut self.active_request {
-            if let RequestBody::FormUrlEncoded { params } = &mut req.body {
-                params.push(KeyValuePair::new("", ""));
-                self.is_dirty = true;
-                cx.notify();
-            }
-        }
-    }
-
-    pub fn remove_form_param(&mut self, index: usize, cx: &mut Context<Self>) {
-        if let Some(req) = &mut self.active_request {
-            if let RequestBody::FormUrlEncoded { params } = &mut req.body {
-                if index < params.len() {
-                    params.remove(index);
-                    self.is_dirty = true;
-                    cx.notify();
-                }
-            }
-        }
-    }
-
-    // Multipart
-    #[allow(clippy::too_many_arguments)]
-    pub fn update_multipart_item(&mut self, index: usize, key: String, val: String, is_file: bool, file_path: Option<String>, enabled: bool, cx: &mut Context<Self>) {
-        let previous = self.active_request.as_ref().and_then(|r| match &r.body {
-            RequestBody::Multipart { items } => items.get(index).map(|item| (item.enabled, item.is_file, item.file_path.clone(), item.key.contains("{{") || item.value.contains("{{"))),
-            _ => None,
-        });
-        let starts_template = !previous.as_ref().map(|p| p.3).unwrap_or(false)
-            && (key.contains("{{") || val.contains("{{"));
-        let structural_change = previous.as_ref().map(|p| p.0) != Some(enabled)
-            || previous.as_ref().map(|p| p.1) != Some(is_file)
-            || previous.as_ref().map(|p| p.2.clone()) != Some(file_path.clone());
-        if let Some(req) = &mut self.active_request {
-            if let RequestBody::Multipart { items } = &mut req.body {
-                if index < items.len() {
-                    items[index].key = key;
-                    items[index].value = val;
-                    items[index].is_file = is_file;
-                    items[index].file_path = file_path;
-                    items[index].enabled = enabled;
-                    self.is_dirty = true;
-                    if structural_change {
-                        cx.notify();
-                    } else if starts_template {
-                        self.schedule_input_refresh(cx);
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn add_multipart_item(&mut self, cx: &mut Context<Self>) {
-        if let Some(req) = &mut self.active_request {
-            if let RequestBody::Multipart { items } = &mut req.body {
-                items.push(MultipartItem::default());
-                self.is_dirty = true;
-                cx.notify();
-            }
-        }
-    }
-
-    pub fn remove_multipart_item(&mut self, index: usize, cx: &mut Context<Self>) {
-        if let Some(req) = &mut self.active_request {
-            if let RequestBody::Multipart { items } = &mut req.body {
-                if index < items.len() {
-                    items.remove(index);
-                    self.is_dirty = true;
-                    cx.notify();
-                }
-            }
-        }
-    }
-
-    // Raw body
-    pub fn apply_set_raw_body(&mut self, content: String, content_type: String) {
-        if let Some(req) = &mut self.active_request {
-            req.body = RequestBody::Raw { content, content_type };
-            self.is_dirty = true;
-        }
-    }
-
-    pub fn set_raw_body(&mut self, content: String, content_type: String, cx: &mut Context<Self>) {
-        self.apply_set_raw_body(content, content_type);
+    pub fn mark_dirty(&mut self, cx: &mut Context<Self>) {
+        self.is_dirty = true;
         cx.notify();
     }
 
-    // Binary body
-    pub fn set_binary_file(&mut self, file_path: String, cx: &mut Context<Self>) {
-        if let Some(req) = &mut self.active_request {
-            req.body = RequestBody::Binary { file_path };
-            self.is_dirty = true;
-            cx.notify();
-        }
-    }
-
-    // Auth
-    pub fn apply_set_auth(&mut self, auth: Auth) {
-        if let Some(req) = &mut self.active_request {
-            req.auth = auth;
-            self.auth_dropdown_open = false;
-            self.is_dirty = true;
-            self.request_version = self.request_version.wrapping_add(1);
-        }
-    }
-
-    pub fn set_auth(&mut self, auth: Auth, cx: &mut Context<Self>) {
-        self.apply_set_auth(auth);
+    pub fn bump_request_version(&mut self, cx: &mut Context<Self>) {
+        self.request_version = self.request_version.wrapping_add(1);
+        self.is_dirty = true;
         cx.notify();
     }
 
-    pub fn apply_set_bearer_token(&mut self, token: String) {
-        if let Some(req) = &mut self.active_request {
-            req.auth = Auth::Bearer { token };
-            self.is_dirty = true;
-        }
-    }
-
-    pub fn update_bearer_token_from_input(&mut self, token: String, cx: &mut Context<Self>) {
-        let had_template = match self.active_request.as_ref().map(|r| &r.auth) {
-            Some(Auth::Bearer { token: t }) => t.contains("{{"),
-            _ => false,
-        };
-        let has_template = token.contains("{{");
-        self.apply_set_bearer_token(token);
-        if had_template || has_template {
-            self.schedule_input_refresh(cx);
-        }
-    }
-
-    pub fn set_bearer_token(&mut self, token: String, cx: &mut Context<Self>) {
-        self.apply_set_bearer_token(token);
+    pub fn bump_body_version(&mut self, cx: &mut Context<Self>) {
+        self.body_version = self.body_version.wrapping_add(1);
+        self.is_dirty = true;
         cx.notify();
-    }
-
-    pub fn apply_set_basic_auth(&mut self, username: String, password: String) {
-        if let Some(req) = &mut self.active_request {
-            req.auth = Auth::Basic { username, password };
-            self.is_dirty = true;
-        }
-    }
-
-    pub fn update_basic_auth_from_input(&mut self, username: String, password: String, cx: &mut Context<Self>) {
-        let had_template = match self.active_request.as_ref().map(|r| &r.auth) {
-            Some(Auth::Basic { username: u, password: p }) => u.contains("{{") || p.contains("{{"),
-            _ => false,
-        };
-        let has_template = username.contains("{{") || password.contains("{{");
-        self.apply_set_basic_auth(username, password);
-        if had_template || has_template {
-            self.schedule_input_refresh(cx);
-        }
-    }
-
-    pub fn set_basic_auth(&mut self, username: String, password: String, cx: &mut Context<Self>) {
-        self.apply_set_basic_auth(username, password);
-        cx.notify();
-    }
-
-    pub fn apply_set_api_key(&mut self, key: String, value: String, in_header: bool) {
-        if let Some(req) = &mut self.active_request {
-            req.auth = Auth::ApiKey { key, value, in_header };
-            self.is_dirty = true;
-        }
-    }
-
-    pub fn update_api_key_from_input(&mut self, key: String, value: String, in_header: bool, cx: &mut Context<Self>) {
-        let had_template = match self.active_request.as_ref().map(|r| &r.auth) {
-            Some(Auth::ApiKey { key: k, value: v, .. }) => k.contains("{{") || v.contains("{{"),
-            _ => false,
-        };
-        let has_template = key.contains("{{") || value.contains("{{");
-        self.apply_set_api_key(key, value, in_header);
-        if had_template || has_template {
-            self.schedule_input_refresh(cx);
-        }
-    }
-
-    pub fn set_api_key(&mut self, key: String, value: String, in_header: bool, cx: &mut Context<Self>) {
-        self.apply_set_api_key(key, value, in_header);
-        cx.notify();
-    }
-
-    // Settings
-    pub fn update_settings(&mut self, settings: RequestSettings, cx: &mut Context<Self>) {
-        if let Some(req) = &mut self.active_request {
-            req.settings = settings;
-            self.is_dirty = true;
-            cx.notify();
-        }
-    }
-
-    pub fn set_timeout_secs(&mut self, secs: u64, cx: &mut Context<Self>) {
-        if let Some(req) = &mut self.active_request {
-            req.settings.set_timeout_secs(secs);
-            self.is_dirty = true;
-            cx.notify();
-        }
-    }
-
-    pub fn set_follow_redirects(&mut self, follow: bool, cx: &mut Context<Self>) {
-        if let Some(req) = &mut self.active_request {
-            req.settings.follow_redirects = follow;
-            self.is_dirty = true;
-            cx.notify();
-        }
-    }
-
-    pub fn set_validate_tls(&mut self, validate: bool, cx: &mut Context<Self>) {
-        if let Some(req) = &mut self.active_request {
-            req.settings.validate_tls = validate;
-            self.is_dirty = true;
-            cx.notify();
-        }
     }
 
     // Sending state
@@ -648,40 +182,6 @@ impl EditorState {
 
     pub fn set_script_error(&mut self, err: Option<String>, cx: &mut Context<Self>) {
         self.script_error = err;
-        cx.notify();
-    }
-
-    pub fn apply_set_pre_script(&mut self, code: String) {
-        if let Some(req) = &mut self.active_request {
-            let script = req.script.get_or_insert_with(Default::default);
-            script.pre_request = if code.trim().is_empty() {
-                None
-            } else {
-                Some(code)
-            };
-            self.is_dirty = true;
-        }
-    }
-
-    pub fn set_pre_script(&mut self, code: String, cx: &mut Context<Self>) {
-        self.apply_set_pre_script(code);
-        cx.notify();
-    }
-
-    pub fn apply_set_test_script(&mut self, code: String) {
-        if let Some(req) = &mut self.active_request {
-            let script = req.script.get_or_insert_with(Default::default);
-            script.post_response = if code.trim().is_empty() {
-                None
-            } else {
-                Some(code)
-            };
-            self.is_dirty = true;
-        }
-    }
-
-    pub fn set_test_script(&mut self, code: String, cx: &mut Context<Self>) {
-        self.apply_set_test_script(code);
         cx.notify();
     }
 }
@@ -769,6 +269,34 @@ pub fn effective_request_name_str(raw_name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use restclient_core::models::HttpMethod;
+
+    #[test]
+    fn test_editor_state_initial_and_tabs() {
+        let mut editor = EditorState::new();
+        assert_eq!(editor.active_request_id(), "scratch");
+        assert!(editor.open_tabs.is_empty());
+        assert!(!editor.is_dirty);
+
+        editor.open_tabs.push("req_1".to_string());
+        editor.open_tabs.push("req_2".to_string());
+        editor.active_request_id = Some("req_1".to_string());
+
+        // Pin tab
+        editor.pinned_tabs.insert("req_1".to_string());
+        assert!(editor.pinned_tabs.contains("req_1"));
+
+        // Close inactive tab
+        let next = editor.close_tab_internal("req_2");
+        assert_eq!(next, Some("req_1".to_string()));
+        assert_eq!(editor.open_tabs.len(), 1);
+
+        // Close active tab -> falls back to scratch
+        let next = editor.close_tab_internal("req_1");
+        assert_eq!(next, Some("scratch".to_string()));
+        assert_eq!(editor.active_request_id(), "scratch");
+        assert!(editor.open_tabs.is_empty());
+    }
 
     #[test]
     fn test_default_name_from_url() {
@@ -791,129 +319,15 @@ mod tests {
     #[test]
     fn test_effective_request_name() {
         let mut req = HttpRequestItem::new("test", "New Request", HttpMethod::Get, "https://speedtest.vn/api");
-        // Request name remains fixed even when URL has a domain
         assert_eq!(effective_request_name(&req), "New Request");
 
-        // Custom name takes precedence
         req.name = "Get Speedtest Servers".to_string();
         assert_eq!(effective_request_name(&req), "Get Speedtest Servers");
 
-        // Empty name falls back to Untitled Request
         req.name = "".to_string();
         assert_eq!(effective_request_name(&req), "Untitled Request");
 
         req.name = "   ".to_string();
         assert_eq!(effective_request_name(&req), "Untitled Request");
     }
-
-    #[test]
-    fn test_apply_url_with_query_params() {
-        let mut editor = EditorState::new();
-        editor.apply_url("https://api.example.com/search?q=rust&limit=10".to_string());
-
-        let req = editor.active_request.as_ref().unwrap();
-        // Query must be removed from URL to prevent duplication
-        assert_eq!(req.url, "https://api.example.com/search");
-        // Params must be extracted
-        assert_eq!(req.params.len(), 2);
-        assert_eq!(req.params[0].key, "q");
-        assert_eq!(req.params[0].value, "rust");
-        assert_eq!(req.params[1].key, "limit");
-        assert_eq!(req.params[1].value, "10");
-        assert_eq!(editor.active_tab_kind, RequestTabKind::Params);
-    }
-
-    #[test]
-    fn test_apply_url_without_query_preserves_params() {
-        let mut editor = EditorState::new();
-        editor.apply_url("https://api.example.com/search?q=rust".to_string());
-        assert_eq!(editor.active_request.as_ref().unwrap().params.len(), 1);
-
-        // User edits base URL path without '?'
-        editor.apply_url("https://api.example.com/search_v2".to_string());
-        let req = editor.active_request.as_ref().unwrap();
-        assert_eq!(req.url, "https://api.example.com/search_v2");
-        // Existing query params should NOT be wiped out
-        assert_eq!(req.params.len(), 1);
-        assert_eq!(req.params[0].key, "q");
-        assert_eq!(req.params[0].value, "rust");
-    }
-
-    #[test]
-    fn test_update_param_does_not_append_to_url() {
-        let mut editor = EditorState::new();
-        editor.apply_url("https://api.example.com/items?page=1".to_string());
-        assert_eq!(editor.active_request.as_ref().unwrap().url, "https://api.example.com/items");
-
-        // Update param in params table
-        editor.apply_update_param(0, "page".to_string(), "2".to_string(), true);
-        let req = editor.active_request.as_ref().unwrap();
-        // URL should still remain the clean base URL, avoiding duplicate
-        assert_eq!(req.url, "https://api.example.com/items");
-        assert_eq!(req.params[0].value, "2");
-
-        // Remove param
-        editor.apply_remove_param(0);
-        let req = editor.active_request.as_ref().unwrap();
-        assert_eq!(req.url, "https://api.example.com/items");
-        assert_eq!(req.params.len(), 0);
-    }
-
-    #[test]
-    fn test_typing_state_mutations_and_scripts() {
-        let mut editor = EditorState::new();
-        editor.apply_url("https://api.example.com/test".to_string());
-        assert!(editor.is_dirty);
-
-        // Apply headers
-        if let Some(req) = &mut editor.active_request {
-            req.headers.push(KeyValuePair::new("Authorization", "Bearer old"));
-        }
-        editor.apply_update_header(0, "Authorization".to_string(), "Bearer new_tok".to_string(), true);
-        assert_eq!(editor.active_request.as_ref().unwrap().headers[0].value, "Bearer new_tok");
-
-        // Apply scripts
-        editor.apply_set_pre_script("console.log('pre');".to_string());
-        assert_eq!(
-            editor.active_request.as_ref().unwrap().script.as_ref().unwrap().pre_request.as_deref(),
-            Some("console.log('pre');")
-        );
-
-        editor.apply_set_test_script("pm.test('ok', () => {});".to_string());
-        assert_eq!(
-            editor.active_request.as_ref().unwrap().script.as_ref().unwrap().post_response.as_deref(),
-            Some("pm.test('ok', () => {});")
-        );
-
-        // Apply auth
-        let ver = editor.request_version;
-        editor.apply_set_auth(Auth::Bearer { token: "token_abc".to_string() });
-        assert_eq!(editor.request_version, ver + 1);
-        assert_eq!(editor.active_request.as_ref().unwrap().auth, Auth::Bearer { token: "token_abc".to_string() });
-    }
-
-    #[test]
-    fn test_apply_imported_curl() {
-        let mut editor = EditorState::new();
-        assert_eq!(editor.request_version, 0);
-
-        let curl = "curl -X POST https://api.example.com/v1/users?source=web -H 'Authorization: Bearer token123' -H 'Content-Type: application/json' -d '{\"name\":\"Bob\"}'";
-        let parsed = restclient_core::curl::curl_to_request("ws1", curl).unwrap();
-        editor.apply_imported_curl_data(parsed);
-
-        assert!(editor.is_dirty);
-        assert_eq!(editor.request_version, 1);
-        assert_eq!(editor.active_tab_kind, RequestTabKind::Body);
-
-        let req = editor.active_request.as_ref().unwrap();
-        assert_eq!(req.method, HttpMethod::Post);
-        assert_eq!(req.url, "https://api.example.com/v1/users");
-        assert_eq!(req.params.len(), 1);
-        assert_eq!(req.params[0].key, "source");
-        assert_eq!(req.params[0].value, "web");
-        assert_eq!(req.name, "users");
-        assert_eq!(req.auth, Auth::Bearer { token: "token123".to_string() });
-        assert_eq!(req.body, RequestBody::json("{\"name\":\"Bob\"}"));
-    }
 }
-

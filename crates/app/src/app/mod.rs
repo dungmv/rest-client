@@ -198,7 +198,7 @@ impl AppView {
         };
         if let Some(req) = &initial_req {
             editor_state.update(cx, |ed, cx| {
-                ed.set_active_request(req.clone(), true, cx);
+                ed.set_active_request_id(&req.id, true, cx);
             });
 
             let req_url = req.url.clone();
@@ -531,31 +531,23 @@ impl Render for AppView {
             })
             .on_action({
                 let sb_c = sidebar_entity.clone();
-                let ws_c = ws_entity.clone();
                 let ed_c = ed_entity.clone();
                 move |_: &NavigateBack, _, cx| {
                     if let Some(req_id) = sb_c.update(cx, |sb, _| sb.navigate_back()) {
-                        let maybe_req = ws_c.read(cx).find_request(&req_id).cloned();
-                        if let Some(req) = maybe_req {
-                            ed_c.update(cx, |ed, cx| {
-                                ed.set_active_request(req, false, cx);
-                            });
-                        }
+                        ed_c.update(cx, |ed, cx| {
+                            ed.set_active_request_id(&req_id, false, cx);
+                        });
                     }
                 }
             })
             .on_action({
                 let sb_c = sidebar_entity.clone();
-                let ws_c = ws_entity.clone();
                 let ed_c = ed_entity.clone();
                 move |_: &NavigateForward, _, cx| {
                     if let Some(req_id) = sb_c.update(cx, |sb, _| sb.navigate_forward()) {
-                        let maybe_req = ws_c.read(cx).find_request(&req_id).cloned();
-                        if let Some(req) = maybe_req {
-                            ed_c.update(cx, |ed, cx| {
-                                ed.set_active_request(req, false, cx);
-                            });
-                        }
+                        ed_c.update(cx, |ed, cx| {
+                            ed.set_active_request_id(&req_id, false, cx);
+                        });
                     }
                 }
             })

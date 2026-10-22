@@ -9,30 +9,22 @@ pub fn save_active_request_without_redraw(
     workspace: &Entity<WorkspaceDataState>,
     cx: &mut App,
 ) {
-    let is_scratch_or_none = editor
-        .read(cx)
-        .active_request
-        .as_ref()
-        .map(|r| r.workspace_id == "scratch" || r.id.is_empty())
-        .unwrap_or(true);
-    if !is_scratch_or_none {
-        if let Some(req_id) = editor.read(cx).active_request.as_ref().map(|r| r.id.clone()) {
-            let ed = editor.clone();
-            let ws = workspace.clone();
-            persistence.update(cx, |per, cx| per.schedule_save_active_request(req_id, ed, ws, cx));
-        }
+    let req_id = editor.read(cx).active_request_id().to_string();
+    if req_id != "scratch" && !req_id.is_empty() {
+        let ed = editor.clone();
+        let ws = workspace.clone();
+        persistence.update(cx, |per, cx| per.schedule_save_active_request(req_id, ed, ws, cx));
     }
 }
 
 impl AppView {
     pub(crate) fn sync_active_request_editors(&mut self, window: &mut Window, cx: &mut App) {
-        let (req_switched, req_ver_changed, body_ver_changed, ed_body_ver, ed_req_ver) = {
+        let (req_switched, req_ver_changed, body_ver_changed, ed_body_ver, ed_req_ver, active_id) = {
             let ed = self.editor_state.read(cx);
-            let switched = match (&self.last_synced_request_id, &ed.active_request) {
-                (Some(last_id), Some(req)) => last_id != &req.id,
-                (None, Some(_)) => true,
-                (Some(_), None) => true,
-                (None, None) => false,
+            let active_id = ed.active_request_id().to_string();
+            let switched = match &self.last_synced_request_id {
+                Some(last_id) => last_id != &active_id,
+                None => true,
             };
             let req_changed = self.last_synced_request_version != ed.request_version;
             let body_changed = self.last_synced_body_version != ed.body_version;
@@ -42,6 +34,7 @@ impl AppView {
                 body_changed,
                 ed.body_version,
                 ed.request_version,
+                active_id,
             )
         };
 
@@ -49,8 +42,7 @@ impl AppView {
             return;
         }
 
-        let req_opt = self.editor_state.read(cx).active_request.clone();
-        let Some(req) = req_opt else {
+        let Some(req) = self.workspace_state.read(cx).find_request(&active_id).cloned() else {
             return;
         };
 

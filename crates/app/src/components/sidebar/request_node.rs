@@ -55,7 +55,6 @@ pub fn render_request_node(
     let ed_right = ctx.ed.clone();
     let ws_click = ctx.ws.clone();
     let sb_click = ctx.sidebar.clone();
-    let ws_right = ctx.ws.clone();
     let resp_click = ctx.resp.clone();
 
     let initial_name = req.display_name.clone();
@@ -120,41 +119,36 @@ pub fn render_request_node(
             });
         })
         .on_mouse_down(MouseButton::Right, move |_, _, cx| {
-            if let Some(r) = ws_right.read(cx).find_request(&r_id_right) {
-                let r = r.clone();
-                ed_right.update(cx, |state, cx| {
-                    state.set_active_request(r, false, cx);
-                });
-            }
+            ed_right.update(cx, |state, cx| {
+                state.set_active_request_id(&r_id_right, false, cx);
+            });
         })
         .on_click(move |ev, window, cx| {
             if is_renaming {
                 return;
             }
-            if let Some(req_item) = ws_click.read(cx).find_request(&r_id_click).cloned() {
-                if ev.click_count() > 1 {
-                    let r_id = r_id_click.clone();
-                    let init_name = initial_name_click.clone();
-                    let ws_c = ws_click.clone();
-                    sb_click.update(cx, |state, cx| {
-                        state.start_renaming_request(r_id, init_name, ws_c, window, cx);
-                    });
-                    ed_s.update(cx, |state, cx| {
-                        state.set_active_request(req_item, false, cx);
-                    });
-                } else {
-                    let r_id = r_id_click.clone();
-                    sb_click.update(cx, |state, _cx| {
-                        state.record_navigation(&r_id);
-                    });
-                    ed_s.update(cx, |state, cx| {
-                        state.set_active_request(req_item, false, cx);
-                    });
-                    let ws_store = ws_click.read(cx).store.clone();
-                    resp_click.update(cx, |state, cx| {
-                        state.load_for_request(&r_id, ws_store.as_ref(), cx);
-                    });
-                }
+            if ev.click_count() > 1 {
+                let r_id = r_id_click.clone();
+                let init_name = initial_name_click.clone();
+                let ws_c = ws_click.clone();
+                sb_click.update(cx, |state, cx| {
+                    state.start_renaming_request(r_id, init_name, ws_c, window, cx);
+                });
+                ed_s.update(cx, |state, cx| {
+                    state.set_active_request_id(&r_id_click, false, cx);
+                });
+            } else {
+                let r_id = r_id_click.clone();
+                sb_click.update(cx, |state, _cx| {
+                    state.record_navigation(&r_id);
+                });
+                ed_s.update(cx, |state, cx| {
+                    state.set_active_request_id(&r_id_click, false, cx);
+                });
+                let ws_store = ws_click.read(cx).store.clone();
+                resp_click.update(cx, |state, cx| {
+                    state.load_for_request(&r_id, ws_store.as_ref(), cx);
+                });
             }
         })
         .context_menu({
@@ -241,7 +235,7 @@ pub fn render_request_node(
                                     state.duplicate_request(&r_id_d, cx)
                                 }) {
                                     ed_d.update(cx, |state, cx| {
-                                        state.set_active_request(dup, false, cx);
+                                        state.set_active_request_id(&dup.id, false, cx);
                                     });
                                 }
                             }),
@@ -290,11 +284,12 @@ pub fn render_request_node(
                                 });
                                 ws_disc.update(cx, |ws, cx| {
                                     ws.reload_all();
-                                    let active_id = ed_disc.read(cx).active_request.as_ref().map(|r| r.id.clone());
-                                    if active_id.as_deref() == Some(&r_id_disc) {
-                                        if let Some(reloaded_req) = ws.find_request(&r_id_disc) {
+                                    let active_id = ed_disc.read(cx).active_request_id().to_string();
+                                    if active_id == r_id_disc {
+                                        if ws.find_request(&r_id_disc).is_some() {
                                             ed_disc.update(cx, |ed, cx| {
-                                                ed.set_active_request(reloaded_req.clone(), false, cx);
+                                                ed.bump_request_version(cx);
+                                                ed.bump_body_version(cx);
                                             });
                                         } else {
                                             ed_disc.update(cx, |ed, cx| {

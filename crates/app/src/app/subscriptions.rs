@@ -66,19 +66,25 @@ pub fn setup_app_subscriptions(
         match event {
             InputEvent::Change => {
                 let val = input.read(cx).value().to_string();
+                let active_id = ed_url.read(cx).active_request_id().to_string();
                 if restclient_core::curl::is_curl_command(&val) {
-                    let ws_id = ed_url
+                    let ws_id = ws_url
                         .read(cx)
-                        .active_request
-                        .as_ref()
+                        .find_request(&active_id)
                         .map(|r| r.workspace_id.clone())
                         .unwrap_or_else(|| "scratch".to_string());
                     match restclient_core::curl::curl_to_request(&ws_id, &val) {
                         Ok(parsed) => {
                             let method_name = parsed.method.as_str().to_string();
                             let target_url = parsed.url.clone();
+                            ws_url.update(cx, |ws, _| {
+                                ws.update_active_request(&active_id, |r| {
+                                    r.apply_imported_curl(parsed);
+                                });
+                            });
                             ed_url.update(cx, |ed, cx| {
-                                ed.apply_imported_curl(parsed, cx);
+                                ed.bump_request_version(cx);
+                                ed.bump_body_version(cx);
                             });
                             save_active_request_without_redraw(&ed_url, &per_url, &ws_url, cx);
                             this.toast_state.update(cx, |t, cx| {
@@ -104,8 +110,19 @@ pub fn setup_app_subscriptions(
                         }
                     }
                 }
+                let mut needs_refresh = false;
+                ws_url.update(cx, |ws, _| {
+                    ws.update_active_request(&active_id, |r| {
+                        let had_template = r.url.contains("{{");
+                        let (has_query, has_template) = r.apply_url(&val);
+                        needs_refresh = has_query || had_template || has_template;
+                    });
+                });
                 ed_url.update(cx, |ed, cx| {
-                    ed.update_url_from_input(val, cx);
+                    ed.is_dirty = true;
+                    if needs_refresh {
+                        ed.schedule_input_refresh(cx);
+                    }
                 });
                 save_active_request_without_redraw(&ed_url, &per_url, &ws_url, cx);
             }
@@ -123,9 +140,11 @@ pub fn setup_app_subscriptions(
     subscriptions.push(cx.subscribe(json_editor, move |_, txt, event, cx| {
         if let InputEvent::Change = event {
             let val = txt.read(cx).value().to_string();
-            ed_json.update(cx, |ed, _cx| {
-                ed.apply_set_body_json(val);
+            let active_id = ed_json.read(cx).active_request_id().to_string();
+            ws_json.update(cx, |ws, _| {
+                ws.update_active_request(&active_id, |r| r.set_body_json(val));
             });
+            ed_json.update(cx, |ed, cx| ed.mark_dirty(cx));
             save_active_request_without_redraw(&ed_json, &per_json, &ws_json, cx);
         }
     }));
@@ -137,9 +156,11 @@ pub fn setup_app_subscriptions(
     subscriptions.push(cx.subscribe(xml_editor, move |_, txt, event, cx| {
         if let InputEvent::Change = event {
             let val = txt.read(cx).value().to_string();
-            ed_xml.update(cx, |ed, _cx| {
-                ed.apply_set_raw_body(val, "application/xml".to_string());
+            let active_id = ed_xml.read(cx).active_request_id().to_string();
+            ws_xml.update(cx, |ws, _| {
+                ws.update_active_request(&active_id, |r| r.set_raw_body(val, "application/xml".to_string()));
             });
+            ed_xml.update(cx, |ed, cx| ed.mark_dirty(cx));
             save_active_request_without_redraw(&ed_xml, &per_xml, &ws_xml, cx);
         }
     }));
@@ -151,13 +172,17 @@ pub fn setup_app_subscriptions(
     subscriptions.push(cx.subscribe(raw_textarea, move |_, txt, event, cx| {
         if let InputEvent::Change = event {
             let val = txt.read(cx).value().to_string();
-            ed_raw.update(cx, |ed, _cx| {
-                let content_type = match ed.active_request.as_ref().map(|r| &r.body) {
-                    Some(RequestBody::Raw { content_type, .. }) => content_type.clone(),
-                    _ => "text/plain".to_string(),
-                };
-                ed.apply_set_raw_body(val, content_type);
+            let active_id = ed_raw.read(cx).active_request_id().to_string();
+            ws_raw.update(cx, |ws, _| {
+                ws.update_active_request(&active_id, |r| {
+                    let content_type = match &r.body {
+                        RequestBody::Raw { content_type, .. } => content_type.clone(),
+                        _ => "text/plain".to_string(),
+                    };
+                    r.set_raw_body(val, content_type);
+                });
             });
+            ed_raw.update(cx, |ed, cx| ed.mark_dirty(cx));
             save_active_request_without_redraw(&ed_raw, &per_raw, &ws_raw, cx);
         }
     }));
@@ -169,8 +194,23 @@ pub fn setup_app_subscriptions(
     subscriptions.push(cx.subscribe(bearer_token_input, move |_, inp, event, cx| {
         if let InputEvent::Change = event {
             let val = inp.read(cx).value().to_string();
+            let active_id = ed_bearer.read(cx).active_request_id().to_string();
+            let mut needs_refresh = false;
+            ws_bearer.update(cx, |ws, _| {
+                ws.update_active_request(&active_id, |r| {
+                    let had_template = match &r.auth {
+                        Auth::Bearer { token } => token.contains("{{"),
+                        _ => false,
+                    };
+                    needs_refresh = had_template || val.contains("{{");
+                    r.set_bearer_token(val);
+                });
+            });
             ed_bearer.update(cx, |ed, cx| {
-                ed.update_bearer_token_from_input(val, cx);
+                ed.is_dirty = true;
+                if needs_refresh {
+                    ed.schedule_input_refresh(cx);
+                }
             });
             save_active_request_without_redraw(&ed_bearer, &per_bearer, &ws_bearer, cx);
         }
@@ -184,8 +224,23 @@ pub fn setup_app_subscriptions(
         if let InputEvent::Change = event {
             let u = inp.read(cx).value().to_string();
             let p = pass_ref.read(cx).value().to_string();
+            let active_id = ed_basic_u.read(cx).active_request_id().to_string();
+            let mut needs_refresh = false;
+            ws_basic_u.update(cx, |ws, _| {
+                ws.update_active_request(&active_id, |r| {
+                    let had_template = match &r.auth {
+                        Auth::Basic { username, password } => username.contains("{{") || password.contains("{{"),
+                        _ => false,
+                    };
+                    needs_refresh = had_template || u.contains("{{") || p.contains("{{");
+                    r.set_basic_auth(u, p);
+                });
+            });
             ed_basic_u.update(cx, |ed, cx| {
-                ed.update_basic_auth_from_input(u, p, cx);
+                ed.is_dirty = true;
+                if needs_refresh {
+                    ed.schedule_input_refresh(cx);
+                }
             });
             save_active_request_without_redraw(&ed_basic_u, &per_basic_u, &ws_basic_u, cx);
         }
@@ -199,8 +254,23 @@ pub fn setup_app_subscriptions(
         if let InputEvent::Change = event {
             let u = user_ref.read(cx).value().to_string();
             let p = inp.read(cx).value().to_string();
+            let active_id = ed_basic_p.read(cx).active_request_id().to_string();
+            let mut needs_refresh = false;
+            ws_basic_p.update(cx, |ws, _| {
+                ws.update_active_request(&active_id, |r| {
+                    let had_template = match &r.auth {
+                        Auth::Basic { username, password } => username.contains("{{") || password.contains("{{"),
+                        _ => false,
+                    };
+                    needs_refresh = had_template || u.contains("{{") || p.contains("{{");
+                    r.set_basic_auth(u, p);
+                });
+            });
             ed_basic_p.update(cx, |ed, cx| {
-                ed.update_basic_auth_from_input(u, p, cx);
+                ed.is_dirty = true;
+                if needs_refresh {
+                    ed.schedule_input_refresh(cx);
+                }
             });
             save_active_request_without_redraw(&ed_basic_p, &per_basic_p, &ws_basic_p, cx);
         }
@@ -214,12 +284,23 @@ pub fn setup_app_subscriptions(
         if let InputEvent::Change = event {
             let k = inp.read(cx).value().to_string();
             let v = ak_val_ref.read(cx).value().to_string();
+            let active_id = ed_ak_k.read(cx).active_request_id().to_string();
+            let mut needs_refresh = false;
+            ws_ak_k.update(cx, |ws, _| {
+                ws.update_active_request(&active_id, |r| {
+                    let (had_template, in_header) = match &r.auth {
+                        Auth::ApiKey { key, value, in_header } => (key.contains("{{") || value.contains("{{"), *in_header),
+                        _ => (false, true),
+                    };
+                    needs_refresh = had_template || k.contains("{{") || v.contains("{{");
+                    r.set_api_key(k, v, in_header);
+                });
+            });
             ed_ak_k.update(cx, |ed, cx| {
-                let in_header = match ed.active_request.as_ref().map(|r| &r.auth) {
-                    Some(Auth::ApiKey { in_header, .. }) => *in_header,
-                    _ => true,
-                };
-                ed.update_api_key_from_input(k, v, in_header, cx);
+                ed.is_dirty = true;
+                if needs_refresh {
+                    ed.schedule_input_refresh(cx);
+                }
             });
             save_active_request_without_redraw(&ed_ak_k, &per_ak_k, &ws_ak_k, cx);
         }
@@ -233,12 +314,23 @@ pub fn setup_app_subscriptions(
         if let InputEvent::Change = event {
             let k = ak_key_ref.read(cx).value().to_string();
             let v = inp.read(cx).value().to_string();
+            let active_id = ed_ak_v.read(cx).active_request_id().to_string();
+            let mut needs_refresh = false;
+            ws_ak_v.update(cx, |ws, _| {
+                ws.update_active_request(&active_id, |r| {
+                    let (had_template, in_header) = match &r.auth {
+                        Auth::ApiKey { key, value, in_header } => (key.contains("{{") || value.contains("{{"), *in_header),
+                        _ => (false, true),
+                    };
+                    needs_refresh = had_template || k.contains("{{") || v.contains("{{");
+                    r.set_api_key(k, v, in_header);
+                });
+            });
             ed_ak_v.update(cx, |ed, cx| {
-                let in_header = match ed.active_request.as_ref().map(|r| &r.auth) {
-                    Some(Auth::ApiKey { in_header, .. }) => *in_header,
-                    _ => true,
-                };
-                ed.update_api_key_from_input(k, v, in_header, cx);
+                ed.is_dirty = true;
+                if needs_refresh {
+                    ed.schedule_input_refresh(cx);
+                }
             });
             save_active_request_without_redraw(&ed_ak_v, &per_ak_v, &ws_ak_v, cx);
         }
@@ -251,9 +343,11 @@ pub fn setup_app_subscriptions(
     subscriptions.push(cx.subscribe(pre_script_editor, move |_, txt, event, cx| {
         if let InputEvent::Change = event {
             let val = txt.read(cx).value().to_string();
-            ed_pre.update(cx, |ed, _cx| {
-                ed.apply_set_pre_script(val);
+            let active_id = ed_pre.read(cx).active_request_id().to_string();
+            ws_pre.update(cx, |ws, _| {
+                ws.update_active_request(&active_id, |r| r.set_pre_script(val));
             });
+            ed_pre.update(cx, |ed, cx| ed.mark_dirty(cx));
             save_active_request_without_redraw(&ed_pre, &per_pre, &ws_pre, cx);
         }
     }));
@@ -264,9 +358,11 @@ pub fn setup_app_subscriptions(
     subscriptions.push(cx.subscribe(test_script_editor, move |_, txt, event, cx| {
         if let InputEvent::Change = event {
             let val = txt.read(cx).value().to_string();
-            ed_test.update(cx, |ed, _cx| {
-                ed.apply_set_test_script(val);
+            let active_id = ed_test.read(cx).active_request_id().to_string();
+            ws_test.update(cx, |ws, _| {
+                ws.update_active_request(&active_id, |r| r.set_test_script(val));
             });
+            ed_test.update(cx, |ed, cx| ed.mark_dirty(cx));
             save_active_request_without_redraw(&ed_test, &per_test, &ws_test, cx);
         }
     }));
@@ -277,40 +373,28 @@ pub fn setup_app_subscriptions(
     let resp_clone = response_state.clone();
     let mut last_req_id = initial_req.map(|r| r.id.clone());
     subscriptions.push(cx.observe(editor_state, move |_, ed, cx| {
-        let (req_switch_info, is_dirty) = {
+        let (active_id, is_dirty) = {
             let ed_ref = ed.read(cx);
-            (
-                ed_ref
-                    .active_request
-                    .as_ref()
-                    .map(|r| (r.id.clone(), r.workspace_id == "scratch" || r.id.is_empty())),
-                ed_ref.is_dirty,
-            )
+            (ed_ref.active_request_id().to_string(), ed_ref.is_dirty)
         };
-        if let Some((req_id, is_scratch)) = req_switch_info {
-            if last_req_id.as_ref() != Some(&req_id) {
-                last_req_id = Some(req_id.clone());
-                let ws_store = ws_clone.read(cx).store.clone();
-                resp_clone.update(cx, |r_state, cx| {
-                    r_state.load_for_request(&req_id, ws_store.as_ref(), cx);
-                });
-            } else if !is_scratch && is_dirty {
-                // Debounced auto-save active request to workspace storage
-                let ed_ent = ed.clone();
-                let ws_ent = ws_clone.clone();
-                per_clone.update(cx, |per, cx| {
-                    per.schedule_save_active_request(req_id, ed_ent, ws_ent, cx);
-                });
-            }
-        } else if last_req_id.is_some() {
-            last_req_id = None;
+        let is_scratch = active_id == "scratch" || active_id.is_empty();
+        if last_req_id.as_deref() != Some(&active_id) {
+            last_req_id = Some(active_id.clone());
+            let ws_store = ws_clone.read(cx).store.clone();
             resp_clone.update(cx, |r_state, cx| {
-                r_state.set_response(None, cx);
+                r_state.load_for_request(&active_id, ws_store.as_ref(), cx);
+            });
+        } else if !is_scratch && is_dirty {
+            // Debounced auto-save active request to workspace storage
+            let ed_ent = ed.clone();
+            let ws_ent = ws_clone.clone();
+            per_clone.update(cx, |per, cx| {
+                per.schedule_save_active_request(active_id, ed_ent, ws_ent, cx);
             });
         }
     }));
 
-    // 5. Observe workspace_state: synchronize workspace changes, renamed request to editor_state.active_request & response_state
+    // 5. Observe workspace_state: synchronize workspace changes
     let ed_sync = editor_state.clone();
     let resp_sync = response_state.clone();
     let per_sync = persistence_state.clone();
@@ -319,100 +403,36 @@ pub fn setup_app_subscriptions(
         let current_ws_path = ws.read(cx).workspace_path.clone();
         if current_ws_path != last_workspace_path {
             last_workspace_path = current_ws_path;
-            let (next_req, ws_store) = {
+            let (next_id, ws_store) = {
                 let ws_ref = ws.read(cx);
                 let per_ref = per_sync.read(cx);
-                let req = per_ref
+                let id = per_ref
                     .local_state
                     .active_request
                     .as_ref()
-                    .and_then(|act_id| ws_ref.requests.iter().find(|r| &r.id == act_id).cloned())
-                    .or_else(|| ws_ref.requests.first().cloned());
-                (req, ws_ref.store.clone())
+                    .and_then(|act_id| ws_ref.requests.iter().find(|r| &r.id == act_id).map(|r| r.id.clone()))
+                    .or_else(|| ws_ref.requests.first().map(|r| r.id.clone()))
+                    .unwrap_or_else(|| "scratch".to_string());
+                (id, ws_ref.store.clone())
             };
-            if let Some(req) = next_req {
-                ed_sync.update(cx, |ed, cx| {
-                    ed.set_active_request(req.clone(), true, cx);
-                });
-                let req_id = req.id.clone();
-                resp_sync.update(cx, |resp, cx| {
-                    resp.load_for_request(&req_id, ws_store.as_ref(), cx);
-                });
-            } else {
-                ed_sync.update(cx, |ed, cx| {
-                    ed.active_request = None;
-                    cx.notify();
-                });
-                resp_sync.update(cx, |resp, cx| {
-                    resp.set_response(None, cx);
-                });
-            }
+            ed_sync.update(cx, |ed, cx| {
+                ed.set_active_request_id(&next_id, true, cx);
+            });
+            resp_sync.update(cx, |resp, cx| {
+                resp.load_for_request(&next_id, ws_store.as_ref(), cx);
+            });
             return;
         }
 
-        let (last_renamed, matching_req, saved_name_for_active, saved_examples_for_active) = {
-            let ws_ref = ws.read(cx);
-            let last_renamed = ws_ref.last_renamed_request.clone();
-            let matching_req = if let Some((_, new_id)) = &last_renamed {
-                ws_ref.requests.iter().find(|r| &r.id == new_id).cloned()
-            } else {
-                None
-            };
-            let active_id = ed_sync
-                .read(cx)
-                .active_request
-                .as_ref()
-                .map(|r| r.id.clone());
-            let (saved_name_for_active, saved_examples_for_active) =
-                if let Some(ref a_id) = active_id {
-                    let req = ws_ref.requests.iter().find(|r| &r.id == a_id);
-                    (
-                        req.map(|r| r.name.clone()),
-                        req.map(|r| r.examples.clone()),
-                    )
-                } else {
-                    (None, None)
-                };
-            (
-                last_renamed,
-                matching_req,
-                saved_name_for_active,
-                saved_examples_for_active,
-            )
-        };
-
+        let last_renamed = ws.read(cx).last_renamed_request.clone();
         if let Some((old_id, new_id)) = last_renamed {
             resp_sync.update(cx, |resp, _cx| {
                 resp.rename_request(&old_id, &new_id);
             });
             ed_sync.update(cx, |ed, cx| {
-                if let Some(curr_act) = &ed.active_request {
-                    if curr_act.id == old_id {
-                        if let Some(matching) = matching_req {
-                            ed.set_active_request(matching, false, cx);
-                        }
-                    }
-                }
-            });
-        }
-
-        if let Some(saved) = saved_name_for_active {
-            ed_sync.update(cx, |ed, cx| {
-                if let Some(curr) = &ed.active_request {
-                    if curr.name != saved {
-                        ed.set_name(saved, cx);
-                    }
-                }
-            });
-        }
-
-        if let Some(examples) = saved_examples_for_active {
-            ed_sync.update(cx, |ed, cx| {
-                if let Some(curr) = &mut ed.active_request {
-                    if curr.examples != examples {
-                        curr.examples = examples;
-                        cx.notify();
-                    }
+                if ed.active_request_id.as_deref() == Some(&old_id) {
+                    ed.active_request_id = Some(new_id);
+                    cx.notify();
                 }
             });
         }

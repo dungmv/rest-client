@@ -91,7 +91,6 @@ impl PersistenceState {
         let task_req_id = req_id.clone();
         self.unsaved_requests.insert(req_id.clone());
 
-        let req_snapshot = editor.read(cx).active_request.clone();
         let ed_clone = editor.clone();
 
         let task = cx.spawn(async move |this, cx| {
@@ -99,21 +98,9 @@ impl PersistenceState {
                 .timer(std::time::Duration::from_millis(500))
                 .await;
 
-            let req = editor
-                .read_with(cx, |ed, _| {
-                    if ed.active_request.as_ref().map(|r| &r.id) == Some(&task_req_id) {
-                        ed.active_request.clone()
-                    } else {
-                        None
-                    }
-                })
-                .or_else(|| {
-                    if req_snapshot.as_ref().map(|r| &r.id) == Some(&task_req_id) {
-                        req_snapshot
-                    } else {
-                        None
-                    }
-                });
+            let req = workspace_data.read_with(cx, |ws, _| {
+                ws.find_request(&task_req_id).cloned()
+            });
 
             let Some(req) = req else {
                 if let Some(this_ent) = this.upgrade() {
@@ -124,17 +111,6 @@ impl PersistenceState {
                 }
                 return;
             };
-
-            workspace_data.update(cx, |ws, cx| {
-                if let Some(idx) = ws.requests.iter().position(|r| r.id == task_req_id) {
-                    let mut r = req.clone();
-                    if r.last_status_code.is_none() {
-                        r.last_status_code = ws.requests[idx].last_status_code;
-                    }
-                    ws.requests[idx] = r;
-                    cx.notify();
-                }
-            });
 
             let store_clone = store.clone();
             let r_id = task_req_id.clone();
@@ -157,7 +133,7 @@ impl PersistenceState {
                     cx.notify();
                 });
                 ed_clone.update(cx, |ed, _| {
-                    if ed.active_request.as_ref().map(|r| &r.id) == Some(&final_req_id) {
+                    if ed.active_request_id.as_deref() == Some(&final_req_id) {
                         ed.is_dirty = false;
                     }
                 });

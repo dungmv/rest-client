@@ -25,7 +25,8 @@ impl AppView {
         let rt = self.tokio_rt.clone();
 
         let ed = ed_entity.read(cx);
-        let Some(mut req_item) = ed.active_request.clone() else {
+        let req_id = ed.active_request_id();
+        let Some(mut req_item) = self.workspace_state.read(cx).find_request(req_id).cloned() else {
             return;
         };
 
@@ -247,7 +248,7 @@ impl AppView {
 
                                 let loc_file = restclient_core::storage::models::LocFile::from_record(&record);
                                 this.workspace_state.update(cx, |ws, cx| {
-                                    if let Some(r) = ws.requests.iter_mut().find(|r| r.id == req_id) {
+                                    if let Some(r) = ws.find_request_mut(&req_id) {
                                         r.last_status_code = Some(status);
                                     }
                                     let _ = ws.store.save_response_cache(&req_id, &loc_file);
@@ -260,11 +261,6 @@ impl AppView {
                                 });
 
                                 this.editor_state.update(cx, |ed, cx| {
-                                    if let Some(r) = &mut ed.active_request {
-                                        if r.id == req_id {
-                                            r.last_status_code = Some(status);
-                                        }
-                                    }
                                     ed.stop_sending(cx);
                                 });
                             }

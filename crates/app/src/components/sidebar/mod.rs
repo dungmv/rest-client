@@ -192,9 +192,8 @@ impl RenderOnce for SidebarTree {
         let active_req_id = self
             .editor_state
             .read(cx)
-            .active_request
-            .as_ref()
-            .map(|r| r.id.clone());
+            .active_request_id
+            .clone();
         let active_example_name = self.response_state.read(cx).active_example_name.clone();
         let has_nothing = folders.is_empty() && requests.is_empty();
 
@@ -333,7 +332,7 @@ impl RenderOnce for SidebarTree {
                                                     state.create_request(None, cx)
                                                 });
                                                 ed_req.update(cx, |state, cx| {
-                                                    state.set_active_request(req, true, cx);
+                                                    state.set_active_request_id(&req.id, true, cx);
                                                 });
                                             }),
                                     )
@@ -413,7 +412,7 @@ impl RenderOnce for SidebarTree {
                                                 state.create_request(None, cx)
                                             });
                                             ed_new.update(cx, |state, cx| {
-                                                state.set_active_request(req, true, cx);
+                                                state.set_active_request_id(&req.id, true, cx);
                                             });
                                         })
                                         .child("+ New Request"),

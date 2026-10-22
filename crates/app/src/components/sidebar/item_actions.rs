@@ -9,12 +9,7 @@ pub fn delete_request_item(
     req_id: &str,
     cx: &mut App,
 ) {
-    let is_active = ed_entity
-        .read(cx)
-        .active_request
-        .as_ref()
-        .map(|r| r.id.as_str() == req_id)
-        .unwrap_or(false);
+    let is_active = ed_entity.read(cx).active_request_id() == req_id;
 
     let (remaining_requests, deleted_idx) = ws_entity.update(cx, |ws, cx| {
         let idx = ws.requests.iter().position(|r| r.id == req_id);
@@ -25,26 +20,25 @@ pub fn delete_request_item(
     let next_tab_id = ed_entity.update(cx, |ed, cx| ed.close_tab(req_id, cx));
 
     if is_active {
-        let next_req = next_tab_id
-            .and_then(|id| remaining_requests.iter().find(|r| r.id == id).cloned())
+        let next_req_id = next_tab_id
             .or_else(|| {
                 if let Some(idx) = deleted_idx {
                     if !remaining_requests.is_empty() {
                         let new_idx = idx.min(remaining_requests.len() - 1);
-                        return Some(remaining_requests[new_idx].clone());
+                        return Some(remaining_requests[new_idx].id.clone());
                     }
                 }
-                remaining_requests.first().cloned()
+                remaining_requests.first().map(|r| r.id.clone())
             });
 
-        if let Some(req) = next_req {
+        if let Some(id) = next_req_id {
             ed_entity.update(cx, |ed, cx| {
-                ed.set_active_request(req, false, cx);
+                ed.set_active_request_id(&id, false, cx);
             });
         } else {
             let new_req = ws_entity.update(cx, |ws, cx| ws.create_request(None, cx));
             ed_entity.update(cx, |ed, cx| {
-                ed.set_active_request(new_req, true, cx);
+                ed.set_active_request_id(&new_req.id, true, cx);
             });
         }
     }

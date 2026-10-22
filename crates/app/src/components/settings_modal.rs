@@ -39,7 +39,8 @@ impl RenderOnce for SettingsModal {
 
         let cur_pref = modal_clone.read(cx).theme_preference;
 
-        let active_req = ed_clone.read(cx).active_request.clone();
+        let active_id = ed_clone.read(cx).active_request_id().to_string();
+        let active_req = ws_clone.read(cx).find_request(&active_id).cloned();
         let settings = active_req
             .as_ref()
             .map(|r| r.settings.clone())
@@ -352,6 +353,8 @@ impl RenderOnce for SettingsModal {
                                             .children([10, 30, 60, 120].into_iter().map(|s| {
                                                 let is_cur = settings.timeout_secs() == s;
                                                 let ed_set = ed_clone.clone();
+                                                let ws_set = ws_clone.clone();
+                                                let id_set = active_id.clone();
                                                 div()
                                                     .id(format!("timeout-{}s", s))
                                                     .px(px(12.))
@@ -376,8 +379,13 @@ impl RenderOnce for SettingsModal {
                                                         }
                                                     })
                                                     .on_click(move |_, _, cx| {
+                                                        ws_set.update(cx, |ws, _| {
+                                                            ws.update_active_request(&id_set, |r| {
+                                                                r.set_timeout_secs(s);
+                                                            });
+                                                        });
                                                         ed_set.update(cx, |st, cx| {
-                                                            st.set_timeout_secs(s, cx);
+                                                            st.mark_dirty(cx);
                                                         });
                                                     })
                                                     .child(format!("{}s", s))
@@ -388,6 +396,8 @@ impl RenderOnce for SettingsModal {
                             .child({
                                 let cur_follow = settings.follow_redirects;
                                 let ed_set = ed_clone.clone();
+                                let ws_set = ws_clone.clone();
+                                let id_set = active_id.clone();
                                 div()
                                     .flex()
                                     .items_center()
@@ -438,8 +448,13 @@ impl RenderOnce for SettingsModal {
                                                 }
                                             })
                                             .on_click(move |_, _, cx| {
+                                                ws_set.update(cx, |ws, _| {
+                                                    ws.update_active_request(&id_set, |r| {
+                                                        r.set_follow_redirects(!cur_follow);
+                                                    });
+                                                });
                                                 ed_set.update(cx, |st, cx| {
-                                                    st.set_follow_redirects(!cur_follow, cx);
+                                                    st.mark_dirty(cx);
                                                 });
                                             })
                                             .child(if cur_follow { "✓ Enabled" } else { "Disabled" }),
@@ -449,6 +464,8 @@ impl RenderOnce for SettingsModal {
                             .child({
                                 let cur_tls = settings.validate_tls;
                                 let ed_set = ed_clone.clone();
+                                let ws_set = ws_clone.clone();
+                                let id_set = active_id.clone();
                                 div()
                                     .flex()
                                     .items_center()
@@ -499,8 +516,13 @@ impl RenderOnce for SettingsModal {
                                                 }
                                             })
                                             .on_click(move |_, _, cx| {
+                                                ws_set.update(cx, |ws, _| {
+                                                    ws.update_active_request(&id_set, |r| {
+                                                        r.set_validate_tls(!cur_tls);
+                                                    });
+                                                });
                                                 ed_set.update(cx, |st, cx| {
-                                                    st.set_validate_tls(!cur_tls, cx);
+                                                    st.mark_dirty(cx);
                                                 });
                                             })
                                             .child(if cur_tls { "✓ Enabled" } else { "Disabled" }),

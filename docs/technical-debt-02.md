@@ -46,14 +46,14 @@ Gợi ý: Tách AuthInputs, ScriptEditors thành GPUI entity riêng.
 
 ---
 
-### SL-003 🟠 HIGH — `EditorState` own toàn bộ `HttpRequestItem`
-**File:** [`crates/app/src/state/editor_state.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/state/editor_state.rs#L20-L38)
+### SL-003 ✅ RESOLVED (Was 🟠 HIGH) — `EditorState` own toàn bộ `HttpRequestItem`
+**File:** [`crates/app/src/state/editor_state.rs`](file:///crates/app/src/state/editor_state.rs)  ·  [`crates/app/src/state/workspace_data_state.rs`](file:///crates/app/src/state/workspace_data_state.rs)  ·  [`crates/core/src/models.rs`](file:///crates/core/src/models.rs)
 
-`EditorState.active_request: Option<HttpRequestItem>` clone toàn bộ dữ liệu request mỗi khi người dùng chọn một item trên sidebar. 18 fields tổng cộng.
-
-```
-Gợi ý: Chỉ lưu ID, tra cứu on-demand từ WorkspaceDataState.
-```
+*Đã giải quyết*: Xóa bỏ hoàn toàn việc `EditorState` sở hữu / nhân bản `active_request: Option<HttpRequestItem>` (18 fields).
+- `EditorState` nay chỉ lưu `active_request_id: Option<String>` đại diện cho con trỏ request đang được active. Tất cả các components (`EditorPane`, `RequestBar`, `BodyEditor`, `AuthTab`, `SettingsModal`, `TitleBar`, `Pipeline`, `Sync`) truy vấn và mượn tham chiếu `&HttpRequestItem` on-demand từ Single Source of Truth (`WorkspaceDataState`).
+- `WorkspaceDataState` quản lý `pub scratch_request: HttpRequestItem` trong bộ nhớ cho trạng thái scratch request (`id: "scratch"`), tích hợp đồng nhất vào `find_request()` / `find_request_mut()` / `update_active_request()`.
+- Chuyển toàn bộ domain mutation methods (`apply_url`, `update_param`, `add_param`, `remove_param`, `update_header`, `add_header`, `remove_header`, `set_body_json`, `set_body_type`, `update_form_param`, `add_form_param`, `remove_form_param`, `update_multipart_item`, `add_multipart_item`, `remove_multipart_item`, `set_raw_body`, `set_binary_file`, `set_auth`, `set_bearer_token`, `set_basic_auth`, `set_api_key`, `set_timeout_secs`, `set_follow_redirects`, `set_validate_tls`, `set_pre_script`, `set_test_script`, `apply_imported_curl`) trực tiếp vào `HttpRequestItem` trong `restclient-core`.
+- Triệt tiêu hoàn toàn chi phí clone toàn bộ request struct 18 fields mỗi khi click chuyển tab/request trên sidebar và loại bỏ hoàn toàn cơ chế copy ngược 2 chiều phức tạp giữa editor và workspace.
 
 ---
 

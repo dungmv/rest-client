@@ -30,18 +30,13 @@ fn persist_active_request_without_redraw(
     workspace: Option<&Entity<WorkspaceDataState>>,
     cx: &mut App,
 ) {
-    let (Some(persistence), Some(workspace), Some(req_id)) = (
-        persistence,
-        workspace,
-        editor.read(cx).active_request.as_ref().map(|r| r.id.clone()),
-    ) else {
-        return;
-    };
-    let is_scratch = editor.read(cx).active_request.as_ref().map(|r| r.workspace_id == "scratch").unwrap_or(true);
-    if !is_scratch {
-        let ed = editor.clone();
-        let ws = workspace.clone();
-        persistence.update(cx, |p, cx| p.schedule_save_active_request(req_id, ed, ws, cx));
+    let req_id = editor.read(cx).active_request_id().to_string();
+    if req_id != "scratch" && !req_id.is_empty() {
+        if let (Some(persistence), Some(workspace)) = (persistence, workspace) {
+            let ed = editor.clone();
+            let ws = workspace.clone();
+            persistence.update(cx, |p, cx| p.schedule_save_active_request(req_id, ed, ws, cx));
+        }
     }
 }
 
@@ -922,8 +917,10 @@ impl RenderOnce for BodyEditor {
         let ed = self.editor_state.read(cx);
         let ed_entity = self.editor_state.clone();
 
-        let req_id_str = ed.active_request.as_ref().map(|r| r.id.clone()).unwrap_or_else(|| "scratch".to_string());
-        let body_ref = ed.active_request.as_ref().map(|r| &r.body);
+        let req_id_str = ed.active_request_id().to_string();
+        let ws_read = self.workspace_state.as_ref().map(|ws| ws.read(cx));
+        let active_req = ws_read.as_ref().and_then(|ws| ws.find_request(&req_id_str));
+        let body_ref = active_req.map(|r| &r.body);
 
         let (is_none, is_json, is_xml, is_text, is_multipart, is_form, is_binary) = match body_ref {
             None | Some(RequestBody::None) => (true, false, false, false, false, false, false),
@@ -974,6 +971,8 @@ impl RenderOnce for BodyEditor {
                     .justify_between()
                     .child({
                         let ed_menu = ed_entity.clone();
+                        let ws_menu = self.workspace_state.clone();
+                        let id_menu = req_id_str.clone();
                         Button::new("btn-body-type-dropdown")
                             .ghost()
                             .compact()
@@ -1008,12 +1007,21 @@ impl RenderOnce for BodyEditor {
 
                                 // 1. None
                                 let ed_none = ed_menu.clone();
+                                let ws_none = ws_menu.clone();
+                                let id_none = id_menu.clone();
                                 m = m.item(
                                     PopupMenuItem::new("None")
                                         .checked(is_none)
                                         .on_click(move |_, _, cx| {
+                                            if let Some(ws) = &ws_none {
+                                                ws.update(cx, |ws, _| {
+                                                    ws.update_active_request(&id_none, |r| {
+                                                        r.set_body_type(RequestBody::None);
+                                                    });
+                                                });
+                                            }
                                             ed_none.update(cx, |state, cx| {
-                                                state.set_body_type(RequestBody::None, cx);
+                                                state.mark_dirty(cx);
                                             });
                                         }),
                                 );
@@ -1022,60 +1030,78 @@ impl RenderOnce for BodyEditor {
                                 m = m.separator().label("Text");
 
                                 let ed_json = ed_menu.clone();
+                                let id_json = id_menu.clone();
+                                let ws_json = ws_menu.clone();
                                 m = m.item(
                                     PopupMenuItem::new("JSON")
                                         .checked(is_json)
                                         .on_click(move |_, _, cx| {
+                                            if let Some(ws) = &ws_json {
+                                                ws.update(cx, |ws, _| {
+                                                    ws.update_active_request(&id_json, |r| {
+                                                        let current_str = match &r.body {
+                                                            RequestBody::Json { content } if !content.trim().is_empty() => content.clone(),
+                                                            RequestBody::Raw { content, .. } if !content.trim().is_empty() => content.clone(),
+                                                            _ => "{\n  \n}".to_string(),
+                                                        };
+                                                        r.set_body_json(current_str);
+                                                    });
+                                                });
+                                            }
                                             ed_json.update(cx, |state, cx| {
-                                                let current_str = match &state.active_request.as_ref().map(|r| &r.body) {
-                                                    Some(RequestBody::Json { content }) if !content.trim().is_empty() => content.clone(),
-                                                    Some(RequestBody::Raw { content, .. }) if !content.trim().is_empty() => content.clone(),
-                                                    _ => "{\n  \n}".to_string(),
-                                                };
-                                                state.set_body_type(RequestBody::json(current_str), cx);
+                                                state.body_dropdown_open = false;
+                                                state.bump_body_version(cx);
                                             });
                                         }),
                                 );
 
                                 let ed_xml = ed_menu.clone();
+                                let id_xml = id_menu.clone();
+                                let ws_xml = ws_menu.clone();
                                 m = m.item(
                                     PopupMenuItem::new("XML")
                                         .checked(is_xml)
                                         .on_click(move |_, _, cx| {
+                                            if let Some(ws) = &ws_xml {
+                                                ws.update(cx, |ws, _| {
+                                                    ws.update_active_request(&id_xml, |r| {
+                                                        let current_str = match &r.body {
+                                                            RequestBody::Raw { content, .. } if !content.trim().is_empty() => content.clone(),
+                                                            _ => "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<root>\n  \n</root>".to_string(),
+                                                        };
+                                                        r.set_raw_body(current_str, "application/xml".to_string());
+                                                    });
+                                                });
+                                            }
                                             ed_xml.update(cx, |state, cx| {
-                                                let current_str = match &state.active_request.as_ref().map(|r| &r.body) {
-                                                    Some(RequestBody::Raw { content, .. }) if !content.trim().is_empty() => content.clone(),
-                                                    _ => "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<root>\n  \n</root>".to_string(),
-                                                };
-                                                state.set_body_type(
-                                                    RequestBody::Raw {
-                                                        content: current_str,
-                                                        content_type: "application/xml".to_string(),
-                                                    },
-                                                    cx,
-                                                );
+                                                state.body_dropdown_open = false;
+                                                state.bump_body_version(cx);
                                             });
                                         }),
                                 );
 
                                 let ed_text = ed_menu.clone();
+                                let id_text = id_menu.clone();
+                                let ws_text = ws_menu.clone();
                                 m = m.item(
                                     PopupMenuItem::new("Text")
                                         .checked(is_text)
                                         .on_click(move |_, _, cx| {
+                                            if let Some(ws) = &ws_text {
+                                                ws.update(cx, |ws, _| {
+                                                    ws.update_active_request(&id_text, |r| {
+                                                        let current_str = match &r.body {
+                                                            RequestBody::Raw { content, .. } => content.clone(),
+                                                            RequestBody::Json { content } => content.clone(),
+                                                            _ => "".to_string(),
+                                                        };
+                                                        r.set_raw_body(current_str, "text/plain".to_string());
+                                                    });
+                                                });
+                                            }
                                             ed_text.update(cx, |state, cx| {
-                                                let current_str = match &state.active_request.as_ref().map(|r| &r.body) {
-                                                    Some(RequestBody::Raw { content, .. }) => content.clone(),
-                                                    Some(RequestBody::Json { content }) => content.clone(),
-                                                    _ => "".to_string(),
-                                                };
-                                                state.set_body_type(
-                                                    RequestBody::Raw {
-                                                        content: current_str,
-                                                        content_type: "text/plain".to_string(),
-                                                    },
-                                                    cx,
-                                                );
+                                                state.body_dropdown_open = false;
+                                                state.bump_body_version(cx);
                                             });
                                         }),
                                 );
@@ -1084,31 +1110,51 @@ impl RenderOnce for BodyEditor {
                                 m = m.separator().label("Form Data");
 
                                 let ed_mp = ed_menu.clone();
+                                let id_mp = id_menu.clone();
+                                let ws_mp = ws_menu.clone();
                                 m = m.item(
                                     PopupMenuItem::new("Multipart")
                                         .checked(is_multipart)
                                         .on_click(move |_, _, cx| {
+                                            if let Some(ws) = &ws_mp {
+                                                ws.update(cx, |ws, _| {
+                                                    ws.update_active_request(&id_mp, |r| {
+                                                        let current_items = match &r.body {
+                                                            RequestBody::Multipart { items } if !items.is_empty() => items.clone(),
+                                                            _ => vec![MultipartItem::default()],
+                                                        };
+                                                        r.set_body_type(RequestBody::multipart(current_items));
+                                                    });
+                                                });
+                                            }
                                             ed_mp.update(cx, |state, cx| {
-                                                let current_items = match &state.active_request.as_ref().map(|r| &r.body) {
-                                                    Some(RequestBody::Multipart { items }) if !items.is_empty() => items.clone(),
-                                                    _ => vec![MultipartItem::default()],
-                                                };
-                                                state.set_body_type(RequestBody::multipart(current_items), cx);
+                                                state.body_dropdown_open = false;
+                                                state.bump_body_version(cx);
                                             });
                                         }),
                                 );
 
                                 let ed_form = ed_menu.clone();
+                                let id_form = id_menu.clone();
+                                let ws_form = ws_menu.clone();
                                 m = m.item(
                                     PopupMenuItem::new("Form URL-Encoded")
                                         .checked(is_form)
                                         .on_click(move |_, _, cx| {
+                                            if let Some(ws) = &ws_form {
+                                                ws.update(cx, |ws, _| {
+                                                    ws.update_active_request(&id_form, |r| {
+                                                        let current_pairs = match &r.body {
+                                                            RequestBody::FormUrlEncoded { params } if !params.is_empty() => params.clone(),
+                                                            _ => vec![KeyValuePair::new("", "")],
+                                                        };
+                                                        r.set_body_type(RequestBody::form(current_pairs));
+                                                    });
+                                                });
+                                            }
                                             ed_form.update(cx, |state, cx| {
-                                                let current_pairs = match &state.active_request.as_ref().map(|r| &r.body) {
-                                                    Some(RequestBody::FormUrlEncoded { params }) if !params.is_empty() => params.clone(),
-                                                    _ => vec![KeyValuePair::new("", "")],
-                                                };
-                                                state.set_body_type(RequestBody::form(current_pairs), cx);
+                                                state.body_dropdown_open = false;
+                                                state.bump_body_version(cx);
                                             });
                                         }),
                                 );
@@ -1117,16 +1163,26 @@ impl RenderOnce for BodyEditor {
                                 m = m.separator().label("Binary");
 
                                 let ed_bin = ed_menu.clone();
+                                let id_bin = id_menu.clone();
+                                let ws_bin = ws_menu.clone();
                                 m = m.item(
                                     PopupMenuItem::new("Binary Stream")
                                         .checked(is_binary)
                                         .on_click(move |_, _, cx| {
+                                            if let Some(ws) = &ws_bin {
+                                                ws.update(cx, |ws, _| {
+                                                    ws.update_active_request(&id_bin, |r| {
+                                                        let current_path = match &r.body {
+                                                            RequestBody::Binary { file_path } => file_path.clone(),
+                                                            _ => "".to_string(),
+                                                        };
+                                                        r.set_body_type(RequestBody::Binary { file_path: current_path });
+                                                    });
+                                                });
+                                            }
                                             ed_bin.update(cx, |state, cx| {
-                                                let current_path = match &state.active_request.as_ref().map(|r| &r.body) {
-                                                    Some(RequestBody::Binary { file_path }) => file_path.clone(),
-                                                    _ => "".to_string(),
-                                                };
-                                                state.set_body_type(RequestBody::Binary { file_path: current_path }, cx);
+                                                state.body_dropdown_open = false;
+                                                state.bump_body_version(cx);
                                             });
                                         }),
                                 );
@@ -1166,7 +1222,7 @@ impl RenderOnce for BodyEditor {
                                                             txt.set_value(pretty.clone(), window, cx);
                                                         });
                                                         ed_c.update(cx, |state, cx| {
-                                                            state.set_body_json(pretty, cx);
+                                                            state.mark_dirty(cx);
                                                         });
                                                     }
                                                 }
@@ -1210,7 +1266,7 @@ impl RenderOnce for BodyEditor {
                                                         txt.set_value(pretty.clone(), window, cx);
                                                     });
                                                     ed_c.update(cx, |state, cx| {
-                                                        state.set_raw_body(pretty, "application/xml".to_string(), cx);
+                                                        state.mark_dirty(cx);
                                                     });
                                                 }
                                                 Err(e) => {
@@ -1283,10 +1339,14 @@ impl RenderOnce for BodyEditor {
                                 let pairs = pairs.clone();
                                 let ed_up = ed_entity.clone();
                                 let ws_up = self.workspace_state.clone();
+                                let ws_add = ws_up.clone();
+                                let ws_del = ws_up.clone();
                                 let per_up = self.persistence_state.clone();
                                 let ed_add = ed_entity.clone();
                                 let ed_del = ed_entity.clone();
-                                let req_id_str = req_id_str.clone();
+                                let req_id_change = req_id_str.clone();
+                                let req_id_add = req_id_str.clone();
+                                let req_id_del = req_id_str.clone();
 
                                 div()
                                     .size_full()
@@ -1296,19 +1356,40 @@ impl RenderOnce for BodyEditor {
                                             format!("form-kv-{}", req_id_str),
                                             pairs,
                                             move |idx, k, v, enabled, _, cx| {
+                                                if let Some(ws) = &ws_up {
+                                                    ws.update(cx, |ws, _| {
+                                                        ws.update_active_request(&req_id_change, |r| {
+                                                            r.update_form_param(idx, k, v, enabled);
+                                                        });
+                                                    });
+                                                }
                                                 ed_up.update(cx, |state, cx| {
-                                                    state.update_form_param(idx, k, v, enabled, cx);
+                                                    state.mark_dirty(cx);
                                                 });
                                                 persist_active_request_without_redraw(&ed_up, per_up.as_ref(), ws_up.as_ref(), cx);
                                             },
                                             move |_, cx| {
+                                                if let Some(ws) = &ws_add {
+                                                    ws.update(cx, |ws, _| {
+                                                        ws.update_active_request(&req_id_add, |r| {
+                                                            r.add_form_param();
+                                                        });
+                                                    });
+                                                }
                                                 ed_add.update(cx, |state, cx| {
-                                                    state.add_form_param(cx);
+                                                    state.mark_dirty(cx);
                                                 });
                                             },
                                             move |idx, _, cx| {
+                                                if let Some(ws) = &ws_del {
+                                                    ws.update(cx, |ws, _| {
+                                                        ws.update_active_request(&req_id_del, |r| {
+                                                            r.remove_form_param(idx);
+                                                        });
+                                                    });
+                                                }
                                                 ed_del.update(cx, |state, cx| {
-                                                    state.remove_form_param(idx, cx);
+                                                    state.mark_dirty(cx);
                                                 });
                                             },
                                         )
@@ -1351,6 +1432,15 @@ impl RenderOnce for BodyEditor {
                                         let ed_row = ed_c.clone();
                                         let ed_del = ed_c.clone();
                                         let ed_pick = ed_c.clone();
+                                        let ws_row = self.workspace_state.clone();
+                                        let ws_del = ws_row.clone();
+                                        let ws_pick = ws_row.clone();
+                                        let per_row = self.persistence_state.clone();
+                                        let per_del = per_row.clone();
+                                        let per_pick = per_row.clone();
+                                        let id_row = req_id_str.clone();
+                                        let id_del = id_row.clone();
+                                        let id_pick = id_row.clone();
                                         let key_str = item.key.clone();
                                         let val_str = item.value.clone();
                                         let is_file = item.is_file;
@@ -1385,12 +1475,20 @@ impl RenderOnce for BodyEditor {
 
                                                 let k_in_1 = key_input.clone();
                                                 let v_in_1 = val_input.clone();
+                                                let id_k = req_id_str.clone();
                                                 let sub1 = cx.subscribe_in(&key_input, window, move |_, _, event, _, cx| {
                                                     if let gpui_component::input::InputEvent::Change = event {
                                                         let k = k_in_1.read(cx).value().to_string();
                                                         let v = v_in_1.read(cx).value().to_string();
+                                                        if let Some(ws) = &ws_up {
+                                                            ws.update(cx, |ws, _| {
+                                                                ws.update_active_request(&id_k, |r| {
+                                                                    r.update_multipart_item(idx, k, v, is_file, fp_k.clone(), true);
+                                                                });
+                                                            });
+                                                        }
                                                         ed_up_k.update(cx, |state, cx| {
-                                                            state.update_multipart_item(idx, k, v, is_file, fp_k.clone(), true, cx);
+                                                            state.mark_dirty(cx);
                                                         });
                                                         persist_active_request_without_redraw(&ed_up_k, per_up.as_ref(), ws_up.as_ref(), cx);
                                                     }
@@ -1398,12 +1496,20 @@ impl RenderOnce for BodyEditor {
 
                                                 let k_in_2 = key_input.clone();
                                                 let v_in_2 = val_input.clone();
+                                                let id_v = req_id_str.clone();
                                                 let sub2 = cx.subscribe_in(&val_input, window, move |_, _, event, _, cx| {
                                                     if let gpui_component::input::InputEvent::Change = event {
                                                         let k = k_in_2.read(cx).value().to_string();
                                                         let v = v_in_2.read(cx).value().to_string();
+                                                        if let Some(ws) = &ws_up_v {
+                                                            ws.update(cx, |ws, _| {
+                                                                ws.update_active_request(&id_v, |r| {
+                                                                    r.update_multipart_item(idx, k, v, is_file, fp_v.clone(), true);
+                                                                });
+                                                            });
+                                                        }
                                                         ed_up_v.update(cx, |state, cx| {
-                                                            state.update_multipart_item(idx, k, v, is_file, fp_v.clone(), true, cx);
+                                                            state.mark_dirty(cx);
                                                         });
                                                         persist_active_request_without_redraw(&ed_up_v, per_up_v.as_ref(), ws_up_v.as_ref(), cx);
                                                     }
@@ -1429,6 +1535,9 @@ impl RenderOnce for BodyEditor {
                                             // Checkbox
                                             .child({
                                                 let ed_toggle = ed_row.clone();
+                                                let ws_toggle = ws_row.clone();
+                                                let per_toggle = per_row.clone();
+                                                let id_toggle = id_row.clone();
                                                 let k = key_str.clone();
                                                 let v = val_str.clone();
                                                 let fp = file_path.clone();
@@ -1447,9 +1556,17 @@ impl RenderOnce for BodyEditor {
                                                     .text_xs()
                                                     .text_color(t.primary_foreground)
                                                     .on_click(move |_, _, cx| {
+                                                        if let Some(ws) = &ws_toggle {
+                                                            ws.update(cx, |ws, _| {
+                                                                ws.update_active_request(&id_toggle, |r| {
+                                                                    r.update_multipart_item(idx, k.clone(), v.clone(), is_file, fp.clone(), !enabled);
+                                                                });
+                                                            });
+                                                        }
                                                         ed_toggle.update(cx, |state, cx| {
-                                                            state.update_multipart_item(idx, k.clone(), v.clone(), is_file, fp.clone(), !enabled, cx);
+                                                            state.mark_dirty(cx);
                                                         });
+                                                        persist_active_request_without_redraw(&ed_toggle, per_toggle.as_ref(), ws_toggle.as_ref(), cx);
                                                     })
                                                     .child(if enabled { "✓" } else { "" })
                                             })
@@ -1476,6 +1593,9 @@ impl RenderOnce for BodyEditor {
                                             // Type toggle: Text | File
                                             .child({
                                                 let ed_toggle_type = ed_row.clone();
+                                                let ws_toggle_type = ws_row.clone();
+                                                let per_toggle_type = per_row.clone();
+                                                let id_toggle_type = id_row.clone();
                                                 let k = key_str.clone();
                                                 let v = val_str.clone();
                                                 let fp = file_path.clone();
@@ -1494,9 +1614,17 @@ impl RenderOnce for BodyEditor {
                                                     .text_xs()
                                                     .text_color(t.text_secondary)
                                                     .on_click(move |_, _, cx| {
+                                                        if let Some(ws) = &ws_toggle_type {
+                                                            ws.update(cx, |ws, _| {
+                                                                ws.update_active_request(&id_toggle_type, |r| {
+                                                                    r.update_multipart_item(idx, k.clone(), v.clone(), !is_file, fp.clone(), enabled);
+                                                                });
+                                                            });
+                                                        }
                                                         ed_toggle_type.update(cx, |state, cx| {
-                                                            state.update_multipart_item(idx, k.clone(), v.clone(), !is_file, fp.clone(), enabled, cx);
+                                                            state.mark_dirty(cx);
                                                         });
+                                                        persist_active_request_without_redraw(&ed_toggle_type, per_toggle_type.as_ref(), ws_toggle_type.as_ref(), cx);
                                                     })
                                                     .child(div().flex().items_center().gap(px(3.)).child(Icon::new(if is_file { IconName::File } else { IconName::Type }).size(px(12.))).child(if is_file { "File" } else { "Text" }))
                                             })
@@ -1532,6 +1660,9 @@ impl RenderOnce for BodyEditor {
                                             // Browse button (only enabled if is_file)
                                             .child({
                                                 let ed_p = ed_pick.clone();
+                                                let ws_p = ws_pick.clone();
+                                                let per_p = per_pick.clone();
+                                                let id_p = id_pick.clone();
                                                 let k = key_str.clone();
                                                 let v = val_str.clone();
                                                 let btn = div()
@@ -1553,13 +1684,24 @@ impl RenderOnce for BodyEditor {
                                                         .hover(|s| s.bg(t.bg_hover))
                                                         .on_click(move |_, _, cx| {
                                                             let ed_bg = ed_p.clone();
+                                                            let ws_bg = ws_p.clone();
+                                                            let per_bg = per_p.clone();
+                                                            let id_bg = id_p.clone();
                                                             let k_bg = k.clone();
                                                             let v_bg = v.clone();
                                                             if let Some(path) = rfd::FileDialog::new().pick_file() {
                                                                 let p = path.to_string_lossy().to_string();
+                                                                if let Some(ws) = &ws_bg {
+                                                                    ws.update(cx, |ws, _| {
+                                                                        ws.update_active_request(&id_bg, |r| {
+                                                                            r.update_multipart_item(idx, k_bg, v_bg, true, Some(p), enabled);
+                                                                        });
+                                                                    });
+                                                                }
                                                                 ed_bg.update(cx, |state, cx| {
-                                                                    state.update_multipart_item(idx, k_bg, v_bg, true, Some(p), enabled, cx);
+                                                                    state.mark_dirty(cx);
                                                                 });
+                                                                persist_active_request_without_redraw(&ed_bg, per_bg.as_ref(), ws_bg.as_ref(), cx);
                                                             }
                                                         })
                                                         .child("Browse...")
@@ -1582,9 +1724,17 @@ impl RenderOnce for BodyEditor {
                                                     .text_color(t.text_muted)
                                                     .text_xs()
                                                     .on_click(move |_, _, cx| {
+                                                        if let Some(ws) = &ws_del {
+                                                            ws.update(cx, |ws, _| {
+                                                                ws.update_active_request(&id_del, |r| {
+                                                                    r.remove_multipart_item(idx);
+                                                                });
+                                                            });
+                                                        }
                                                         ed_del.update(cx, |state, cx| {
-                                                            state.remove_multipart_item(idx, cx);
+                                                            state.mark_dirty(cx);
                                                         });
+                                                        persist_active_request_without_redraw(&ed_del, per_del.as_ref(), ws_del.as_ref(), cx);
                                                     })
                                                     .child("×")
                                             )
@@ -1595,6 +1745,9 @@ impl RenderOnce for BodyEditor {
                                             .pt(px(4.))
                                             .child({
                                                 let ed_add = ed_c.clone();
+                                                let ws_add = self.workspace_state.clone();
+                                                let per_add = self.persistence_state.clone();
+                                                let id_add = req_id_str.clone();
                                                 div()
                                                     .id("btn-add-multipart-part")
                                                     .px(px(8.))
@@ -1613,9 +1766,17 @@ impl RenderOnce for BodyEditor {
                                                     .text_xs()
                                                     .text_color(t.text_secondary)
                                                     .on_click(move |_, _, cx| {
+                                                        if let Some(ws) = &ws_add {
+                                                            ws.update(cx, |ws, _| {
+                                                                ws.update_active_request(&id_add, |r| {
+                                                                    r.add_multipart_item();
+                                                                });
+                                                            });
+                                                        }
                                                         ed_add.update(cx, |state, cx| {
-                                                            state.add_multipart_item(cx);
+                                                            state.mark_dirty(cx);
                                                         });
+                                                        persist_active_request_without_redraw(&ed_add, per_add.as_ref(), ws_add.as_ref(), cx);
                                                     })
                                                     .child("+ Add Part")
                                             })
@@ -1736,6 +1897,9 @@ impl RenderOnce for BodyEditor {
                                                             .gap(px(6.))
                                                             .child({
                                                                 let ed_pick = ed_c.clone();
+                                                                let ws_pick = self.workspace_state.clone();
+                                                                let per_pick = self.persistence_state.clone();
+                                                                let id_pick = req_id_str.clone();
                                                                 div()
                                                                     .id("btn-browse-binary-file")
                                                                     .px(px(10.))
@@ -1749,17 +1913,31 @@ impl RenderOnce for BodyEditor {
                                                                     .font_weight(gpui::FontWeight::SEMIBOLD)
                                                                     .on_click(move |_, _, cx| {
                                                                         let ed_bg = ed_pick.clone();
+                                                                        let ws_bg = ws_pick.clone();
+                                                                        let per_bg = per_pick.clone();
+                                                                        let id_bg = id_pick.clone();
                                                                         if let Some(path) = rfd::FileDialog::new().pick_file() {
                                                                             let p = path.to_string_lossy().to_string();
+                                                                            if let Some(ws) = &ws_bg {
+                                                                                ws.update(cx, |ws, _| {
+                                                                                    ws.update_active_request(&id_bg, |r| {
+                                                                                        r.set_binary_file(p);
+                                                                                    });
+                                                                                });
+                                                                            }
                                                                             ed_bg.update(cx, |state, cx| {
-                                                                                state.set_binary_file(p, cx);
+                                                                                state.mark_dirty(cx);
                                                                             });
+                                                                            persist_active_request_without_redraw(&ed_bg, per_bg.as_ref(), ws_bg.as_ref(), cx);
                                                                         }
                                                                     })
                                                                     .child("Browse File...")
                                                             })
                                                             .when(has_file, |this| {
                                                                 let ed_clr = ed_c.clone();
+                                                                let ws_clr = self.workspace_state.clone();
+                                                                let per_clr = self.persistence_state.clone();
+                                                                let id_clr = req_id_str.clone();
                                                                 this.child(
                                                                     div()
                                                                         .id("btn-clear-binary-file")
@@ -1774,9 +1952,17 @@ impl RenderOnce for BodyEditor {
                                                                         .text_xs()
                                                                         .text_color(t.text_secondary)
                                                                         .on_click(move |_, _, cx| {
+                                                                            if let Some(ws) = &ws_clr {
+                                                                                ws.update(cx, |ws, _| {
+                                                                                    ws.update_active_request(&id_clr, |r| {
+                                                                                        r.set_binary_file("".to_string());
+                                                                                    });
+                                                                                });
+                                                                            }
                                                                             ed_clr.update(cx, |state, cx| {
-                                                                                state.set_binary_file("".to_string(), cx);
+                                                                                state.mark_dirty(cx);
                                                                             });
+                                                                            persist_active_request_without_redraw(&ed_clr, per_clr.as_ref(), ws_clr.as_ref(), cx);
                                                                         })
                                                                         .child("Clear")
                                                                 )

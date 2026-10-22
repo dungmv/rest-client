@@ -33,6 +33,8 @@ pub fn render_auth_tab(
 ) -> Div {
     let t = theme();
     let ed_c = editor_state.clone();
+    let ws_c = workspace_state.clone();
+    let req_id_str = editor_state.read(cx).active_request_id().to_string();
     let auth_label = match auth {
         Auth::Inherit => "Inherit",
         Auth::None => "None",
@@ -66,6 +68,8 @@ pub fn render_auth_tab(
                 )
                 .child({
                     let ed_m = ed_c.clone();
+                    let ws_m = ws_c.clone();
+                    let req_id_m = req_id_str.clone();
                     Button::new("btn-auth-type-dropdown")
                         .ghost()
                         .compact()
@@ -85,22 +89,32 @@ pub fn render_auth_tab(
                         )
                         .dropdown_menu(move |menu, _window, _cx| {
                             let ed_inh = ed_m.clone();
+                            let ws_inh = ws_m.clone();
+                            let req_inh = req_id_m.clone();
                             let ed_none = ed_m.clone();
+                            let ws_none = ws_m.clone();
+                            let req_none = req_id_m.clone();
                             let ed_bearer = ed_m.clone();
+                            let ws_bearer = ws_m.clone();
+                            let req_bearer = req_id_m.clone();
                             let ed_basic = ed_m.clone();
+                            let ws_basic = ws_m.clone();
+                            let req_basic = req_id_m.clone();
                             let ed_apikey = ed_m.clone();
+                            let ws_apikey = ws_m.clone();
+                            let req_apikey = req_id_m.clone();
 
                             menu.item(
                                 PopupMenuItem::new("Inherit")
                                     .checked(is_inherit)
                                     .on_click(move |_, _, cx| {
-                                        ed_inh.update(cx, |state, cx| {
-                                            if !matches!(
-                                                state.active_request.as_ref().map(|r| &r.auth),
-                                                Some(Auth::Inherit)
-                                            ) {
-                                                state.set_auth(Auth::Inherit, cx);
-                                            }
+                                        ws_inh.update(cx, |ws, _| {
+                                            ws.update_active_request(&req_inh, |r| {
+                                                r.set_auth(Auth::Inherit);
+                                            });
+                                        });
+                                        ed_inh.update(cx, |ed, cx| {
+                                            ed.mark_dirty(cx);
                                         });
                                     }),
                             )
@@ -108,13 +122,13 @@ pub fn render_auth_tab(
                                 PopupMenuItem::new("None")
                                     .checked(is_none)
                                     .on_click(move |_, _, cx| {
-                                        ed_none.update(cx, |state, cx| {
-                                            if !matches!(
-                                                state.active_request.as_ref().map(|r| &r.auth),
-                                                Some(Auth::None)
-                                            ) {
-                                                state.set_auth(Auth::None, cx);
-                                            }
+                                        ws_none.update(cx, |ws, _| {
+                                            ws.update_active_request(&req_none, |r| {
+                                                r.set_auth(Auth::None);
+                                            });
+                                        });
+                                        ed_none.update(cx, |ed, cx| {
+                                            ed.mark_dirty(cx);
                                         });
                                     }),
                             )
@@ -122,18 +136,15 @@ pub fn render_auth_tab(
                                 PopupMenuItem::new("Bearer Token")
                                     .checked(is_bearer)
                                     .on_click(move |_, _, cx| {
-                                        ed_bearer.update(cx, |state, cx| {
-                                            if !matches!(
-                                                state.active_request.as_ref().map(|r| &r.auth),
-                                                Some(Auth::Bearer { .. })
-                                            ) {
-                                                state.set_auth(
-                                                    Auth::Bearer {
-                                                        token: "".to_string(),
-                                                    },
-                                                    cx,
-                                                );
-                                            }
+                                        ws_bearer.update(cx, |ws, _| {
+                                            ws.update_active_request(&req_bearer, |r| {
+                                                r.set_auth(Auth::Bearer {
+                                                    token: "".to_string(),
+                                                });
+                                            });
+                                        });
+                                        ed_bearer.update(cx, |ed, cx| {
+                                            ed.mark_dirty(cx);
                                         });
                                     }),
                             )
@@ -141,19 +152,16 @@ pub fn render_auth_tab(
                                 PopupMenuItem::new("Basic Auth")
                                     .checked(is_basic)
                                     .on_click(move |_, _, cx| {
-                                        ed_basic.update(cx, |state, cx| {
-                                            if !matches!(
-                                                state.active_request.as_ref().map(|r| &r.auth),
-                                                Some(Auth::Basic { .. })
-                                            ) {
-                                                state.set_auth(
-                                                    Auth::Basic {
-                                                        username: "".to_string(),
-                                                        password: "".to_string(),
-                                                    },
-                                                    cx,
-                                                );
-                                            }
+                                        ws_basic.update(cx, |ws, _| {
+                                            ws.update_active_request(&req_basic, |r| {
+                                                r.set_auth(Auth::Basic {
+                                                    username: "".to_string(),
+                                                    password: "".to_string(),
+                                                });
+                                            });
+                                        });
+                                        ed_basic.update(cx, |ed, cx| {
+                                            ed.mark_dirty(cx);
                                         });
                                     }),
                             )
@@ -161,20 +169,17 @@ pub fn render_auth_tab(
                                 PopupMenuItem::new("API Key")
                                     .checked(is_apikey)
                                     .on_click(move |_, _, cx| {
-                                        ed_apikey.update(cx, |state, cx| {
-                                            if !matches!(
-                                                state.active_request.as_ref().map(|r| &r.auth),
-                                                Some(Auth::ApiKey { .. })
-                                            ) {
-                                                state.set_auth(
-                                                    Auth::ApiKey {
-                                                        key: "X-API-Key".to_string(),
-                                                        value: "".to_string(),
-                                                        in_header: true,
-                                                    },
-                                                    cx,
-                                                );
-                                            }
+                                        ws_apikey.update(cx, |ws, _| {
+                                            ws.update_active_request(&req_apikey, |r| {
+                                                r.set_auth(Auth::ApiKey {
+                                                    key: "X-API-Key".to_string(),
+                                                    value: "".to_string(),
+                                                    in_header: true,
+                                                });
+                                            });
+                                        });
+                                        ed_apikey.update(cx, |ed, cx| {
+                                            ed.mark_dirty(cx);
                                         });
                                     }),
                             )
@@ -212,6 +217,8 @@ pub fn render_auth_tab(
                     .child("No authentication will be added to this request."),
                 Auth::Bearer { .. } => {
                     let ed_b = ed_c.clone();
+                    let ws_b = ws_c.clone();
+                    let req_b = req_id_str.clone();
                     div()
                         .flex()
                         .items_center()
@@ -236,8 +243,13 @@ pub fn render_auth_tab(
                                     window,
                                     cx,
                                     move |new_token, _window, cx| {
+                                        ws_b.update(cx, |ws, _| {
+                                            ws.update_active_request(&req_b, |r| {
+                                                r.set_bearer_token(new_token);
+                                            });
+                                        });
                                         ed_b.update(cx, |ed, cx| {
-                                            ed.set_bearer_token(new_token, cx);
+                                            ed.mark_dirty(cx);
                                         });
                                     },
                                 )),
@@ -245,7 +257,11 @@ pub fn render_auth_tab(
                 }
                 Auth::Basic { .. } => {
                     let ed_u = ed_c.clone();
+                    let ws_u = ws_c.clone();
+                    let req_u = req_id_str.clone();
                     let ed_p = ed_c.clone();
+                    let ws_p = ws_c.clone();
+                    let req_p = req_id_str.clone();
                     let p_in = inputs.basic_pass_input.clone();
                     let u_in = inputs.basic_user_input.clone();
                     div()
@@ -278,8 +294,13 @@ pub fn render_auth_tab(
                                             cx,
                                             move |new_user, _window, cx| {
                                                 let pass = p_in.read(cx).value().to_string();
+                                                ws_u.update(cx, |ws, _| {
+                                                    ws.update_active_request(&req_u, |r| {
+                                                        r.set_basic_auth(new_user, pass);
+                                                    });
+                                                });
                                                 ed_u.update(cx, |ed, cx| {
-                                                    ed.set_basic_auth(new_user, pass, cx);
+                                                    ed.mark_dirty(cx);
                                                 });
                                             },
                                         )),
@@ -311,8 +332,13 @@ pub fn render_auth_tab(
                                             cx,
                                             move |new_pass, _window, cx| {
                                                 let user = u_in.read(cx).value().to_string();
+                                                ws_p.update(cx, |ws, _| {
+                                                    ws.update_active_request(&req_p, |r| {
+                                                        r.set_basic_auth(user, new_pass);
+                                                    });
+                                                });
                                                 ed_p.update(cx, |ed, cx| {
-                                                    ed.set_basic_auth(user, new_pass, cx);
+                                                    ed.mark_dirty(cx);
                                                 });
                                             },
                                         )),
@@ -322,8 +348,14 @@ pub fn render_auth_tab(
                 Auth::ApiKey { in_header, .. } => {
                     let in_header_val = *in_header;
                     let ed_loc = ed_c.clone();
+                    let ws_loc = ws_c.clone();
+                    let req_loc = req_id_str.clone();
                     let ed_k = ed_c.clone();
+                    let ws_k = ws_c.clone();
+                    let req_k = req_id_str.clone();
                     let ed_v = ed_c.clone();
+                    let ws_v = ws_c.clone();
+                    let req_v = req_id_str.clone();
                     let v_in = inputs.apikey_val_input.clone();
                     let k_in = inputs.apikey_key_input.clone();
                     let loc_label = if in_header_val {
@@ -362,13 +394,17 @@ pub fn render_auth_tab(
                                             cx,
                                             move |new_key, _window, cx| {
                                                 let val = v_in.read(cx).value().to_string();
+                                                ws_k.update(cx, |ws, _| {
+                                                    ws.update_active_request(&req_k, |r| {
+                                                        r.set_api_key(
+                                                            new_key,
+                                                            val,
+                                                            in_header_val,
+                                                        );
+                                                    });
+                                                });
                                                 ed_k.update(cx, |ed, cx| {
-                                                    ed.set_api_key(
-                                                        new_key,
-                                                        val,
-                                                        in_header_val,
-                                                        cx,
-                                                    );
+                                                    ed.mark_dirty(cx);
                                                 });
                                             },
                                         )),
@@ -400,13 +436,17 @@ pub fn render_auth_tab(
                                             cx,
                                             move |new_val, _window, cx| {
                                                 let key = k_in.read(cx).value().to_string();
+                                                ws_v.update(cx, |ws, _| {
+                                                    ws.update_active_request(&req_v, |r| {
+                                                        r.set_api_key(
+                                                            key,
+                                                            new_val,
+                                                            in_header_val,
+                                                        );
+                                                    });
+                                                });
                                                 ed_v.update(cx, |ed, cx| {
-                                                    ed.set_api_key(
-                                                        key,
-                                                        new_val,
-                                                        in_header_val,
-                                                        cx,
-                                                    );
+                                                    ed.mark_dirty(cx);
                                                 });
                                             },
                                         )),
@@ -427,6 +467,8 @@ pub fn render_auth_tab(
                                 )
                                 .child({
                                     let ed_l = ed_loc.clone();
+                                    let ws_l = ws_loc.clone();
+                                    let req_l = req_loc.clone();
                                     let k_input = inputs.apikey_key_input.clone();
                                     let v_input = inputs.apikey_val_input.clone();
                                     Button::new("btn-auth-apikey-location-dropdown")
@@ -448,7 +490,11 @@ pub fn render_auth_tab(
                                         )
                                         .dropdown_menu(move |menu, _window, _cx| {
                                             let ed_h = ed_l.clone();
+                                            let ws_h = ws_l.clone();
+                                            let req_h = req_l.clone();
                                             let ed_q = ed_l.clone();
+                                            let ws_q = ws_l.clone();
+                                            let req_q = req_l.clone();
                                             let k_h = k_input.clone();
                                             let v_h = v_input.clone();
                                             let k_q = k_input.clone();
@@ -460,8 +506,13 @@ pub fn render_auth_tab(
                                                     .on_click(move |_, _, cx| {
                                                         let key = k_h.read(cx).value().to_string();
                                                         let val = v_h.read(cx).value().to_string();
+                                                        ws_h.update(cx, |ws, _| {
+                                                            ws.update_active_request(&req_h, |r| {
+                                                                r.set_api_key(key, val, true);
+                                                            });
+                                                        });
                                                         ed_h.update(cx, |ed, cx| {
-                                                            ed.set_api_key(key, val, true, cx);
+                                                            ed.mark_dirty(cx);
                                                         });
                                                     }),
                                             )
@@ -471,8 +522,13 @@ pub fn render_auth_tab(
                                                     .on_click(move |_, _, cx| {
                                                         let key = k_q.read(cx).value().to_string();
                                                         let val = v_q.read(cx).value().to_string();
+                                                        ws_q.update(cx, |ws, _| {
+                                                            ws.update_active_request(&req_q, |r| {
+                                                                r.set_api_key(key, val, false);
+                                                            });
+                                                        });
                                                         ed_q.update(cx, |ed, cx| {
-                                                            ed.set_api_key(key, val, false, cx);
+                                                            ed.mark_dirty(cx);
                                                         });
                                                     }),
                                             )

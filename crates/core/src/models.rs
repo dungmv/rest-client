@@ -341,6 +341,203 @@ impl HttpRequestItem {
             examples: Vec::new(),
         }
     }
+
+    /// Sets the URL and extracts query parameters into `self.params` if query parameters exist.
+    /// Returns `(has_query, has_template)`.
+    pub fn apply_url(&mut self, url: &str) -> (bool, bool) {
+        let has_query = url.contains('?');
+        let has_template = url.contains("{{");
+        if has_query {
+            let (base, parsed_params) = crate::http::parse_query_from_url(url);
+            self.url = base;
+            if !parsed_params.is_empty() {
+                let mut disabled: Vec<KeyValuePair> =
+                    self.params.iter().filter(|p| !p.enabled).cloned().collect();
+                let mut final_params = parsed_params;
+                final_params.append(&mut disabled);
+                self.params = final_params;
+            }
+        } else {
+            self.url = url.to_string();
+        }
+        (has_query, has_template)
+    }
+
+    pub fn set_method(&mut self, method: HttpMethod) {
+        self.method = method;
+    }
+
+    pub fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+
+    pub fn update_param(&mut self, index: usize, key: String, val: String, enabled: bool) {
+        if index < self.params.len() {
+            self.params[index].key = key;
+            self.params[index].value = val;
+            self.params[index].enabled = enabled;
+        }
+    }
+
+    pub fn add_param(&mut self) {
+        self.params.push(KeyValuePair::new("", ""));
+    }
+
+    pub fn remove_param(&mut self, index: usize) {
+        if index < self.params.len() {
+            self.params.remove(index);
+        }
+    }
+
+    pub fn update_header(&mut self, index: usize, key: String, val: String, enabled: bool) {
+        if index < self.headers.len() {
+            self.headers[index].key = key;
+            self.headers[index].value = val;
+            self.headers[index].enabled = enabled;
+        }
+    }
+
+    pub fn add_header(&mut self) {
+        self.headers.push(KeyValuePair::new("", ""));
+    }
+
+    pub fn remove_header(&mut self, index: usize) {
+        if index < self.headers.len() {
+            self.headers.remove(index);
+        }
+    }
+
+    pub fn set_body_json(&mut self, json_str: String) {
+        self.body = RequestBody::json(json_str);
+    }
+
+    pub fn set_body_type(&mut self, body: RequestBody) {
+        self.body = body;
+    }
+
+    pub fn update_form_param(&mut self, index: usize, key: String, val: String, enabled: bool) {
+        if let RequestBody::FormUrlEncoded { params } = &mut self.body {
+            if index < params.len() {
+                params[index].key = key;
+                params[index].value = val;
+                params[index].enabled = enabled;
+            }
+        }
+    }
+
+    pub fn add_form_param(&mut self) {
+        if let RequestBody::FormUrlEncoded { params } = &mut self.body {
+            params.push(KeyValuePair::new("", ""));
+        }
+    }
+
+    pub fn remove_form_param(&mut self, index: usize) {
+        if let RequestBody::FormUrlEncoded { params } = &mut self.body {
+            if index < params.len() {
+                params.remove(index);
+            }
+        }
+    }
+
+    pub fn update_multipart_item(
+        &mut self,
+        index: usize,
+        key: String,
+        val: String,
+        is_file: bool,
+        file_path: Option<String>,
+        enabled: bool,
+    ) {
+        if let RequestBody::Multipart { items } = &mut self.body {
+            if index < items.len() {
+                items[index].key = key;
+                items[index].value = val;
+                items[index].is_file = is_file;
+                items[index].file_path = file_path;
+                items[index].enabled = enabled;
+            }
+        }
+    }
+
+    pub fn add_multipart_item(&mut self) {
+        if let RequestBody::Multipart { items } = &mut self.body {
+            items.push(MultipartItem::default());
+        }
+    }
+
+    pub fn remove_multipart_item(&mut self, index: usize) {
+        if let RequestBody::Multipart { items } = &mut self.body {
+            if index < items.len() {
+                items.remove(index);
+            }
+        }
+    }
+
+    pub fn set_raw_body(&mut self, content: String, content_type: String) {
+        self.body = RequestBody::Raw { content, content_type };
+    }
+
+    pub fn set_binary_file(&mut self, file_path: String) {
+        self.body = RequestBody::Binary { file_path };
+    }
+
+    pub fn set_auth(&mut self, auth: Auth) {
+        self.auth = auth;
+    }
+
+    pub fn set_bearer_token(&mut self, token: String) {
+        self.auth = Auth::Bearer { token };
+    }
+
+    pub fn set_basic_auth(&mut self, username: String, password: String) {
+        self.auth = Auth::Basic { username, password };
+    }
+
+    pub fn set_api_key(&mut self, key: String, value: String, in_header: bool) {
+        self.auth = Auth::ApiKey { key, value, in_header };
+    }
+
+    pub fn set_timeout_secs(&mut self, secs: u64) {
+        self.settings.set_timeout_secs(secs);
+    }
+
+    pub fn set_follow_redirects(&mut self, follow: bool) {
+        self.settings.follow_redirects = follow;
+    }
+
+    pub fn set_validate_tls(&mut self, validate: bool) {
+        self.settings.validate_tls = validate;
+    }
+
+    pub fn set_pre_script(&mut self, code: String) {
+        let script = self.script.get_or_insert_with(Default::default);
+        script.pre_request = if code.trim().is_empty() {
+            None
+        } else {
+            Some(code)
+        };
+    }
+
+    pub fn set_test_script(&mut self, code: String) {
+        let script = self.script.get_or_insert_with(Default::default);
+        script.post_response = if code.trim().is_empty() {
+            None
+        } else {
+            Some(code)
+        };
+    }
+
+    pub fn apply_imported_curl(&mut self, parsed: HttpRequestItem) {
+        if self.name == "New Request" || self.name == "Untitled Request" || self.name.is_empty() {
+            self.name = parsed.name;
+        }
+        self.method = parsed.method;
+        self.url = parsed.url;
+        self.params = parsed.params;
+        self.headers = parsed.headers;
+        self.auth = parsed.auth;
+        self.body = parsed.body;
+    }
 }
 
 
@@ -637,5 +834,87 @@ mod tests {
         assert_eq!(status_code_to_reason(404), "Not Found");
         assert_eq!(status_code_to_reason(500), "Internal Server Error");
         assert_eq!(status_code_to_reason(999), "");
+    }
+
+    #[test]
+    fn test_http_request_item_mutations() {
+        let mut req = HttpRequestItem::new("ws1", "Untitled Request", HttpMethod::Get, "");
+        assert_eq!(req.name, "Untitled Request");
+        assert_eq!(req.method, HttpMethod::Get);
+
+        // URL & query params parsing
+        let (has_query, has_template) = req.apply_url("https://api.example.com/items?q=rust&limit=20");
+        assert!(has_query);
+        assert!(!has_template);
+        assert_eq!(req.url, "https://api.example.com/items");
+        assert_eq!(req.params.len(), 2);
+        assert_eq!(req.params[0].key, "q");
+        assert_eq!(req.params[0].value, "rust");
+
+        // Method & name
+        req.set_method(HttpMethod::Post);
+        assert_eq!(req.method, HttpMethod::Post);
+        req.set_name("Get Items".to_string());
+        assert_eq!(req.name, "Get Items");
+
+        // Params
+        req.update_param(1, "limit".to_string(), "50".to_string(), false);
+        assert_eq!(req.params[1].value, "50");
+        assert!(!req.params[1].enabled);
+        req.add_param();
+        assert_eq!(req.params.len(), 3);
+        req.remove_param(2);
+        assert_eq!(req.params.len(), 2);
+
+        // Headers
+        req.add_header();
+        req.update_header(0, "Accept".to_string(), "application/json".to_string(), true);
+        assert_eq!(req.headers[0].key, "Accept");
+        assert_eq!(req.headers[0].value, "application/json");
+        req.remove_header(0);
+        assert!(req.headers.is_empty());
+
+        // Body
+        req.set_body_json(r#"{"test": true}"#.to_string());
+        assert_eq!(req.body, RequestBody::json(r#"{"test": true}"#));
+
+        req.set_body_type(RequestBody::form(vec![KeyValuePair::new("k", "v")]));
+        req.update_form_param(0, "k2".to_string(), "v2".to_string(), true);
+        req.add_form_param();
+        assert_eq!(req.body, RequestBody::form(vec![KeyValuePair::new("k2", "v2"), KeyValuePair::new("", "")]));
+        req.remove_form_param(1);
+
+        req.set_body_type(RequestBody::multipart(vec![MultipartItem::default()]));
+        req.update_multipart_item(0, "file".to_string(), "data".to_string(), false, None, true);
+        req.add_multipart_item();
+        req.remove_multipart_item(1);
+
+        req.set_raw_body("hello".to_string(), "text/plain".to_string());
+        assert_eq!(req.body, RequestBody::Raw { content: "hello".to_string(), content_type: "text/plain".to_string() });
+
+        req.set_binary_file("/tmp/file.bin".to_string());
+        assert_eq!(req.body, RequestBody::Binary { file_path: "/tmp/file.bin".to_string() });
+
+        // Auth
+        req.set_bearer_token("tok123".to_string());
+        assert_eq!(req.auth, Auth::Bearer { token: "tok123".to_string() });
+        req.set_basic_auth("u".to_string(), "p".to_string());
+        assert_eq!(req.auth, Auth::Basic { username: "u".to_string(), password: "p".to_string() });
+        req.set_api_key("x-api-key".to_string(), "secret".to_string(), true);
+        assert_eq!(req.auth, Auth::ApiKey { key: "x-api-key".to_string(), value: "secret".to_string(), in_header: true });
+
+        // Settings
+        req.set_timeout_secs(42);
+        assert_eq!(req.settings.timeout_secs(), 42);
+        req.set_follow_redirects(false);
+        assert!(!req.settings.follow_redirects);
+        req.set_validate_tls(false);
+        assert!(!req.settings.validate_tls);
+
+        // Scripts
+        req.set_pre_script("console.log(1);".to_string());
+        assert_eq!(req.script.as_ref().unwrap().pre_request.as_deref(), Some("console.log(1);"));
+        req.set_test_script("pm.test('ok');".to_string());
+        assert_eq!(req.script.as_ref().unwrap().post_response.as_deref(), Some("pm.test('ok');"));
     }
 }

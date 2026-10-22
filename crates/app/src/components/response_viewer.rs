@@ -51,7 +51,7 @@ impl RenderOnce for ResponseViewer {
         let resp_s = self.response_state.read(cx);
         let ed_s = self.editor_state.read(cx);
 
-        let active_id = ed_s.active_request.as_ref().map(|r| r.id.clone());
+        let active_id = ed_s.active_request_id.clone();
         let is_viewing_example = resp_s.active_example_name.is_some();
         let is_sending_this_request = ed_s.is_sending
             && (ed_s.running_request_id.is_none()

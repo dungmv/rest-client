@@ -16,6 +16,7 @@ pub struct WorkspaceDataState {
     pub active_workspace: Option<Workspace>,
     pub folders: Vec<Folder>,
     pub requests: Vec<HttpRequestItem>,
+    pub scratch_request: HttpRequestItem,
     pub parse_errors: HashMap<String, String>,
     pub pins: Vec<String>,
     pub last_renamed_request: Option<(String, String)>,
@@ -55,6 +56,7 @@ impl WorkspaceDataState {
             active_workspace: Some(Workspace::new(&default_name)),
             folders: Vec::new(),
             requests: Vec::new(),
+            scratch_request: HttpRequestItem::new("scratch", "Untitled Request", restclient_core::models::HttpMethod::Get, ""),
             parse_errors: HashMap::new(),
             pins: Vec::new(),
             last_renamed_request: None,
@@ -74,6 +76,7 @@ impl WorkspaceDataState {
             active_workspace: Some(Workspace::new("Test Workspace")),
             folders: Vec::new(),
             requests: Vec::new(),
+            scratch_request: HttpRequestItem::new("scratch", "Untitled Request", restclient_core::models::HttpMethod::Get, ""),
             parse_errors: HashMap::new(),
             pins: Vec::new(),
             last_renamed_request: None,
@@ -242,7 +245,35 @@ impl WorkspaceDataState {
     }
 
     pub fn find_request(&self, req_id: &str) -> Option<&HttpRequestItem> {
-        self.requests.iter().find(|r| r.id == req_id)
+        if req_id == "scratch" {
+            Some(&self.scratch_request)
+        } else {
+            self.requests.iter().find(|r| r.id == req_id)
+        }
+    }
+
+    pub fn find_request_mut(&mut self, req_id: &str) -> Option<&mut HttpRequestItem> {
+        if req_id == "scratch" {
+            Some(&mut self.scratch_request)
+        } else {
+            self.requests.iter_mut().find(|r| r.id == req_id)
+        }
+    }
+
+    pub fn mutate_request<F, R>(&mut self, req_id: &str, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut HttpRequestItem) -> R,
+    {
+        self.find_request_mut(req_id).map(f)
+    }
+
+    pub fn update_active_request<F>(&mut self, req_id: &str, f: F)
+    where
+        F: FnOnce(&mut HttpRequestItem),
+    {
+        if let Some(r) = self.find_request_mut(req_id) {
+            f(r);
+        }
     }
 
     pub fn save_workspace_scope_settings(

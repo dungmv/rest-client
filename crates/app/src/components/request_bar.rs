@@ -19,6 +19,7 @@ use restclient_core::models::HttpMethod;
 #[allow(clippy::type_complexity)]
 #[derive(IntoElement)]
 pub struct RequestBar {
+    workspace_state: Entity<crate::state::WorkspaceDataState>,
     env_state: Entity<EnvironmentState>,
     modal_state: Entity<ModalState>,
     editor_state: Entity<EditorState>,
@@ -28,6 +29,7 @@ pub struct RequestBar {
 
 impl RequestBar {
     pub fn new(
+        workspace_state: Entity<crate::state::WorkspaceDataState>,
         env_state: Entity<EnvironmentState>,
         modal_state: Entity<ModalState>,
         editor_state: Entity<EditorState>,
@@ -35,6 +37,7 @@ impl RequestBar {
         on_send: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         Self {
+            workspace_state,
             env_state,
             modal_state,
             editor_state,
@@ -49,10 +52,14 @@ impl RenderOnce for RequestBar {
         let t = theme();
         let (method, is_sending) = {
             let ed = self.editor_state.read(cx);
-            (
-                ed.active_request.as_ref().map(|r| r.method).unwrap_or(HttpMethod::Get),
-                ed.is_sending,
-            )
+            let active_id = ed.active_request_id();
+            let method = self
+                .workspace_state
+                .read(cx)
+                .find_request(active_id)
+                .map(|r| r.method)
+                .unwrap_or(HttpMethod::Get);
+            (method, ed.is_sending)
         };
         let url = self.url_input.read(cx).value().to_string();
 
@@ -301,6 +308,8 @@ impl RenderOnce for RequestBar {
                 let current_url = url.clone();
                 let inp_target = url_input_clone.clone();
                 let ed_target = ed_clone.clone();
+                let ws_data_target = self.workspace_state.clone();
+                let req_id_str = ed_clone.read(cx).active_request_id().to_string();
 
                 this.child(
                     deferred(
@@ -360,6 +369,8 @@ impl RenderOnce for RequestBar {
                                         let inp_c = inp_target.clone();
                                         let ed_c = ed_target.clone();
                                         let ws_c = ws_clone.clone();
+                                        let ws_data_c = ws_data_target.clone();
+                                        let req_id_c = req_id_str.clone();
                                         let (_kind, cand_color, cand_bg_tint) = get_variable_kind_and_color(&cand_scope, true);
 
                                         div()
@@ -383,8 +394,13 @@ impl RenderOnce for RequestBar {
                                                     inp_c.update(cx, |inp, cx| {
                                                         inp.set_value(content, window, cx);
                                                     });
+                                                    ws_data_c.update(cx, |ws, _| {
+                                                        ws.update_active_request(&req_id_c, |r| {
+                                                            r.apply_url(&new_u);
+                                                        });
+                                                    });
                                                     ed_c.update(cx, |ed, cx| {
-                                                        ed.set_url(new_u, cx);
+                                                        ed.mark_dirty(cx);
                                                     });
                                                 }
                                             })
