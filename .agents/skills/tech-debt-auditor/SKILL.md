@@ -7,7 +7,7 @@ description: >-
 
 # Technical Debt Auditor & Resolution Runbook
 
-This skill provides diagnostic checklists and step-by-step procedures to maintain code health, audit anti-patterns, and resolve issues documented in [`docs/technical-debt.md`](docs/technical-debt.md) and [`docs/technical-debt-02.md`](docs/technical-debt-02.md).
+This skill provides diagnostic checklists and step-by-step procedures to maintain code health, audit anti-patterns, and resolve issues documented in [`docs/technical-debt.md`](docs/technical-debt.md).
 
 ---
 
@@ -74,7 +74,7 @@ find crates/ -type f -name "*.rs" -exec wc -l {} + | sort -rn | head -n 20
 ## 4. Updating the Technical Debt Registry
 
 When you resolve any technical debt item:
-1. Update `docs/technical-debt.md` and `docs/technical-debt-02.md`:
+1. Update `docs/technical-debt.md`:
    - Change badge from `🔴 Chưa xử lý` / `🟠 HIGH` to `✅ RESOLVED`.
    - Add a concise explanation of the solution applied and the date of resolution.
 2. Ensure the resolution is accompanied by a dedicated unit test.

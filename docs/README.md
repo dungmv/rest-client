@@ -14,8 +14,7 @@ Thư mục `docs/` này bao gồm toàn bộ thiết kế chi tiết, kiến tr�
 | Tài liệu | Nội dung chính |
 |---|---|
 | [**roadmap.md**](./roadmap.md) | Lộ trình phát triển 7 giai đoạn từ Phase 0 (Foundation) đến Phase 6 (Automation Suite) |
-| [**technical-debt.md**](./technical-debt.md) | Danh mục nợ kỹ thuật: Linter, God Object, Memory Leak, State Sync và Kế hoạch khắc phục |
-| [**technical-debt-02.md**](./technical-debt-02.md) | Báo cáo nợ kỹ thuật & Kiến trúc chuyên sâu: SL-001, PERF-006, LRU Cache, State decoupling |
+| [**technical-debt.md**](./technical-debt.md) | Danh mục nợ kỹ thuật tập trung: SL-001..SL-006, PERF, CC, TD, Kiến trúc LRU Cache, State decoupling |
 | [**specs/00-core-http-foundation.md**](./specs/00-core-http-foundation.md) | Giai đoạn 0: Nền tảng cốt lõi — Gửi HTTP Request, timing breakdown, xem response, File storage |
 | [**specs/01-import-export-compatibility.md**](./specs/01-import-export-compatibility.md) | Chuẩn tương thích: Import/Export Postman v2.1, Insomnia v4, OpenAPI 3.0/3.1, HAR, Bruno |
 | [**specs/02-scripting-and-testing-engine.md**](./specs/02-scripting-and-testing-engine.md) | Pre-request Script, Test Script, Request Chaining (lấy token nhét vào env), JS Sandbox |

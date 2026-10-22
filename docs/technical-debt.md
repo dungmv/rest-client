@@ -1,212 +1,147 @@
-# Danh mục Nợ Kỹ Thuật (Technical Debt Registry)
+# Danh mục Nợ Kỹ Thuật Tập Trung (Technical Debt Registry)
 
-> **Mục đích:** Tài liệu này ghi nhận toàn diện các khoản nợ kỹ thuật (Technical Debt), các anti-pattern, điểm nghẽn kiến trúc và vấn đề hiệu năng/bộ nhớ tồn đọng trong codebase `restclient` (`restclient-core` và `restclient-app`), kèm mức độ ưu tiên và phương án khắc phục chi tiết.
+> **Mục đích:** Tài liệu duy nhất và chính thức ghi nhận toàn diện các khoản nợ kỹ thuật (Technical Debt), các anti-pattern, điểm nghẽn kiến trúc và vấn đề hiệu năng/bộ nhớ tồn đọng trong codebase `restclient` (`restclient-core` và `restclient-app`), kèm mức độ ưu tiên và phương án khắc phục chi tiết. Mọi cập nhật về nợ kỹ thuật bắt buộc phải ghi nhận vào tài liệu này.
 
 ---
 
-## 📌 Bảng ma trận ưu tiên (Priority Matrix)
+## 📊 Bảng tổng hợp trạng thái (Status Overview)
+
+| Mức độ | Đã giải quyết | Còn lại | Chi tiết ưu tiên tiếp theo |
+| :--- | :---: | :---: | :--- |
+| 🔴 **CRITICAL** | 2 | 0 | Đã giải quyết toàn bộ (PERF-001, TD-01) |
+| 🟠 **HIGH** | 12 | 2 | **PERF-005** (`suppress_path` thread spawn), **CC-002** (FsEvent cascade notification) |
+| 🟡 **MEDIUM** | 5 | 8 | **PERF-007**, **TD-07/TD-005** (`unwrap` Mutex), **TD-08/TD-007**, **TD-006**, **PERF-008**, **PERF-009**, **PERF-010**, **CC-003** |
+| 🔵 **LOW** | 0 | 7 | **TD-09**, **TD-014** (OpenAPI ref recursion), **TD-015**, **TD-017** (`body_editor` split), **TD-018**, **TD-019**, **SL-007** |
+| **TỔNG** | **19** | **17** | **Tập trung xử lý Top 3: PERF-005, CC-002, TD-07/TD-005** |
+
+---
+
+## 📌 Bảng ma trận ưu tiên tổng thể (Priority Matrix)
 
 | ID | Vấn đề / Khoản nợ | Khu vực ảnh hưởng | Mức độ | Độ phức tạp | Trạng thái |
-|:---|:---|:---|:---:|:---:|:---:|
-| **TD-01** | Clippy compiler error (`never_loop`) & warnings | `crates/core/src/importers/openapi.rs` | **P0 (Blocker)** | Thấp | 🟢 Đã giải quyết |
-| **TD-02** | God Object State (`WorkspaceState` > 3.300 LOC, 70+ fields) | `crates/app/src/state/` | **P0 (Critical)** | Cao | 🟢 Đã giải quyết (2026-10-21) |
-| **TD-03** | Unbounded Memory Cache ở `ResponseState` (No LRU) | `crates/app/src/state/response_state.rs` | **P1 (High)** | Trung bình | 🔴 Chưa xử lý |
-| **TD-04** | Giant Component Files (> 2.000 LOC / file) | `git_modal.rs`, `sidebar_tree.rs`, `app.rs` | **P1 (High)** | Cao | 🟢 Đã giải quyết (2026-10-21) |
-| **TD-05** | Dual-State Sync & Race condition tiềm ẩn | `crates/app/src/app/`, `persistence_state.rs` | **P1 (High)** | Trung bình | 🟢 Đã giải quyết (2026-10-21) |
-| **TD-06** | Lạm dụng `.clone()` trong HTTP Request Pipeline | `crates/app/src/pipeline.rs` | **P2 (Medium)** | Thấp | 🟢 Đã giải quyết |
-| **TD-07** | Panics tiềm ẩn do `unwrap()` trên Mutex / Option | `crates/core/src/http/executor.rs` | **P2 (Medium)** | Thấp | 🔴 Chưa xử lý |
-| **TD-08** | Inconsistent Code Comments & Documentation Language | `crates/core/src/http/executor.rs` | **P2 (Medium)** | Thấp | 🔴 Chưa xử lý |
-| **TD-09** | Memory alignment & Padding của Data Structs | `crates/core/src/models.rs` (`TimingBreakdown`) | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |
+| :--- | :--- | :--- | :---: | :---: | :---: |
+| **PERF-005** | `suppress_path()` spawn OS thread mới mỗi lần write file | `crates/core/src/storage/fs_store.rs` | **P1 (High)** | Thấp | 🔴 Chưa xử lý |
+| **CC-002** | `FsEvent` reload cascade render notifications | `crates/app/src/state/persistence_state.rs` | **P1 (High)** | Trung bình | 🔴 Chưa xử lý |
+| **TD-07 / TD-005** | Panics tiềm ẩn do `unwrap()` trên Mutex lock / Option | `crates/core/src/http/executor.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
+| **PERF-007** | `refresh_formatted_body()` parse lại JSON mỗi lần đổi view mode | `crates/app/src/state/response_state.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
+| **TD-08 / TD-007** | Doc comments & code comments tiếng Việt trong core | `crates/core/src/scripting/`, `executor.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
+| **TD-006** | Hardcoded developer machine path trong test | `crates/core/src/storage/mod.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
+| **PERF-008** | Clone chuỗi trong `RequestFile::to_item()` và `update_from_item()` | `crates/core/src/storage/models.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
+| **PERF-009** | `interpolate_cow()` tạo `VariableInterpolator` mới mỗi iteration | `crates/core/src/interpolation.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
+| **PERF-010** | Pre/post-request script chạy blocking trên UI thread | `crates/app/src/services/` | **P2 (Med)** | Trung bình | 🔴 Chưa xử lý |
+| **CC-003** | Git operations (`pull`, `push`) đồng bộ trên UI path | `crates/app/src/state/git_ops.rs` | **P2 (Med)** | Trung bình | 🔴 Chưa xử lý |
+| **TD-008** | `suppressed_paths` là `pub` — lộ implementation detail | `crates/core/src/storage/fs_store.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
+| **TD-009** | `PostResponseOutput` không được box khi đi qua enum variant | `crates/app/src/services/runner.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
+| **TD-011** | `#[allow(clippy::too_many_arguments)]` ở `modals.rs`, `auth_tab.rs` | `crates/app/src/app/` | **P2 (Med)** | Trung bình | 🔴 Chưa xử lý |
+| **TD-09** | Struct Padding & Memory Alignment của `TimingBreakdown` | `crates/core/src/models.rs` | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |
+| **TD-014** | `resolve_ref` trong OpenAPI importer đệ quy vô hạn (stack overflow) | `crates/core/src/importers/openapi.rs` | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |
+| **TD-015** | `ModalState::default()` thực hiện I/O đọc file cấu hình | `crates/app/src/state/modal_state.rs` | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |
+| **TD-017** | `body_editor.rs` giant component (>1.900 LOC) | `crates/app/src/components/body_editor.rs` | **P3 (Low)** | Trung bình | 🔴 Chưa xử lý |
+| **TD-018** | `git_discard_file` gọi `std::fs::remove_file` trực tiếp | `crates/core/src/git/mod.rs` | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |
+| **TD-019** | `run_git_cmd` dùng `std::process::Command` không timeout | `crates/core/src/git/mod.rs` | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |
+| **SL-007** | `FolderNode` recursive Vec re-allocate toàn bộ tree | `crates/core/src/storage/models.rs` | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |
+| **PERF-013** | `normalize_path_for_compare()` tạo String lowercase mỗi compare | `crates/core/src/storage/watcher.rs` | **P3 (Low)** | Thấp | 🔴 Chưa xử lý |
+| *SL-001* | `AppView` God Struct (32 fields) | `crates/app/src/app/` | **P0 (Critical)** | Cao | 🟢 Đã giải quyết |
+| *SL-002* | `ResponseState` cache unbounded memory leak (TD-03) | `crates/app/src/state/response_state.rs` | **P1 (High)** | Trung bình | 🟢 Đã giải quyết |
+| *SL-003* | `EditorState` own toàn bộ `HttpRequestItem` (18 fields) | `crates/app/src/state/` | **P1 (High)** | Trung bình | 🟢 Đã giải quyết |
+| *SL-004* | Lặp pattern inline-rename 5 lần (15 fields) | `crates/app/src/state/sidebar_state.rs` | **P2 (Med)** | Thấp | 🟢 Đã giải quyết |
+| *SL-005* | `BTreeMap extra` trên 9 storage structs | `crates/core/src/storage/models.rs` | **P2 (Med)** | Thấp | 🟢 Đã giải quyết |
+| *SL-006* | Boxing rồi dereference unbox `HttpResponseRecord` | `crates/core/src/models.rs` | **P2 (Med)** | Thấp | 🟢 Đã giải quyết |
+| *PERF-001* | `reqwest::Client` khởi tạo mới per request | `crates/core/src/http/executor.rs` | **P0 (Critical)** | Thấp | 🟢 Đã giải quyết |
+| *PERF-002* | Double TCP probe trước mỗi request | `crates/core/src/http/executor.rs` | **P1 (High)** | Thấp | 🟢 Đã giải quyết |
+| *PERF-003* | Full filesystem scan sau mỗi CRUD operation (CC-001) | `crates/app/src/state/workspace_crud.rs` | **P1 (High)** | Trung bình | 🟢 Đã giải quyết |
+| *PERF-004* | `effective_environment()` clone toàn bộ variables mỗi request | `crates/app/src/state/environment_state.rs` | **P1 (High)** | Thấp | 🟢 Đã giải quyết |
+| *PERF-006* | `sync_*()` gọi mỗi frame render (60fps) | `crates/app/src/app/subscriptions.rs` | **P1 (High)** | Trung bình | 🟢 Đã giải quyết |
+| *TD-01* | Clippy compiler error (`never_loop`) & warnings | `crates/core/src/importers/openapi.rs` | **P0 (Blocker)** | Thấp | 🟢 Đã giải quyết |
+| *TD-02* | God Object State (`WorkspaceState` > 3.300 LOC) | `crates/app/src/state/` | **P0 (Critical)** | Cao | 🟢 Đã giải quyết |
+| *TD-04* | Giant Component Files (`git_modal`, `sidebar_tree`, `app.rs`) | `crates/app/src/components/`, `app/` | **P1 (High)** | Cao | 🟢 Đã giải quyết |
+| *TD-05* | Dual-State Sync & Race condition tự đổi màu modified | `crates/app/src/app/subscriptions.rs` | **P1 (High)** | Trung bình | 🟢 Đã giải quyết |
+| *TD-06* | Lạm dụng `.clone()` trong HTTP Request Pipeline | `crates/app/src/services/` | **P2 (Med)** | Thấp | 🟢 Đã giải quyết |
+| *TD-001* | Dead code `FsStorage` (JSON legacy) | `crates/core/src/storage/` | **P1 (High)** | Thấp | 🟢 Đã giải quyết |
+| *TD-002* | Duplicate type hierarchy giữa domain và storage model | `crates/core/src/models.rs` | **P1 (High)** | Trung bình | 🟢 Đã giải quyết |
+| *TD-003* | Git CLI operations blocking UI thread (CC-004) | `crates/app/src/state/git_ops.rs` | **P1 (High)** | Trung bình | 🟢 Đã giải quyết |
+| *TD-004* | Global `#![allow(dead_code)]` ở `main.rs` | `crates/app/src/main.rs` | **P1 (High)** | Thấp | 🟢 Đã giải quyết |
 
 ---
 
-## 🔍 Chi tiết từng khoản nợ kỹ thuật
+## 🔍 Chi tiết các khoản nợ kỹ thuật còn tồn đọng (Unresolved Items)
 
-### TD-01: Lỗi Linter & Compiler Clippy (Blocker)
+### 1. PERF-005: `suppress_path()` spawn OS thread mới mỗi lần write file (🟠 High)
+- **Vị trí:** [`crates/core/src/storage/fs_store.rs:37-42`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/storage/fs_store.rs#L37-L42)
+- **Vấn đề:** Mỗi lần ghi một file xuống đĩa, hàm gọi `std::thread::spawn` rồi `thread::sleep(1500ms)` để gỡ đường dẫn khỏi danh sách suppressed. Khi import hoặc lưu hàng loạt 50 files sẽ tạo 50 OS threads đồng thời.
+- **Giải pháp:** Sử dụng async timer trong executor nền hoặc một hàng đợi ưu tiên (priority queue / timer wheel) chạy trên một single worker task duy nhất.
 
-- **Mô tả:**
-  - Lệnh `cargo clippy` đang thất bại ngay lập tức do rule `#[deny(clippy::never_loop)]` tại [`crates/core/src/importers/openapi.rs:396`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/importers/openapi.rs#L396).
-  - Vòng lặp `for (media_type, media_obj) in content` thực hiện `return` ngay ở vòng lặp đầu tiên mà không bao giờ lặp sang phần tử kế tiếp.
-  - Ngoài ra còn có các warning: `clippy::needless_borrow` (dòng 196), `clippy::manual_strip` (dòng 294) và `clippy::useless_vec` tại [`crates/core/src/http/executor.rs:709`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/http/executor.rs#L709).
-- **Rủi ro:** Khiến CI/CD pipelines chặn build nếu cấu hình fail on clippy warning; giảm tính nghiêm ngặt của static analysis.
-- **Giải pháp:**
-  - Thay vòng lặp bằng `if let Some((media_type, media_obj)) = content.into_iter().next()`.
-  - Áp dụng `strip_prefix('#')` và loại bỏ mượn lặp `&resolved_param`.
-  - Thay `vec![...]` thành slice/array literal `[...]` trong unit test.
+### 2. CC-002: `FsEvent` reload cascade render notifications (🟠 High)
+- **Vị trí:** [`crates/app/src/state/persistence_state.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/state/persistence_state.rs)
+- **Vấn đề:** Khi có nhiều thay đổi file bên ngoài, watcher bắn nhiều `FsEvent` riêng lẻ liên tiếp khiến `WorkspaceDataState` reload và gọi `cx.notify()`, gây cascade re-render liên tục.
+- **Giải pháp:** Áp dụng cơ chế batching events (debounce 100-200ms gom nhóm các FsEvent) và chỉ phát ra duy nhất một thông báo cập nhật cây thư mục sau khi gom xong.
 
----
+### 3. TD-07 / TD-005: Tiềm ẩn Panic do `unwrap()` trên Mutex / Option (🟡 Medium)
+- **Vị trí:** [`crates/core/src/http/executor.rs:370-385`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/http/executor.rs#L370-L385)
+- **Vấn đề:** `self.cookie_store.lock().unwrap()` có thể hoảng loạn (panic) nếu Mutex bị poisoned do một thread trước đó gặp sự cố.
+- **Giải pháp:** Thay bằng `.lock().unwrap_or_else(|poisoned| poisoned.into_inner())` để thu hồi guard an toàn.
 
-### TD-02: God Object Anti-Pattern tại `WorkspaceState` (Critical) - 🟢 Đã giải quyết (2026-10-21)
+### 4. PERF-007: `refresh_formatted_body()` parse lại JSON mỗi lần đổi view mode (🟡 Medium)
+- **Vị trí:** [`crates/app/src/state/response_state.rs:219-253`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/state/response_state.rs#L219-L253)
+- **Vấn đề:** `serde_json::from_str()` và `to_string_pretty()` chạy lại toàn bộ khi người dùng toggle view settings. Payload lớn (500KB - 5MB) gây giật lag 10-50ms trên UI.
+- **Giải pháp:** Lưu cache chuỗi `formatted_body` trong `ResponseState`, chỉ định dạng lại khi raw body bytes thực sự thay đổi.
 
-- **Mô tả ban đầu:**
-  - `WorkspaceState` phình to lên tới **3.337 dòng code** với hơn **70 fields**.
-  - Struct này đảm nhiệm quá nhiều mối quan tâm (vi phạm Single Responsibility Principle):
-    1. Dữ liệu nghiệp vụ cốt lõi: collections, requests, folders, environments, pins.
-    2. Toàn bộ Git VCS Client UI State: commit message, staging files, diff content, branches, remotes, commit history, syncing status.
-    3. Quản lý trạng thái hiển thị của 8 loại modals khác nhau (`show_env_modal`, `show_cookies_modal`, `show_git_modal`,...).
-    4. Trạng thái điều khiển inline-rename của sidebar (input entity, subscription của request, folder, env, example, workspace).
-    5. Bộ lọc tìm kiếm (`filter_query`, `env_filter_query`, `var_filter_query`).
-- **Rủi ro:**
-  - Mọi thao tác nhỏ (như gõ phím vào ô commit message hay toggle modal) đều trigger notify redraw trên `Entity<WorkspaceState>`, gây ra re-render không cần thiết cho các component quan sát nó.
-  - Cực kỳ khó viết unit test độc lập cho từng module.
-- **Kết quả giải quyết (Triệt để - Radical Multi-Entity Architecture):**
-  - Xóa bỏ hoàn toàn God Object `WorkspaceState` cũ và không sử dụng bất kỳ monolithic facade/proxy ủy quyền nào.
-  - Phân rã thành 6 GPUI Entity States độc lập với đơn trách nhiệm và ranh giới rõ ràng:
-    1. **`WorkspaceDataState`** (`crates/app/src/state/workspace_data_state.rs` ~341 LOC & `workspace_crud.rs` ~289 LOC): Chỉ chứa pure domain data (requests, folders, pins, workspace metadata, CRUD operations, hierarchy resolution).
-    2. **`EnvironmentState`** (`crates/app/src/state/environment_state.rs` ~218 LOC): Quản lý toàn bộ danh sách environments, global environment, active environment ID, corrupt secrets, effective environment fallback (`effective_environment()`), tạo/sao chép/đổi tên/xóa environment và lưu disk debounced.
-    3. **`PersistenceState`** (`crates/app/src/state/persistence_state.rs` ~311 LOC): Quản lý persistence I/O, `WorkspaceStore`, background `WorkspaceWatcher`, nhận `FsEvent`, external conflicts, dirty unsaved requests tracking và debounced save background tasks.
-    4. **`GitState`** (`crates/app/src/state/git_state.rs` ~424 LOC & `git_ops.rs` ~274 LOC): Đảm nhiệm toàn bộ VCS operations, staging, commit, diff view, branch switcher, remotes, history.
-    5. **`ModalState`** (`crates/app/src/state/modal_state.rs` ~238 LOC): Quản lý cờ hiển thị của tất cả modals (`env`, `git`, `settings`, `import`, `cookies`, `scope_settings`, `rename_workspace`), theme preference, split layout vertical.
-    6. **`SidebarState`** (`crates/app/src/state/sidebar_state.rs` ~396 LOC): Quản lý sidebar width, folder/request collapsed sets, inline renaming controls/subscriptions cho request/folder/env/example/workspace, navigation history (`record_navigation`, `navigate_back`, `navigate_forward`).
-  - Xóa bỏ hoàn toàn các file ngụy trang god object trước đó (`workspace_env.rs`, `workspace_watcher.rs`).
-  - Toàn bộ UI components và AppView chuyển thẳng sang cú pháp ngữ nghĩa tường minh (ví dụ: `modal_state.open_env_modal(...)`, `git_state.commit(...)`, `sidebar_state.start_renaming(...)`, `env_state.set_active_environment(...)`), triệt tiêu hoàn toàn re-render chéo giữa Git/Modals/Sidebar/Environments/Persistence và Data core.
-  - Mọi file đều tuân thủ nghiêm ngặt giới hạn độ dài `< 650 LOC` (phần lớn `< 450 LOC`).
-  - Toàn bộ 114 unit tests passed 100%, 0 clippy warnings với `-D warnings`.
+### 5. TD-08 / TD-007: Doc Comments & Code Comments tiếng Việt trong Core (🟡 Medium)
+- **Vị trí:** [`crates/core/src/scripting/sandbox.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/scripting/sandbox.rs), [`crates/core/src/http/executor.rs:324`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/http/executor.rs#L324)
+- **Vấn đề:** Tồn tại các comment tiếng Việt trong mã nguồn lõi (`// Chạy Pre-request Script...`), làm giảm tính nhất quán quốc tế của codebase mã nguồn mở.
+- **Giải pháp:** Chuẩn hoá 100% comments và docstrings trong file code sang tiếng Anh kỹ thuật; giữ tài liệu tiếng Việt trong thư mục `docs/`.
 
----
+### 6. TD-006: Hardcoded Developer Path trong Test (🟡 Medium)
+- **Vị trí:** [`crates/core/src/storage/mod.rs:459-485`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/storage/mod.rs#L459-L485)
+- **Vấn đề:** Đường dẫn tuyệt đối Windows `C:\Users\maiva\...` bị fix cứng khiến unit test âm thầm bị bỏ qua (skip) trên các máy khác hoặc CI.
+- **Giải pháp:** Chuyển sang sử dụng `tempfile::tempdir()` hoặc fixture nội bộ từ `env!("CARGO_MANIFEST_DIR")`.
 
-### TD-03: Nguy cơ Memory Leak do Unbounded Cache tại `ResponseState` (High)
+### 7. PERF-008 & PERF-009: Cấp phát chuỗi dư thừa trong `models` và `interpolation` (🟡 Medium)
+- **Vị trí:** [`crates/core/src/storage/models.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/storage/models.rs), [`crates/core/src/interpolation.rs:78-83`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/interpolation.rs#L78-L83)
+- **Vấn đề:** `interpolate_cow()` tạo mới `VariableInterpolator` (cùng HashMap) ở mỗi header loop; `RequestFile::to_item()` clone từng trường chuỗi.
+- **Giải pháp:** Tái sử dụng một `VariableInterpolator` duy nhất xuyên suốt quá trình resolve một request; tối ưu hoá move semantics cho `to_item()`.
 
-- **Mô tả:**
-  - Trong [`crates/app/src/state/response_state.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/state/response_state.rs#L50-L51):
-    ```rust
-    pub session_responses: HashMap<String, HttpResponseRecord>,
-    pub previous_responses: HashMap<String, HttpResponseRecord>,
-    ```
-  - Hai `HashMap` này lưu trữ toàn bộ lịch sử response trong phiên làm việc theo `request_id`.
-  - [`HttpResponseRecord`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/models.rs#L507-L525) chứa trường `body: Vec<u8>`.
-  - Không có giới hạn số lượng phần tử (capacity limit) hay thời gian hết hạn (TTL/LRU eviction).
-- **Rủi ro:** Nếu người dùng thực hiện tải các file nhị phân (ảnh, video, PDF) hoặc thực hiện hàng trăm requests với payload JSON lớn (vài chục MB), bộ nhớ RAM của app sẽ tăng liên tục không giải phóng cho đến khi tắt ứng dụng.
-- **Giải pháp:**
-  - Thay thế `HashMap` bằng cấu trúc **LRU Cache** (ví dụ giới hạn lưu tối đa 50-100 response gần nhất hoặc tối đa 100MB tổng dung lượng).
-  - Tránh lưu toàn bộ raw binary body trong RAM session; đối với payload > 5MB, ghi tạm ra file `.loc` hoặc cache disk và chỉ đọc theo luồng khi người dùng mở tab response.
+### 8. TD-014: `resolve_ref` trong OpenAPI Importer đệ quy vô hạn (🔵 Low)
+- **Vị trí:** [`crates/core/src/importers/openapi.rs:291-300`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/importers/openapi.rs#L291-L300)
+- **Vấn đề:** File OpenAPI có circular `$ref` (Schema A trỏ đến Schema B trỏ lại A) sẽ khiến hàm đệ quy vô hạn gây tràn stack (stack overflow).
+- **Giải pháp:** Bổ sung giới hạn độ sâu (ví dụ `depth > 32`) và `HashSet<String>` ghi nhận các ref đã duyệt qua.
+
+### 9. TD-017: Giant Component `body_editor.rs` (> 1.900 LOC) (🔵 Low)
+- **Vị trí:** [`crates/app/src/components/body_editor.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/components/body_editor.rs)
+- **Vấn đề:** Xử lý toàn bộ các định dạng Raw, JSON, XML, Form-Urlencoded, Multipart trong một file duy nhất dài gần 2.000 dòng.
+- **Giải pháp:** Tách thành package module `components/body_editor/` gồm `json.rs`, `xml.rs`, `form.rs`, `multipart.rs`, `raw.rs`.
 
 ---
 
-### TD-04: Giant Component Files (> 2.000 LOC) (High) - 🟢 Đã giải quyết (2026-10-21)
+## 🏆 Tóm tắt kết quả các cải tiến kiến trúc lớn đã hoàn thành
 
-- **Mô tả ban đầu:**
-  - Các file UI component có kích thước quá lớn:
-    - `git_modal.rs`: **2.508 dòng**.
-    - `app.rs`: **2.271 dòng**.
-    - `sidebar_tree.rs`: **2.196 dòng**.
-  - Các file này trộn lẫn giữa:
-    - Khởi tạo sub-view GPUI element.
-    - Xử lý sự kiện bàn phím/chuột.
-    - Logic tính toán diff / cây thư mục / trạng thái icon.
-- **Rủi ro:** Giảm tính khả đọc, khó review PR, tăng khả năng conflict mã nguồn khi nhiều người cùng đóng góp.
-- **Kết quả giải quyết:**
-  - **`components/git/`**: Thay thế hoàn toàn `git_modal.rs` bằng 7 modules chuyên biệt (`branch_modal.rs`, `commit_modal.rs`, `common.rs`, `diff_view.rs`, `history_modal.rs`, `remotes_modal.rs`, `mod.rs`). Xoá bỏ file monolith cũ `git_modal.rs`.
-  - **`components/sidebar/`**: Thay thế hoàn toàn `sidebar_tree.rs` bằng 8 modules (`drag_drop.rs`, `example_node.rs`, `folder_node.rs`, `footer.rs`, `git_status.rs`, `item_actions.rs`, `request_node.rs`, `mod.rs`). Xoá bỏ file monolith cũ `sidebar_tree.rs`.
-  - **`app/`**: Tách `app.rs` nguyên khối thành package `crates/app/src/app/` gồm 8 modules (`actions.rs`, `auth_input.rs`, `auth_tab.rs`, `editor_pane.rs`, `modals.rs`, `subscriptions.rs`, `sync.rs`, `mod.rs`). Xoá bỏ file `app.rs`.
-  - Mọi subfile đều dưới ~650 LOC, toàn bộ 109 unit tests vượt qua 100%, không phát sinh warning mới trên clippy.
+### SL-001 & TD-02: Phân rã God Struct `AppView` và `WorkspaceState`
+- Xoá bỏ struct khổng lồ 3.300 dòng và gom 9 entities độc lập: `WorkspaceDataState`, `EnvironmentState`, `PersistenceState`, `SidebarState`, `ModalState`, `GitState`, `RequestSessionState`, `ResponseState`, `ToastState`.
+- Tách `ComposerInputs` (14 handles) và `InspectorDisplays` (6 handles) ra khỏi `AppView`.
+- Tách `HttpEngine` (độc lập, không phụ thuộc GPUI) và `Runner` chạy nền.
 
----
+### SL-002: Bounded LRU Cache `ResponseCache` (SL-002 / TD-03)
+- Triển khai `LruMemoryCache` kiểm soát kép: tối đa 100 entries hoặc 50MB RAM.
+- Xóa bỏ dead state duplicate (`previous_responses`). Tích hợp nạp on-demand từ disk cache `.loc`.
 
-### TD-05: Dual-State Synchronization & Race Condition (High) - 🟢 Đã giải quyết (2026-10-21)
+### SL-003: Single Source of Truth cho Request (SL-003)
+- `RequestSessionState` chỉ lưu `active_request_id: Option<String>`.
+- Không sao chép toàn bộ request vào session state; mượn on-demand từ `WorkspaceDataState`.
 
-- **Mô tả ban đầu:**
-  - Request đang được mở nằm đồng thời ở nhiều nơi:
-    1. Input buffer của `InputState` / `CodeEditorState` (trên UI thread).
-    2. `EditorState.active_request` (trong entity state).
-    3. Danh sách `WorkspaceDataState.requests` (danh sách nguồn từ disk).
-  - Quá trình đồng bộ được thực hiện bán thủ công qua hàm `save_active_request_without_redraw` và cơ chế debounce.
-- **Rủi ro:** Khi chuyển tab nhanh, đóng tab hoặc khi File Watcher từ bên ngoài báo thay đổi file trên ổ đĩa, có khả năng dữ liệu đang gõ dở bị ghi đè hoặc bị desync giữa UI buffer và disk storage. Đặc biệt xuất hiện lỗi khi vừa click chọn request trong sidebar, request đã lập tức bị đánh dấu modified (chuyển vàng) do scheduler tự kích hoạt dirty save.
-- **Kết quả giải quyết:**
-  - Tách riêng `PersistenceState` chuyên trách việc auto-save debounced, file watcher và conflict detection.
-  - Sửa đổi cơ chế dirty tracking trong `subscriptions.rs`:
-    - Khi chuyển request (`last_req_id != req_id`), observer trên `editor_state` chỉ nạp cache và cập nhật ID, tuyệt đối không lập lịch auto-save và không đưa vào `unsaved_requests`. Khắc phục triệt để lỗi request vừa click đã chuyển màu vàng và báo modified giả.
-    - Cơ chế auto-save debounced chỉ kích hoạt khi đang ở cùng request và request thực sự có biến đổi (`is_dirty == true`).
-    - Snapshot `req_snapshot` an toàn khi lập lịch lưu để đảm bảo nếu người dùng chuyển tab ngay sau khi gõ, dữ liệu đã gõ vẫn được flush xuống disk đúng đắn mà không bị desync.
-    - Đặt lại `ed.is_dirty = false` ngay khi background task ghi file xuống disk thành công.
-  - Xử lý external conflicts thông qua `conflicts` map của `PersistenceState`, ngăn chặn watcher ghi đè lên thay đổi chưa lưu của người dùng.
+### SL-005 & TD-002: Chuẩn hóa Schema và Serialization
+- Áp dụng `#[serde(deny_unknown_fields)]` trên toàn bộ 9 storage models YAML.
+- Hợp nhất domain model và storage model, loại bỏ chuyển đổi trung gian `From`/`Into`.
+
+### PERF-001, PERF-002, PERF-006: Tối ưu mạng và render 120 FPS
+- Khởi tạo và chia sẻ connection pool trong `ReqwestExecutor`, pre-warm connection khi mở ứng dụng.
+- Bỏ hoàn toàn TCP probe rỗng.
+- Triệt tiêu 100% các lệnh sync trong `AppView::render()`, chuyển hoàn toàn sang event subscriptions qua `cx.observe_in()`.
 
 ---
 
-### TD-06: Lạm dụng `.clone()` trong Request Execution Pipeline (Medium)
+## 🛠️ Quy trình cập nhật nợ kỹ thuật (Maintenance Protocol)
 
-- **Mô tả:**
-  - Trong [`crates/app/src/pipeline.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/pipeline.rs), quá trình giải quyết biến giả động (dynamic fake vars) và hierarchy resolution thực hiện nhiều lệnh clone liên tiếp:
-    ```rust
-    let Some(mut req_item) = ed.active_request.clone() else { return; };
-    ...
-    req_item.headers = resolved_headers; // clone
-    ...
-    ```
-- **Rủi ro:** Tạo ra các heap allocations dư thừa trong chu kỳ gửi request tần suất cao (ví dụ khi chạy Collection Runner).
-- **Giải pháp:**
-  - Tái cấu trúc hàm resolve biến để sử dụng mượn tham chiếu (`&str`) hoặc `Cow<'a, str>`, chỉ cấp phát heap mới khi thực sự có placeholder `{{...}}` cần thay thế.
-
----
-
-### TD-07: Tiềm ẩn Panic do `unwrap()` trên Mutex / Option (Medium)
-
-- **Mô tả:**
-  - Trong [`crates/core/src/http/executor.rs:370, 379`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/http/executor.rs#L370-L380):
-    ```rust
-    let store = self.cookie_store.lock().unwrap();
-    ```
-  - Tại [`crates/app/src/state/editor_state.rs:77`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/state/editor_state.rs#L77):
-    ```rust
-    self.active_request.as_mut().unwrap()
-    ```
-- **Rủi ro:** Nếu một thread gặp panic khi đang giữ mutex của `CookieStore`, lock sẽ bị "poisoned", khiến tất cả các lần đọc cookie sau đó gây crash toàn bộ ứng dụng.
-- **Giải pháp:**
-  - Xử lý poisoned lock một cách an toàn:
-    ```rust
-    let store = self.cookie_store.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    ```
-  - Thay thế các `unwrap()` tự định dạng bằng pattern matching hoặc `ok_or_else(...)` có thông báo lỗi chi tiết.
-
----
-
-### TD-08: Ngôn ngữ chú thích (Doc Comments) thiếu nhất quán (Medium)
-
-- **Mô tả:**
-  - Phần lớn dự án sử dụng tiếng Anh chuẩn cho tài liệu kỹ thuật và code comments.
-  - Tuy nhiên, xuất hiện một số đoạn doc comment tiếng Việt tại [`crates/core/src/http/executor.rs:324`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/http/executor.rs#L324):
-    ```rust
-    /// Áp dụng các thay đổi từ Pre-request Script (headers, body JSON override)
-    pub fn apply_pre_script_mutations(...)
-    ```
-- **Rủi ro:** Giảm tính chuyên nghiệp của codebase mã nguồn mở khi cộng tác với các lập trình viên quốc tế.
-- **Giải pháp:** Đồng bộ hóa 100% comment trong source code sang tiếng Anh, giữ tiếng Việt cho hệ thống tài liệu trong `docs/`.
-
----
-
-### TD-09: Struct Padding & Memory Alignment (Low)
-
-- **Mô tả:**
-  - Struct [`TimingBreakdown`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/models.rs#L394-L403) khai báo 5 trường `Option<u64>` liên tiếp.
-  - Trên hệ 64-bit, mỗi trường `Option<u64>` chiếm 16 bytes (8 bytes giá trị + 1 byte discriminant tag + 7 bytes alignment padding).
-  - Kết hợp với `total_ms: u64` và `connection_reused: bool`, tổng kích thước struct lên tới 96 bytes.
-- **Rủi ro:** Tốn cache line và băng thông bộ nhớ khi lưu trữ hàng ngàn bản ghi lịch sử test runner.
-- **Giải pháp:**
-  - Đóng gói các giá trị `Option<u64>` (vốn biểu thị thời gian ms hiếm khi vượt quá $2^{32}$) thành `Option<u32>` hoặc sử dụng sentinel value (ví dụ `u64::MAX` đại diện cho None) để nén struct về kích thước nhỏ gọn (~48 bytes).
-
----
-
-## 🛠️ Lộ trình giải quyết khuyến nghị (Action Plan)
-
-```mermaid
-flowchart TD
-    subgraph Sprint 1: Stability & Cleanliness
-        TD01["TD-01: Fix Clippy Error & Warnings (Đã xong)"]
-        TD08["TD-08: Standardize English Comments"]
-        TD07["TD-07: Safe Mutex & Unwrap Handling"]
-    end
-
-    subgraph Sprint 2: Memory & Leak Prevention
-        TD03["TD-03: Add LRU Eviction to Response Cache"]
-        TD06["TD-06: Optimize Pipeline Allocations (Đã xong)"]
-        TD09["TD-09: Compact Struct Layouts"]
-    end
-
-    subgraph Sprint 3: Structural Refactoring
-        TD02["TD-02: Split WorkspaceState God Object (Đã xong)"]
-        TD04["TD-04: Modularize Giant UI Components (Đã xong)"]
-        TD05["TD-05: Robust Dirty-Tracking Sync (Đã xong)"]
-    end
-
-    Sprint 1 --> Sprint 2 --> Sprint 3
-```
+Mọi lập trình viên và AI Agent khi làm việc trên dự án phải tuân thủ:
+1. **Một nguồn chân lý duy nhất (Single Source of Truth):** Toàn bộ nợ kỹ thuật phát hiện mới hoặc cập nhật trạng thái đều phải ghi trực tiếp vào file này ([`docs/technical-debt.md`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/docs/technical-debt.md)). Tuyệt đối không tạo thêm các file đánh số phiên bản phụ (`technical-debt-02.md`, v.v.).
+2. **Kèm Unit Test:** Khi xử lý xong bất kỳ mục nợ kỹ thuật nào, bắt buộc phải có ít nhất 1 unit test kiểm chứng chống hồi quy.
+3. **Cập nhật ma trận:** Chuyển trạng thái từ `🔴 Chưa xử lý` sang `🟢 Đã giải quyết` và bổ sung tóm tắt giải pháp vào tài liệu này.

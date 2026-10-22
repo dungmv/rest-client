@@ -103,7 +103,7 @@ These principles were forged through major refactoring milestones (SL-001 throug
 
 ### 3.3 Documentation & Language
 - **Source Code**: 100% English for all code comments, docstrings, struct field descriptions, error messages, and git commit messages.
-- **Documentation**: Vietnamese or bilingual is preserved in `docs/` (`docs/specs/`, `docs/technical-debt*.md`).
+- **Documentation**: Vietnamese or bilingual is preserved in `docs/` (`docs/specs/`, `docs/technical-debt.md`).
 
 ### 3.4 Modularity & File Size Limit
 - Keep source files under **~650 LOC**.
@@ -111,7 +111,23 @@ These principles were forged through major refactoring milestones (SL-001 throug
 
 ---
 
-## 4. Skills Directory & Runbooks
+## 4. Planning & Plan Artifacts Protocol
+
+To ensure all architectural and implementation decisions are preserved across agent sessions and tracked in version control:
+- **Mandatory Plan Storage**: Whenever creating or updating an implementation plan (via `/plan`, brain artifacts, or design proposals), the agent **MUST** write/sync a persistent copy directly into the repository at:
+  ```
+  docs/plans/YYYYMMDD-<plan-name>.md
+  ```
+  *(Example: `docs/plans/20261022-collection-runner-phase6.md`)*
+- **Format Requirements**:
+  - Date prefix `YYYYMMDD` using current local date (e.g. `20261022`).
+  - Kebab-case descriptive artifact name.
+  - Standard markdown structure: Goal, Context, Architectural Decisions, Step-by-Step Implementation Tasks, Risk Mitigation, and Verification Steps.
+- **Git Tracking**: All plans stored in `docs/plans/` are part of the repository history and must be committed alongside the corresponding implementation.
+
+---
+
+## 5. Skills Directory & Runbooks
 
 Specialized runbooks and checklists are located in `.agents/skills/`:
 
@@ -126,7 +142,7 @@ Specialized runbooks and checklists are located in `.agents/skills/`:
 
 ---
 
-## 5. Verification Checklist
+## 6. Verification Checklist
 
 Before finishing any task, execute the full validation pipeline:
 
