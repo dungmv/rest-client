@@ -8,30 +8,31 @@
 | Mức độ | Số vấn đề |
 |--------|-----------|
 | 🔴 CRITICAL | 0 (1 đã sửa: PERF-001) |
-| 🟠 HIGH | 1 (9 đã sửa: PERF-002, PERF-003, CC-001, TD-001, TD-004, TD-002, PERF-004, TD-003, SL-002) |
+| 🟠 HIGH | 1 (11 đã sửa: PERF-002, PERF-003, CC-001, TD-001, TD-004, TD-002, PERF-004, TD-003, SL-002, SL-001, PERF-006) |
 | 🟡 MEDIUM | 3 (4 đã sửa: CC-004, SL-004, SL-005, SL-006) |
 | 🔵 LOW | 8 |
-| **Tổng** | **12 còn lại (14 đã sửa)** |
+| **Tổng** | **10 còn lại (16 đã sửa)** |
 
 > [!CAUTION]
 > **Top 3 ưu tiên xử lý tiếp theo:**
 > 1. **PERF-005** — `suppress_path()` spawn OS thread mới mỗi lần write file
-> 2. **PERF-006** — `sync_active_request_editors()` gọi mỗi render frame (60fps)
-> 3. **CC-002** — `FsEvent` reload cascade render notifications
+> 2. **CC-002** — `FsEvent` reload cascade render notifications
+> 3. **PERF-007** — `refresh_formatted_body()` parse lại JSON mỗi lần state change
 
 ---
 
 ## 1. Struct Layout Issues
 
-### SL-001 🟠 HIGH — `AppView` God Struct (30+ fields)
-**File:** [`crates/app/src/app/mod.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/app/mod.rs#L23-L56)
+### SL-001 ✅ RESOLVED (Was 🟠 HIGH) — `AppView` God Struct (30+ fields)
+**File:** [`crates/app/src/app/mod.rs`](file:///crates/app/src/app/mod.rs)  ·  [`crates/app/src/state/app_state.rs`](file:///crates/app/src/state/app_state.rs)  ·  [`crates/app/src/services/http_engine.rs`](file:///crates/app/src/services/http_engine.rs)
 
-`AppView` chứa toàn bộ application state: `workspace_state`, `editor_state`, `env_state`, `persistence_state`, `sidebar_state`, `modal_state`, `toast_state`, `git_state`, `response_state`, cộng thêm 10+ `Entity<InputState>` riêng lẻ (`url_input`, `bearer_token_input`, `basic_user_input`...), 4 code-editor entities, HTTP executor và Tokio runtime. **Textbook God Object.**
-
-```
-Gợi ý: Tách AuthInputs, ScriptEditors thành GPUI entity riêng.
-        Chuyển executor + runtime vào shared service entity.
-```
+*Đã giải quyết*: Tái cấu trúc phân lớp toàn diện theo `plan_sl001_architecture_refactor_v2.md`, đưa `AppView` từ 32 fields xuống đúng 5 fields chuyên biệt:
+- **`state: AppState`**: Container khởi tạo gom 9 entity states (`workspace`, `env`, `persistence`, `sidebar`, `modal`, `git`, `session`, `response`, `toast`). Tuyệt đối không prop-drill `AppState` vào view con; các view con nhận trực tiếp các `Entity<*State>` tương ứng.
+- **`composer_inputs: ComposerInputs`**: Tách toàn bộ 14 input handles của request composer (`url_input`, các input auth, code editor handles...) cùng logic đồng bộ dữ liệu vào struct riêng.
+- **`inspector_displays: InspectorDisplays`**: Tách 6 fields hiển thị response inspector (`response_editor`, textareas...) và logic đồng bộ hiển thị vào struct riêng.
+- **`runner: Runner` & `HttpEngine`**: Tách hoàn toàn pipeline gửi HTTP ra khỏi UI thread. `HttpEngine` chạy độc lập với GPUI (có unit test riêng không phụ thuộc view), `Runner` nhận `ExecEvent` và dispatch side-effects hướng sự kiện về state entities.
+- **`_subscriptions: AppSubscriptions`**: Quản lý toàn bộ event subscriptions và cleanup.
+- **Đổi tên & chuẩn hóa domain**: Đổi tên `EditorState` -> `RequestSessionState`, `EditorPane` -> `RequestComposer`, `ResponseViewer` -> `ResponseInspector`. Gỡ bỏ toàn bộ legacy tab code thừa.
 
 ---
 
@@ -148,14 +149,15 @@ Fix: Dùng tokio::time::sleep trong async executor, hoặc single background tas
 
 ---
 
-### PERF-006 🟠 HIGH — `sync_active_request_editors()` gọi mỗi render frame (60fps)
-**File:** [`crates/app/src/app/mod.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/app/mod.rs#L395-L405)
+### PERF-006 ✅ RESOLVED (Was 🟠 HIGH) — `sync_active_request_editors()` gọi mỗi render frame (60fps)
+**File:** [`crates/app/src/app/mod.rs`](file:///crates/app/src/app/mod.rs)  ·  [`crates/app/src/app/subscriptions.rs`](file:///crates/app/src/app/subscriptions.rs)
 
-`render()` gọi 3 hàm sync trên mỗi frame → 180 state reads/sec dù không có gì thay đổi.
-
-```
-Fix: Chuyển sync logic vào subscriptions, trigger chỉ khi state thực sự thay đổi.
-```
+*Đã giải quyết*: Xóa bỏ 100% việc gọi các hàm `sync_*` (`sync_active_request_editors`, `sync_response_editor`, `sync_sent_request_preview`) bên trong `AppView::render()`.
+- `AppView::render()` nay thuần túy lắp ráp view element tree, đạt trạng thái zero-overhead synchronization trên 60fps render loop.
+- Chuyển toàn bộ cơ chế đồng bộ sang mô hình hướng sự kiện (event-driven) thông qua `cx.observe_in()` trong `subscriptions.rs`:
+  - Quan sát `RequestSessionState`: Chỉ đồng bộ composer editors khi chuyển request active hoặc khi nội dung request thực sự thay đổi.
+  - Quan sát `WorkspaceDataState`: Chỉ đồng bộ khi workspace path hoặc dữ liệu request thay đổi.
+  - Quan sát `ResponseState`: Đồng bộ response editor và preview inspector chỉ khi response payload mới được nạp xong.
 
 ---
 

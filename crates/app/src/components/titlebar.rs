@@ -1,6 +1,6 @@
 use crate::state::{
-    EditorState, EnvironmentState, ModalState, ResponseState, ScopeSettingsTarget, SidebarState,
-    WorkspaceDataState,
+    EnvironmentState, ModalState, RequestSessionState, ResponseState, ScopeSettingsTarget,
+    SidebarState, WorkspaceDataState,
 };
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
@@ -43,7 +43,7 @@ pub struct AppTitleBar {
     env_state: Entity<EnvironmentState>,
     modal_state: Entity<ModalState>,
     sidebar_state: Entity<SidebarState>,
-    editor_state: Entity<EditorState>,
+    editor_state: Entity<RequestSessionState>,
     response_state: Entity<ResponseState>,
 }
 
@@ -53,7 +53,7 @@ impl AppTitleBar {
         env_state: Entity<EnvironmentState>,
         modal_state: Entity<ModalState>,
         sidebar_state: Entity<SidebarState>,
-        editor_state: Entity<EditorState>,
+        editor_state: Entity<RequestSessionState>,
         response_state: Entity<ResponseState>,
     ) -> Self {
         Self { workspace_state, env_state, modal_state, sidebar_state, editor_state, response_state }

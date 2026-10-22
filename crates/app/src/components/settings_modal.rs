@@ -1,5 +1,5 @@
 use crate::components::status_badge::MethodBadge;
-use crate::state::{EditorState, ModalState, WorkspaceDataState};
+use crate::state::{ModalState, RequestSessionState, WorkspaceDataState};
 use crate::theme::{theme, ThemePreference};
 use gpui::{
     div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
@@ -13,14 +13,14 @@ use gpui_kit::assets::IconName;
 pub struct SettingsModal {
     workspace_state: Entity<WorkspaceDataState>,
     modal_state: Entity<ModalState>,
-    editor_state: Entity<EditorState>,
+    editor_state: Entity<RequestSessionState>,
 }
 
 impl SettingsModal {
     pub fn new(
         workspace_state: Entity<WorkspaceDataState>,
         modal_state: Entity<ModalState>,
-        editor_state: Entity<EditorState>,
+        editor_state: Entity<RequestSessionState>,
     ) -> Self {
         Self {
             workspace_state,

@@ -13,8 +13,6 @@ pub enum RequestTabKind {
     Tests,
 }
 
-pub type EditorState = RequestSessionState;
-
 pub struct RequestSessionState {
     pub active_request_id: Option<String>,
     pub active_tab_kind: RequestTabKind,
@@ -228,7 +226,7 @@ mod tests {
 
     #[test]
     fn test_editor_state_initial_and_active_request() {
-        let mut editor = EditorState::new();
+        let mut editor = RequestSessionState::new();
         assert_eq!(editor.active_request_id(), "scratch");
         assert!(!editor.is_dirty);
         assert_eq!(editor.request_version, 0);

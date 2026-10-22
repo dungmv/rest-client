@@ -1,6 +1,8 @@
 use std::ops::Range;
 use crate::components::kv_table::KvTable;
-use crate::state::{EditorState, EnvironmentState, PersistenceState, ToastState, WorkspaceDataState};
+use crate::state::{
+    EnvironmentState, PersistenceState, RequestSessionState, ToastState, WorkspaceDataState,
+};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -25,7 +27,7 @@ pub struct JsonHighlighter {
 }
 
 fn persist_active_request_without_redraw(
-    editor: &Entity<EditorState>,
+    editor: &Entity<RequestSessionState>,
     persistence: Option<&Entity<PersistenceState>>,
     workspace: Option<&Entity<WorkspaceDataState>>,
     cx: &mut App,
@@ -861,7 +863,7 @@ pub fn format_xml(xml: &str) -> Result<String, String> {
 
 #[derive(IntoElement)]
 pub struct BodyEditor {
-    editor_state: Entity<EditorState>,
+    editor_state: Entity<RequestSessionState>,
     json_editor: Entity<CodeEditorState>,
     xml_editor: Entity<CodeEditorState>,
     raw_textarea: Entity<TextareaState>,
@@ -873,7 +875,7 @@ pub struct BodyEditor {
 
 impl BodyEditor {
     pub fn new(
-        editor_state: Entity<EditorState>,
+        editor_state: Entity<RequestSessionState>,
         json_editor: Entity<CodeEditorState>,
         xml_editor: Entity<CodeEditorState>,
         raw_textarea: Entity<TextareaState>,

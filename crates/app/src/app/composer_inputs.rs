@@ -1,5 +1,5 @@
 use crate::components::script_editor::{ScriptCompletionProvider, ScriptEditorKind};
-use crate::state::{EditorState, EnvironmentState, WorkspaceDataState};
+use crate::state::{EnvironmentState, RequestSessionState, WorkspaceDataState};
 use gpui::{App, AppContext as _, Entity, Window};
 use gpui_component::input::{EditorState as CodeEditorState, InputState, TextareaState};
 use restclient_core::models::{Auth, RequestBody};
@@ -122,7 +122,7 @@ impl ComposerInputs {
 
     pub fn sync_active_request_editors(
         &mut self,
-        editor_state: &Entity<EditorState>,
+        editor_state: &Entity<RequestSessionState>,
         workspace_state: &Entity<WorkspaceDataState>,
         env_state: &Entity<EnvironmentState>,
         window: &mut Window,

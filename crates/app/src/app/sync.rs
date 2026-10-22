@@ -1,8 +1,8 @@
-use crate::state::{EditorState, PersistenceState, WorkspaceDataState};
+use crate::state::{PersistenceState, RequestSessionState, WorkspaceDataState};
 use gpui::{App, Entity};
 
 pub fn save_active_request_without_redraw(
-    editor: &Entity<EditorState>,
+    editor: &Entity<RequestSessionState>,
     persistence: &Entity<PersistenceState>,
     workspace: &Entity<WorkspaceDataState>,
     cx: &mut App,

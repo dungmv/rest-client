@@ -2,7 +2,7 @@ use super::composer_inputs::ComposerInputs;
 use super::sync::save_active_request_without_redraw;
 use super::AppView;
 use crate::state::{
-    EditorState, EnvironmentState, GitState, ModalState, PersistenceState, ResponseState,
+    EnvironmentState, GitState, ModalState, PersistenceState, RequestSessionState, ResponseState,
     SidebarState, ToastState, WorkspaceDataState,
 };
 use gpui::*;
@@ -16,7 +16,7 @@ pub struct SubscriptionTargets<'a> {
     pub modal_state: &'a Entity<ModalState>,
     pub sidebar_state: &'a Entity<SidebarState>,
     pub git_state: &'a Entity<GitState>,
-    pub editor_state: &'a Entity<EditorState>,
+    pub editor_state: &'a Entity<RequestSessionState>,
     pub response_state: &'a Entity<ResponseState>,
     #[allow(dead_code)]
     pub toast_state: &'a Entity<ToastState>,

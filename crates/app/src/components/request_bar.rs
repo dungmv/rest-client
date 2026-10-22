@@ -3,7 +3,7 @@ use crate::components::env_autocomplete::{
     get_variable_kind_and_color,
 };
 use crate::components::status_badge::MethodBadge;
-use crate::state::{EditorState, EnvironmentState, ModalState};
+use crate::state::{EnvironmentState, ModalState, RequestSessionState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -22,7 +22,7 @@ pub struct RequestBar {
     workspace_state: Entity<crate::state::WorkspaceDataState>,
     env_state: Entity<EnvironmentState>,
     modal_state: Entity<ModalState>,
-    editor_state: Entity<EditorState>,
+    editor_state: Entity<RequestSessionState>,
     url_input: Entity<InputState>,
     on_send: std::rc::Rc<dyn Fn(&mut Window, &mut App)>,
 }
@@ -32,7 +32,7 @@ impl RequestBar {
         workspace_state: Entity<crate::state::WorkspaceDataState>,
         env_state: Entity<EnvironmentState>,
         modal_state: Entity<ModalState>,
-        editor_state: Entity<EditorState>,
+        editor_state: Entity<RequestSessionState>,
         url_input: Entity<InputState>,
         on_send: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {

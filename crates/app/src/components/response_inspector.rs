@@ -1,5 +1,5 @@
 use crate::components::tabs_with_badge::TabItem;
-use crate::state::{EditorState, ResponseState, ResponseTabKind, ResponseViewMode, WorkspaceState};
+use crate::state::{RequestSessionState, ResponseState, ResponseTabKind, ResponseViewMode, WorkspaceState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -15,13 +15,10 @@ use gpui_kit::assets::IconName;
 use restclient_core::models::HttpResponseRecord;
 use restclient_core::storage::models::{RequestExampleFile, RequestFile, RequestKvItem};
 
-#[allow(dead_code)]
-pub type ResponseViewer = ResponseInspector;
-
 #[derive(IntoElement)]
 pub struct ResponseInspector {
     workspace_state: Entity<WorkspaceState>,
-    editor_state: Entity<EditorState>,
+    editor_state: Entity<RequestSessionState>,
     response_state: Entity<ResponseState>,
     response_editor: Entity<CodeEditorState>,
     request_url_textarea: Entity<TextareaState>,
@@ -31,7 +28,7 @@ pub struct ResponseInspector {
 impl ResponseInspector {
     pub fn new(
         workspace_state: Entity<WorkspaceState>,
-        editor_state: Entity<EditorState>,
+        editor_state: Entity<RequestSessionState>,
         response_state: Entity<ResponseState>,
         response_editor: Entity<CodeEditorState>,
         request_url_textarea: Entity<TextareaState>,

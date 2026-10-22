@@ -1,6 +1,6 @@
 use crate::components::*;
 use crate::state::{
-    EditorState, EnvironmentState, GitState, ModalState, PersistenceState, SidebarState,
+    EnvironmentState, GitState, ModalState, PersistenceState, RequestSessionState, SidebarState,
     ToastState, WorkspaceDataState,
 };
 use gpui::prelude::FluentBuilder as _;
@@ -15,7 +15,7 @@ pub fn attach_modal_overlays(
     modal_state: &Entity<ModalState>,
     sidebar_state: &Entity<SidebarState>,
     git_state: &Entity<GitState>,
-    editor_state: &Entity<EditorState>,
+    editor_state: &Entity<RequestSessionState>,
     toast_state: &Entity<ToastState>,
     send_request_cb: impl 'static + Clone + Fn(&mut Window, &mut App),
     cx: &mut App,

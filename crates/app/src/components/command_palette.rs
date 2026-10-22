@@ -1,7 +1,7 @@
 use crate::components::status_badge::MethodBadge;
 use crate::state::{
-    EditorState, EnvironmentState, GitActiveModal, GitState, GitTab, ModalState, PersistenceState,
-    SidebarState, WorkspaceDataState,
+    EnvironmentState, GitActiveModal, GitState, GitTab, ModalState, PersistenceState,
+    RequestSessionState, SidebarState, WorkspaceDataState,
 };
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
@@ -23,7 +23,7 @@ pub struct CommandPalette {
     modal_state: Entity<ModalState>,
     sidebar_state: Entity<SidebarState>,
     git_state: Entity<GitState>,
-    editor_state: Entity<EditorState>,
+    editor_state: Entity<RequestSessionState>,
     on_send: std::rc::Rc<dyn Fn(&mut Window, &mut App)>,
 }
 
@@ -36,7 +36,7 @@ impl CommandPalette {
         modal_state: Entity<ModalState>,
         sidebar_state: Entity<SidebarState>,
         git_state: Entity<GitState>,
-        editor_state: Entity<EditorState>,
+        editor_state: Entity<RequestSessionState>,
         on_send: impl Fn(&mut Window, &mut App) + 'static,
     ) -> Self {
         Self {

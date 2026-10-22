@@ -15,8 +15,8 @@ pub use item_actions::*;
 pub use request_node::*;
 
 use crate::state::{
-    EditorState, GitState, ModalState, PersistenceState, ResponseState, SidebarState, ToastState,
-    WorkspaceDataState,
+    GitState, ModalState, PersistenceState, RequestSessionState, ResponseState, SidebarState,
+    ToastState, WorkspaceDataState,
 };
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
@@ -58,7 +58,7 @@ pub struct SidebarRenderContext<'a> {
     pub sidebar: &'a Entity<SidebarState>,
     pub modal: &'a Entity<ModalState>,
     pub git: &'a Entity<GitState>,
-    pub ed: &'a Entity<EditorState>,
+    pub ed: &'a Entity<RequestSessionState>,
     pub resp: &'a Entity<ResponseState>,
     pub toast: &'a Entity<ToastState>,
 }
@@ -70,7 +70,7 @@ pub struct SidebarTree {
     sidebar_state: Entity<SidebarState>,
     modal_state: Entity<ModalState>,
     git_state: Entity<GitState>,
-    editor_state: Entity<EditorState>,
+    editor_state: Entity<RequestSessionState>,
     response_state: Entity<ResponseState>,
     toast_state: Entity<ToastState>,
 }
@@ -83,7 +83,7 @@ impl SidebarTree {
         sidebar_state: Entity<SidebarState>,
         modal_state: Entity<ModalState>,
         git_state: Entity<GitState>,
-        editor_state: Entity<EditorState>,
+        editor_state: Entity<RequestSessionState>,
         response_state: Entity<ResponseState>,
         toast_state: Entity<ToastState>,
     ) -> Self {

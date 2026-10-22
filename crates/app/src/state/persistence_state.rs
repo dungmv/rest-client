@@ -1,4 +1,4 @@
-use super::{EditorState, EnvironmentState, WorkspaceDataState};
+use super::{EnvironmentState, RequestSessionState, WorkspaceDataState};
 use gpui::{Context, Entity, Task};
 use restclient_core::storage::models::{LocalState, RequestFile};
 use restclient_core::storage::{FsEvent, WorkspaceStore, WorkspaceWatcher};
@@ -83,7 +83,7 @@ impl PersistenceState {
     pub fn schedule_save_active_request(
         &mut self,
         req_id: String,
-        editor: Entity<EditorState>,
+        editor: Entity<RequestSessionState>,
         workspace_data: Entity<WorkspaceDataState>,
         cx: &mut Context<Self>,
     ) {

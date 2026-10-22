@@ -1,11 +1,11 @@
 use super::request_node::SidebarReqItem;
-use crate::state::{EditorState, WorkspaceState};
+use crate::state::{RequestSessionState, WorkspaceState};
 use gpui::{App, AppContext as _, Entity};
 use restclient_core::models::Folder;
 
 pub fn delete_request_item(
     ws_entity: &Entity<WorkspaceState>,
-    ed_entity: &Entity<EditorState>,
+    ed_entity: &Entity<RequestSessionState>,
     req_id: &str,
     cx: &mut App,
 ) {

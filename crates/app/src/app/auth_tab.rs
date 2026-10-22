@@ -1,5 +1,5 @@
 use super::auth_input::render_auth_input;
-use crate::state::{EditorState, EnvironmentState, ModalState, WorkspaceDataState};
+use crate::state::{EnvironmentState, ModalState, RequestSessionState, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::{
     div, px, App, Div, Entity, ParentElement, Styled, Window,
@@ -26,7 +26,7 @@ pub fn render_auth_tab(
     workspace_state: &Entity<WorkspaceDataState>,
     env_state: &Entity<EnvironmentState>,
     modal_state: &Entity<ModalState>,
-    editor_state: &Entity<EditorState>,
+    editor_state: &Entity<RequestSessionState>,
     inputs: AuthTabInputs,
     window: &mut Window,
     cx: &mut App,
