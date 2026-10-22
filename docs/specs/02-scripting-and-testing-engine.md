@@ -334,45 +334,47 @@ Các biến này được resolve bởi Rust trước khi script chạy (không 
 
 ## 6. Quy trình Thực thi Request kèm Scripts (Execution Lifecycle)
 
+RestClient phân tách hoàn toàn tầng giao diện (UI) và tầng thực thi mạng (HTTP Engine & Runner):
+
 ```mermaid
 sequenceDiagram
-    participant UI as GPUI AppView
-    participant FV as fake_vars::resolve
-    participant Pre as ScriptSandbox::run_pre_request
-    participant Interp as interpolation::interpolate
+    participant UI as RequestComposer / AppView
+    participant Runner as Runner (Event Coordinator)
+    participant Engine as HttpEngine (Decoupled)
+    participant Sandbox as ScriptSandbox (QuickJS)
     participant Exec as ReqwestExecutor
     participant Server as Remote HTTP Server
-    participant Post as ScriptSandbox::run_post_response
     participant RS as ResponseState
+    participant RI as ResponseInspector
 
-    UI->>FV: 1. Resolve {{$uuid}}, {{$timestamp}}, v.v. trong URL/headers/body
-    FV-->>UI: Text với fake vars đã thay thế
-    UI->>Pre: 2. Chạy pre-request script (nếu có & enabled)
-    Note over Pre: rquickjs Runtime mới — isolated sandbox
-    Pre-->>UI: PreRequestOutput (env_mutations, header_mutations, body_override)
-    UI->>Interp: 3. Interpolate {{env_var}} với env đã merge mutations
-    Interp-->>UI: ResolvedRequest (URL, headers, body hoàn chỉnh)
-    UI->>Exec: 4. Gửi HTTP Request (Tokio thread, cancel-safe)
-    Exec->>Server: TCP/TLS → HTTP
-    Server-->>Exec: Response stream
-    Exec-->>UI: HttpResponseRecord (status, headers, body, timing)
-    UI->>Post: 5. Chạy post-response script (nếu có & enabled)
-    Note over Post: rquickjs Runtime mới — isolated sandbox
-    Post-->>RS: 6. Vec<TestResult> + env_mutations + console_logs
-    RS-->>UI: 7. Notify: cập nhật test badge, env variables, console
+    UI->>Runner: 1. Send Request (SendRequest Action)
+    Runner->>Engine: 2. execute(request, env, cancel_rx, on_event)
+    Note over Engine: Tokio Background Task — Không block UI GPUI
+    Engine->>Sandbox: 3. Resolve fake_vars & run_pre_request
+    Sandbox-->>Engine: PreRequestOutput (env/header/body mutations)
+    Engine->>Engine: 4. Interpolate variables (Dynamic & Hierarchical)
+    Engine->>Exec: 5. Gửi HTTP Request qua mạng
+    Exec->>Server: TCP/TLS → HTTP Handshake & Stream
+    Server-->>Exec: Response stream & timing breakdown
+    Exec-->>Engine: HttpResponseRecord
+    Engine->>Sandbox: 6. run_post_response (Test assertions & chaining)
+    Sandbox-->>Engine: PostResponseOutput (Test results, env updates, logs)
+    Engine-->>Runner: 7. ExecEvent::Success(record, post_output)
+    Runner->>RS: 8. Cập nhật ResponseState & lưu .loc cache
+    RS-->>RI: 9. Event-driven sync (cx.observe_in): Render kết quả Tests & Console
 ```
 
 ---
 
 ## 7. Giao diện Người dùng trong RestClient (UI Components)
 
-### 7.1 Tab "Pre-request Script" & "Tests" trong Request Editor
+### 7.1 Tab "Pre-request Script" & "Tests" trong Request Composer
 
 Thêm 2 tab mới vào `RequestTabKind`:
 - **Pre-request Script:** Editor JS với snippet toolbar bên phải (gợi ý nhanh: "Set timestamp header", "HMAC signature", "Add random nonce")
 - **Tests:** Editor JS với snippet toolbar ("Status is 200", "Set env var from response", "JSON field check")
 
-### 7.2 Tab "Tests" trong Response Viewer
+### 7.2 Tab "Tests" trong Response Inspector
 
 Hiển thị tổng quan và chi tiết kết quả sau mỗi lần gửi request:
 

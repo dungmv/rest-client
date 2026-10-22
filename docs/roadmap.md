@@ -56,7 +56,7 @@ Tài liệu này xác định lộ trình phát triển toàn diện của **Res
      const data = client.response.json();
      client.environment.set("access_token", data.token);
      ```
-   - Hiển thị tab "Tests" trong Response Viewer với badge kết quả (`Passed 3/3` màu xanh lá hoặc `Failed 1/3` màu đỏ), test execution duration và console logs.
+   - Hiển thị tab "Tests" trong Response Inspector với badge kết quả (`Passed 3/3` màu xanh lá hoặc `Failed 1/3` màu đỏ), test execution duration và console logs.
 4. **Dynamic Fake Variables (Faker built-in):**
    - Tích hợp các macro biến ngẫu nhiên trực tiếp trong URL/Headers/Body:
      - `{{$uuid}}` hoặc `{{$guid}}`: Sinh UUID v4
@@ -125,17 +125,17 @@ Tài liệu này xác định lộ trình phát triển toàn diện của **Res
      - C# (`HttpClient`, `RestSharp`)
      - PHP (`curl`, `Guzzle`)
      - cURL, HTTPie, Wget.
-2. **Response Viewer Đa Dạng (Previews & Diff):**
+2. **Response Inspector Đa Dạng (Previews & Diff):**
    - **JSONPath / XPath Query Bar:** Gõ `$.data.items[*].id` để lọc nhanh dữ liệu JSON hiển thị ngay lập tức.
    - **Preview Renderer:**
      - Ảnh (PNG, JPEG, SVG, WebP, GIF).
      - HTML Web Preview (sandboxed).
      - PDF viewer & Hex viewer.
    - **Response Diff:** So sánh 2 response từ History xem trường nào vừa thay đổi.
-3. **Hệ Thống Tab Bar Đa Nhiệm:**
-   - Single-click mở preview tab, double-click ghim (pin) tab.
-   - Dirty indicator `●` khi có thay đổi chưa lưu.
-   - Context menu: Close others, Close to the right, Duplicate.
+3. **Mô Hình Phiên Làm Việc Single-Active Request & History Navigation — ✅ Đã hoàn thành (SL-001):**
+   - Áp dụng mô hình gọn nhẹ chuẩn Insomnia/Yaak: `RequestSessionState` chỉ trỏ tới active request, dữ liệu mượn on-demand từ `WorkspaceDataState`.
+   - History Navigation: ngăn xếp lịch sử chuyển đổi request với phím tắt `NavigateBack` (`Cmd+[`), `NavigateForward` (`Cmd+]`).
+   - Tự động lưu ngầm (debounced auto-save) kèm trạng thái `is_dirty` không làm gián đoạn luồng làm việc.
 4. **Tích hợp Git Trực Quan trong Ứng dụng:**
    - Panel quản lý Git: Xem danh sách file request bị sửa đổi (`git status`).
    - Visual Diff: So sánh trực quan request hiện tại với commit trước.

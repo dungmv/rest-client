@@ -15,6 +15,7 @@ Thư mục `docs/` này bao gồm toàn bộ thiết kế chi tiết, kiến tr�
 |---|---|
 | [**roadmap.md**](./roadmap.md) | Lộ trình phát triển 7 giai đoạn từ Phase 0 (Foundation) đến Phase 6 (Automation Suite) |
 | [**technical-debt.md**](./technical-debt.md) | Danh mục nợ kỹ thuật: Linter, God Object, Memory Leak, State Sync và Kế hoạch khắc phục |
+| [**technical-debt-02.md**](./technical-debt-02.md) | Báo cáo nợ kỹ thuật & Kiến trúc chuyên sâu: SL-001, PERF-006, LRU Cache, State decoupling |
 | [**specs/00-core-http-foundation.md**](./specs/00-core-http-foundation.md) | Giai đoạn 0: Nền tảng cốt lõi — Gửi HTTP Request, timing breakdown, xem response, File storage |
 | [**specs/01-import-export-compatibility.md**](./specs/01-import-export-compatibility.md) | Chuẩn tương thích: Import/Export Postman v2.1, Insomnia v4, OpenAPI 3.0/3.1, HAR, Bruno |
 | [**specs/02-scripting-and-testing-engine.md**](./specs/02-scripting-and-testing-engine.md) | Pre-request Script, Test Script, Request Chaining (lấy token nhét vào env), JS Sandbox |
@@ -22,7 +23,7 @@ Thư mục `docs/` này bao gồm toàn bộ thiết kế chi tiết, kiến tr�
 | [**specs/04-advanced-auth-and-inheritance.md**](./specs/04-advanced-auth-and-inheritance.md) | OAuth 2.0 (PKCE, Refresh Token), AWS SigV4, mTLS Certs, Kế thừa Auth từ Folder/Workspace |
 | [**specs/05-git-sync-and-collaboration.md**](./specs/05-git-sync-and-collaboration.md) | Tích hợp Git UI trong app: Branching, Commit, Push/Pull, Visual Diff cho API changes |
 | [**specs/06-developer-tools-codegen-diff-docs.md**](./specs/06-developer-tools-codegen-diff-docs.md) | Sinh Code (15+ ngôn ngữ), JSONPath Filter, Dynamic Fake Vars (`{{$uuid}}`), Response Diff |
-| [**specs/07-ui-ux-enhancements.md**](./specs/07-ui-ux-enhancements.md) | Tabs bar đa tác vụ, Preview ảnh/HTML, Cookie Manager nâng cao, Theme & Customization |
+| [**specs/07-ui-ux-enhancements.md**](./specs/07-ui-ux-enhancements.md) | Single-active Request & History Navigation, Preview ảnh/HTML, Cookie Manager nâng cao, Theme |
 | [**specs/08-collection-runner-and-testing-suite.md**](./specs/08-collection-runner-and-testing-suite.md) | Collection Runner, Data-Driven CSV/JSON, Headless CLI (Newman alt), Mock Server, Benchmark |
 | [**specs/09-phase1-implementation-notes.md**](./specs/09-phase1-implementation-notes.md) | Giai đoạn 1 (Hoàn thành): Scripting QuickJS (`rquickjs`), Pre-request/Tests, Request Chaining, Faker |
 

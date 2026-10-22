@@ -16,7 +16,7 @@ Targeted for **macOS** and **Windows** with real HTTP request execution from the
 - 💾 **100% Filesystem-First:** Workspace data lives as clean, human-readable YAML files. No hidden SQLite database or proprietary locks.
 - 🐙 **Built-in Git Source Control GUI:** Staging, diff viewer, commit history, branch switcher, and remote sync (`push`/`pull`/`fetch`) right inside the app (`Cmd+Shift+G`).
 - 📥 **Universal Importers:** Direct support for OpenAPI 3.0/3.1 (JSON & YAML), Postman Collection v2.1, and bidirectional cURL CLI command translation (`Cmd+I`).
-- 🖱️ **Fluid Drag-and-Drop Organization:** Drag requests, folders, and pinned tabs with live dropzone indicators and root un-nesting.
+- 🖱️ **Fluid Drag-and-Drop Organization:** Drag requests and folders with live dropzone indicators, folder nesting, and root un-nesting.
 - 📜 **QuickJS Scripting Sandbox:** Embedded ECMAScript engine with `pm.*` Postman-compatible APIs, crypto helpers, Faker dynamic variables (`{{$guid}}`, `{{$randomEmail}}`), and test assertion runners.
 - 🔒 **Zero-Leak Secret Separation:** Environment files only commit variable definitions; actual secret values remain strictly local in `.local/secrets/`.
 
@@ -121,10 +121,12 @@ restclient/
 │   │   └── Cargo.toml
 │   └── app/                   # GPUI desktop application
 │       ├── src/
-│       │   ├── components/    # Reusable UI widgets (modals, tree, editors, badges)
+│       │   ├── app/           # AppView, RequestComposer, ComposerInputs, InspectorDisplays, Subscriptions
+│       │   ├── components/    # Reusable UI widgets (ResponseInspector, Sidebar, Modals, StatusBadge)
 │       │   ├── platform/      # macOS vs Windows caption buttons & git branch chip
+│       │   ├── services/      # Decoupled execution services (HttpEngine, Runner)
 │       │   ├── settings.rs    # OS config directory AppSettings
-│       │   ├── state/         # Fine-grained entity states (WorkspaceState, EditorState, ResponseState)
+│       │   ├── state/         # Fine-grained entity states (AppState, WorkspaceDataState, RequestSessionState, ResponseState)
 │       │   ├── theme.rs       # Theme tokens & palettes
 │       │   └── main.rs        # App entry point, menus, keyboard shortcuts, split layouts
 │       └── Cargo.toml

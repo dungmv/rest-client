@@ -1,18 +1,17 @@
 # Đặc tả Kỹ thuật: Nâng Cấp Giao Diện & Trải Nghiệm Người Dùng (UI / UX Enhancements)
 
-## 1. Hệ Thống Quản Lý Tab Đa Tác Vụ (Multi-Tab Workspace Bar)
+## 1. Mô Hình Phiên Làm Việc Đơn Nhiệm & Điều Hướng Lịch Sử (Single-Active Request & History Navigation)
 
-### 1.1 Cơ Chế Hoạt Động Của Tab Bar:
-Để đáp ứng thói quen làm việc đa nhiệm của lập trình viên, RestClient cần một thanh tab chuyên nghiệp:
-1. **Single-Click (Preview Mode):** Khi nhấp 1 lần vào request ở sidebar, tab mở ở chế độ xem trước (tiêu đề in nghiêng). Nếu nhấp sang request khác, tab này sẽ được thay thế nhằm tránh tràn ngập tab rác.
-2. **Double-Click (Pinned Mode):** Khi nhấp đúp vào request hoặc bắt đầu chỉnh sửa dữ liệu, tab chuyển sang trạng thái ghim cố định (chữ đứng, có nút đóng `✕`).
-3. **Dirty State Indicator:** Khi có thay đổi chưa lưu (sửa URL, params, headers, body), hiển thị chấm tròn nhỏ `●` trên tab.
-4. **Context Menu trên Tab:**
-   - Đóng tab (`Close Tab`)
-   - Đóng các tab khác (`Close Other Tabs`)
-   - Đóng các tab bên phải (`Close Tabs to the Right`)
-   - Nhân bản tab (`Duplicate Tab`)
-   - Sao chép cURL của tab hiện tại (`Copy as cURL`).
+### 1.1 Cơ Chế Hoạt Động Của Trình Soạn Thảo (Request Composer Navigation):
+Thay vì hệ thống multi-tabs truyền thống cồng kềnh dễ gây phân mảnh state và chiếm dụng bộ nhớ (God Object `EditorState`), RestClient áp dụng mô hình Single-Active Request hiện đại tương tự Insomnia và Yaak:
+1. **Direct Request Activation:** Nhấp chuột vào bất kỳ request nào ở Sidebar sẽ kích hoạt và mở thẳng request đó trong `RequestComposer`.
+2. **Single Source of Truth:** `RequestSessionState` chỉ lưu con trỏ `active_request_id: Option<String>` đại diện cho request đang làm việc; toàn bộ dữ liệu request được mượn on-demand từ `WorkspaceDataState`.
+3. **Điều Hướng Lịch Sử (History Navigation — Back / Forward):**
+   - Hỗ trợ phím tắt điều hướng `NavigateBack` (`Alt+Cmd+Left` / `Cmd+[`) và `NavigateForward` (`Alt+Cmd+Right` / `Cmd+]`).
+   - Tự động duy trì ngăn xếp lịch sử các request đã duyệt qua trong `SidebarState`, cho phép quay lại hoặc tiến tới nhanh chóng mà không cần thanh tab rườm rà.
+4. **Dirty State & Tự Động Lưu (Debounced Auto-Save):**
+   - Khi có thay đổi chưa lưu (sửa URL, params, headers, body, auth, scripts), cờ `is_dirty` được bật.
+   - Cơ chế tự động lưu (debounced auto-save) qua `PersistenceState` sẽ đồng bộ dữ liệu request xuống file YAML trên đĩa một cách trơn tru, không làm gián đoạn luồng làm việc của người dùng.
 
 ---
 

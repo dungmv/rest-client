@@ -68,15 +68,16 @@ Nhằm mang lại trải nghiệm tương đương Postman / Insomnia khi ngư�
 
 ---
 
-## 3. Kiến Trúc Thực Thi Mạng (Tokio & Reqwest Decoupled Executor)
+## 3. Kiến Trúc Thực Thi Mạng (HttpEngine, Runner & Reqwest Decoupled Executor)
 
-### 3.1 Mô Hình Đa Luồng Cô Lập (Threading Isolation)
-- **GPUI Main Thread:** Chỉ xử lý render giao diện đồ họa GPU, bắt sự kiện chuột/phím. Tuyệt đối không thực hiện I/O mạng trên luồng này.
-- **Tokio Multi-threaded Runtime:** Một runtime chạy nền riêng biệt. Khi bấm **Send**:
-  1. Trích xuất snapshot request hiện tại.
-  2. Spawn một Tokio task chạy độc lập.
-  3. Cung cấp một `tokio_util::sync::CancellationToken` để khi người dùng bấm nút **Cancel**, kết nối HTTP in-flight lập tức bị ngắt kết nối và giải phóng tài nguyên ngay lập tức.
-  4. Bắn các sự kiện tiến trình (`HttpSendEvent::Progress`, `Success`, `Error`, `Cancelled`) qua channel `tokio::sync::mpsc::unbounded_channel()` về GPUI để cập nhật giao diện.
+### 3.1 Mô Hình Đa Luồng Cô Lập (Threading & Service Decoupling)
+- **GPUI Main Thread:** Chỉ xử lý render giao diện đồ họa GPU, bắt sự kiện chuột/phím. Tuyệt đối không thực hiện I/O mạng hoặc JS execution trên luồng này.
+- **HttpEngine (Decoupled Core Service):** Tách biệt 100% khỏi GPUI và UI state entities. Sở hữu `ReqwestExecutor` và Tokio runtime riêng, có thể chạy độc lập trong GUI, CLI headless runner hoặc integration tests:
+  1. Trích xuất snapshot immutable request & environment.
+  2. Spawn Tokio task chạy nền.
+  3. Quản lý `tokio::sync::oneshot` channel để khi người dùng bấm nút **Cancel**, kết nối HTTP in-flight lập tức bị ngắt kết nối và giải phóng tài nguyên.
+  4. Phát các sự kiện tiến trình (`ExecEvent::Progress`, `Success`, `Error`, `Cancelled`) qua callback.
+- **Runner (App Event Coordinator):** Nhận sự kiện từ `HttpEngine`, điều phối cập nhật trạng thái UI (`ResponseState`, `RequestSessionState`, `ToastState`, `PersistenceState`) thông qua mô hình phản ứng hướng sự kiện (event-driven).
 
 ### 3.2 Phân Rã Thời Gian Chi Tiết Độ Chính Xác Cao (High-Precision Timing Breakdown)
 Sử dụng các hook socket để đo lường chính xác từng giai đoạn của kết nối mạng:
@@ -89,7 +90,7 @@ Sử dụng các hook socket để đo lường chính xác từng giai đoạn 
 
 ---
 
-## 4. Kiến Trúc Trình Xem Phản Hồi (Response Viewer & Inspector)
+## 4. Kiến Trúc Trình Kiểm Tra Phản Hồi (Response Inspector)
 
 ### 4.1 Thanh Trạng Thái Phản Hồi (Status Metric Bar)
 - **Status Code Badge:**

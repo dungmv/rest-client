@@ -85,40 +85,46 @@ Hệ thống tự động phân giải các placeholder dạng `{{$macro}}` trư
 
 ## 5. Quy Trình Request Chaining Hoàn Chỉnh
 
+RestClient tách rời tầng giao diện GPUI và tầng mạng bằng `HttpEngine` độc lập cùng bộ điều phối `Runner`:
+
 ```mermaid
 sequenceDiagram
     autonumber
     actor User as Người dùng
-    participant UI as AppView (GPUI)
-    participant Core as restclient-core
+    participant UI as RequestComposer / AppView
+    participant Runner as Runner (App Service)
+    participant Engine as HttpEngine (Decoupled Core)
     participant Sandbox as rquickjs Sandbox
     participant Network as Reqwest Executor
     participant FS as FsStorage (Disk)
+    participant Inspector as ResponseInspector
 
-    User->>UI: Bấm "Send" (hoặc Ctrl+Enter)
-    UI->>Core: Phân giải Fake Variables ({{$uuid}}, {{$timestamp}})
-    Core->>Sandbox: Chạy Pre-request Script (nếu có)
-    Sandbox-->>Core: Trả về PreRequestOutput (Header/Body mutations, Env updates)
-    Core->>Network: Thực thi HTTP Request qua mạng
-    Network-->>Core: Nhận HTTP Response (status, headers, body, timings)
-    Core->>Sandbox: Chạy Test Script (inject client.response & assertions)
-    Sandbox-->>Core: Trả về PostResponseOutput (Test results, Env updates, Logs)
-    Core->>FS: Tự động ghi nhận và lưu biến Env vào active_environment.json
-    Core-->>UI: Cập nhật Response Viewer (Tab Tests, Badge Passed/Total, Logs)
+    User->>UI: Bấm "Send" (hoặc Cmd+Enter)
+    UI->>Runner: send_current_request()
+    Runner->>Engine: execute(req, env, cancel_rx, on_event)
+    Engine->>Sandbox: Phân giải Fake Variables & Chạy Pre-request Script
+    Sandbox-->>Engine: Trả về PreRequestOutput (Header/Body mutations, Env updates)
+    Engine->>Network: Thực thi HTTP Request qua mạng
+    Network-->>Engine: Nhận HTTP Response (status, headers, body, timings)
+    Engine->>Sandbox: Chạy Test Script (inject client.response & assertions)
+    Sandbox-->>Engine: Trả về PostResponseOutput (Test results, Env updates, Logs)
+    Engine-->>Runner: ExecEvent::Success(record, post_output)
+    Runner->>FS: Tự động ghi nhận và lưu biến Env vào active_environment.json
+    Runner-->>Inspector: Đồng bộ sự kiện (cx.observe_in) -> ResponseInspector (Tab Tests, Badge, Logs)
 ```
 
 ---
 
 ## 6. Giao Diện Người Dùng (UI/UX)
 
-1. **Thanh Tab Request Editor:**
+1. **Thanh Tab Request Composer:**
    - Thêm tab **Pre-request** và **Tests** cạnh Body, Params, Headers, Auth, Settings.
    - Có dấu chấm thông báo (`●`) khi request hiện tại có chứa script.
 2. **Sidebar Snippets (Trợ Giúp Viết Code Nhanh):**
    - Click 1 chạm để chèn code mẫu thường dùng:
      - *Pre-request:* Set Timestamp Header, HMAC-SHA256 Signature, Set Env Variable, Mutate JSON Body.
      - *Tests:* Status code is 200, Response time < 500ms, Extract & Set Access Token (Request Chaining), Verify JSON Property, Log Response Body.
-3. **Response Viewer — Tab Tests:**
+3. **Response Inspector — Tab Tests:**
    - Badge tổng kết số lượng test: `Passed 2/2` (màu xanh lá) hoặc `Failed 1/2` (màu đỏ).
    - Danh sách chi tiết từng bài test kèm thời gian thực thi (ms).
    - Hộp cảnh báo lỗi chi tiết khi test thất bại (kèm stack trace/message).
