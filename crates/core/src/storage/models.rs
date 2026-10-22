@@ -128,7 +128,52 @@ impl RequestFile {
         file
     }
 
-    pub fn to_item(&self, id: impl Into<String>, workspace_id: impl Into<String>, folder_id: Option<String>) -> HttpRequestItem {
+    pub fn from_item_owned(item: HttpRequestItem) -> Self {
+        Self {
+            name: item.name,
+            method: item.method,
+            url: item.url,
+            params: item.params,
+            headers: item.headers,
+            auth: item.auth,
+            body: item.body,
+            settings: item.settings,
+            script: item.script,
+            examples: item.examples,
+        }
+    }
+
+    pub fn into_item(
+        self,
+        id: impl Into<String>,
+        workspace_id: impl Into<String>,
+        folder_id: Option<String>,
+    ) -> HttpRequestItem {
+        HttpRequestItem {
+            id: id.into(),
+            workspace_id: workspace_id.into(),
+            folder_id,
+            name: self.name,
+            method: self.method,
+            url: self.url,
+            params: self.params,
+            headers: self.headers,
+            auth: self.auth,
+            body: self.body,
+            settings: self.settings,
+            sort_order: 0,
+            last_status_code: None,
+            script: self.script,
+            examples: self.examples,
+        }
+    }
+
+    pub fn to_item(
+        &self,
+        id: impl Into<String>,
+        workspace_id: impl Into<String>,
+        folder_id: Option<String>,
+    ) -> HttpRequestItem {
         HttpRequestItem {
             id: id.into(),
             workspace_id: workspace_id.into(),
@@ -162,6 +207,12 @@ impl RequestFile {
     }
 }
 
+impl From<HttpRequestItem> for RequestFile {
+    fn from(item: HttpRequestItem) -> Self {
+        Self::from_item_owned(item)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnvVarFile {
@@ -183,12 +234,19 @@ pub struct EnvironmentFile {
 }
 
 impl EnvironmentFile {
-    pub fn to_environment(&self, id: impl Into<String>, workspace_id: impl Into<String>, name: impl Into<String>, secrets: &std::collections::HashMap<String, String>) -> Environment {
+    pub fn to_environment(
+        &self,
+        id: impl Into<String>,
+        workspace_id: impl Into<String>,
+        name: impl Into<String>,
+        secrets: &std::collections::HashMap<String, String>,
+    ) -> Environment {
         let mut env = Environment::new(workspace_id, name);
         env.id = id.into();
         for v in &self.variables {
             let (init_val, cur_val) = if v.secret {
-                let init = secrets.get(&format!("{}:init", v.name))
+                let init = secrets
+                    .get(&format!("{}:init", v.name))
                     .cloned()
                     .or_else(|| secrets.get(&v.name).cloned())
                     .unwrap_or_default();
@@ -209,7 +267,9 @@ impl EnvironmentFile {
         env
     }
 
-    pub fn from_environment(env: &Environment) -> (Self, std::collections::HashMap<String, String>) {
+    pub fn from_environment(
+        env: &Environment,
+    ) -> (Self, std::collections::HashMap<String, String>) {
         let mut env_file = EnvironmentFile::default();
         let mut secrets = std::collections::HashMap::new();
 
@@ -285,12 +345,7 @@ impl LocFile {
                 sent.body_preview.clone(),
             )
         } else {
-            (
-                HttpMethod::Get,
-                String::new(),
-                Vec::new(),
-                None,
-            )
+            (HttpMethod::Get, String::new(), Vec::new(), None)
         };
 
         let is_binary = record.body.iter().take(1024).any(|&b| b == 0);
@@ -330,7 +385,13 @@ impl LocFile {
     }
 
     pub fn to_record(&self, request_id: &str) -> HttpResponseRecord {
-        let body_bytes = self.response.body.as_deref().unwrap_or("").as_bytes().to_vec();
+        let body_bytes = self
+            .response
+            .body
+            .as_deref()
+            .unwrap_or("")
+            .as_bytes()
+            .to_vec();
         let created_at = chrono::DateTime::parse_from_rfc3339(&self.sent_at)
             .map(|dt| dt.with_timezone(&chrono::Utc))
             .unwrap_or_else(|_| chrono::Utc::now());
@@ -487,7 +548,10 @@ mod tests {
         // Env file only holds initial_value for non-secrets, None for secrets
         assert_eq!(env_file.variables.len(), 3);
         assert_eq!(env_file.variables[0].name, "BASE_URL");
-        assert_eq!(env_file.variables[0].value.as_deref(), Some("https://api.example.com"));
+        assert_eq!(
+            env_file.variables[0].value.as_deref(),
+            Some("https://api.example.com")
+        );
         assert!(!env_file.variables[0].secret);
 
         assert_eq!(env_file.variables[1].name, "TIMEOUT");
@@ -499,9 +563,15 @@ mod tests {
         assert!(env_file.variables[2].secret);
 
         // Secrets hold current values and secret values
-        assert_eq!(secrets.get("BASE_URL").map(|s| s.as_str()), Some("http://localhost:8000"));
+        assert_eq!(
+            secrets.get("BASE_URL").map(|s| s.as_str()),
+            Some("http://localhost:8000")
+        );
         assert!(!secrets.contains_key("TIMEOUT")); // empty current value not stored
-        assert_eq!(secrets.get("API_KEY").map(|s| s.as_str()), Some("local-dev-secret"));
+        assert_eq!(
+            secrets.get("API_KEY").map(|s| s.as_str()),
+            Some("local-dev-secret")
+        );
 
         // Converting back from EnvironmentFile + secrets
         let restored = env_file.to_environment("env-dev", "ws1", "Development", &secrets);

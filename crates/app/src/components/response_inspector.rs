@@ -1,16 +1,18 @@
 use crate::components::tabs_with_badge::TabItem;
-use crate::state::{RequestSessionState, ResponseState, ResponseTabKind, ResponseViewMode, WorkspaceState};
+use crate::state::{
+    RequestSessionState, ResponseState, ResponseTabKind, ResponseViewMode, WorkspaceState,
+};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, uniform_list, AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
-    RenderOnce, StatefulInteractiveElement as _, Styled, Window,
+    AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement, RenderOnce,
+    StatefulInteractiveElement as _, Styled, Window, div, px, uniform_list,
 };
+use gpui_component::Icon;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{Editor, EditorState as CodeEditorState, Textarea, TextareaState};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::scroll::ScrollableElement as _;
-use gpui_component::Icon;
 use gpui_kit::assets::IconName;
 use restclient_core::models::HttpResponseRecord;
 use restclient_core::storage::models::{RequestExampleFile, RequestFile, RequestKvItem};
@@ -564,7 +566,7 @@ impl RenderOnce for ResponseInspector {
                                 let rs_wrap = resp_state_clone.clone();
                                 let resp_ed = self.response_editor.clone();
                                 let ws_s = self.workspace_state.clone();
-                                let c_resp = current_resp.clone().unwrap();
+                                let c_resp = current_resp.clone().unwrap_or_else(|| std::sync::Arc::new(restclient_core::models::HttpResponseRecord::default()));
                                 let req_id_opt = active_id.clone();
                                 let wrap_lines = resp_s.wrap_lines;
 
@@ -643,10 +645,12 @@ impl RenderOnce for ResponseInspector {
                                                     .items_center()
                                                     .gap(px(6.))
                                                     // Save as Example Button
-                                                    .when(!is_viewing_example && req_id_opt.is_some(), |this| {
+                                                    .when_some(req_id_opt.clone(), |this, req_id| {
+                                                        if is_viewing_example {
+                                                            return this;
+                                                        }
                                                         let ws_s = ws_s.clone();
                                                         let c_resp = c_resp.clone();
-                                                        let req_id = req_id_opt.unwrap();
                                                         this.child(
                                                             div()
                                                                 .id("btn-save-example")
@@ -1483,4 +1487,3 @@ pub fn highlight_json_line(line: &str, t: &crate::theme::AppTheme) -> gpui::Styl
 
     gpui::StyledText::new(line.to_string()).with_highlights(highlights)
 }
-

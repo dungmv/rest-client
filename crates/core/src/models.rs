@@ -474,7 +474,10 @@ impl HttpRequestItem {
     }
 
     pub fn set_raw_body(&mut self, content: String, content_type: String) {
-        self.body = RequestBody::Raw { content, content_type };
+        self.body = RequestBody::Raw {
+            content,
+            content_type,
+        };
     }
 
     pub fn set_binary_file(&mut self, file_path: String) {
@@ -494,7 +497,11 @@ impl HttpRequestItem {
     }
 
     pub fn set_api_key(&mut self, key: String, value: String, in_header: bool) {
-        self.auth = Auth::ApiKey { key, value, in_header };
+        self.auth = Auth::ApiKey {
+            key,
+            value,
+            in_header,
+        };
     }
 
     pub fn set_timeout_secs(&mut self, secs: u64) {
@@ -539,7 +546,6 @@ impl HttpRequestItem {
         self.body = parsed.body;
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Folder {
@@ -751,7 +757,7 @@ pub struct ConsoleLogEntry {
     pub timestamp: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct HttpResponseRecord {
     pub id: String,
     pub request_id: String,
@@ -804,22 +810,25 @@ impl HttpResponseRecord {
     }
 
     pub fn parsed_cookies(&self) -> Vec<ParsedCookie> {
-        self.cookies.iter().map(|c| ParsedCookie::parse(c)).collect()
+        self.cookies
+            .iter()
+            .map(|c| ParsedCookie::parse(c))
+            .collect()
     }
 
     pub fn is_json(&self) -> bool {
-        self.headers
-            .iter()
-            .any(|(k, v)| k.eq_ignore_ascii_case("content-type") && v.to_lowercase().contains("json"))
+        self.headers.iter().any(|(k, v)| {
+            k.eq_ignore_ascii_case("content-type") && v.to_lowercase().contains("json")
+        })
     }
 
     pub fn is_xml(&self) -> bool {
-        self.headers
-            .iter()
-            .any(|(k, v)| {
-                k.eq_ignore_ascii_case("content-type")
-                    && (v.to_lowercase().contains("xml") || v.to_lowercase().contains("application/xml") || v.to_lowercase().contains("text/xml"))
-            })
+        self.headers.iter().any(|(k, v)| {
+            k.eq_ignore_ascii_case("content-type")
+                && (v.to_lowercase().contains("xml")
+                    || v.to_lowercase().contains("application/xml")
+                    || v.to_lowercase().contains("text/xml"))
+        })
     }
 }
 
@@ -843,7 +852,8 @@ mod tests {
         assert_eq!(req.method, HttpMethod::Get);
 
         // URL & query params parsing
-        let (has_query, has_template) = req.apply_url("https://api.example.com/items?q=rust&limit=20");
+        let (has_query, has_template) =
+            req.apply_url("https://api.example.com/items?q=rust&limit=20");
         assert!(has_query);
         assert!(!has_template);
         assert_eq!(req.url, "https://api.example.com/items");
@@ -868,7 +878,12 @@ mod tests {
 
         // Headers
         req.add_header();
-        req.update_header(0, "Accept".to_string(), "application/json".to_string(), true);
+        req.update_header(
+            0,
+            "Accept".to_string(),
+            "application/json".to_string(),
+            true,
+        );
         assert_eq!(req.headers[0].key, "Accept");
         assert_eq!(req.headers[0].value, "application/json");
         req.remove_header(0);
@@ -881,7 +896,13 @@ mod tests {
         req.set_body_type(RequestBody::form(vec![KeyValuePair::new("k", "v")]));
         req.update_form_param(0, "k2".to_string(), "v2".to_string(), true);
         req.add_form_param();
-        assert_eq!(req.body, RequestBody::form(vec![KeyValuePair::new("k2", "v2"), KeyValuePair::new("", "")]));
+        assert_eq!(
+            req.body,
+            RequestBody::form(vec![
+                KeyValuePair::new("k2", "v2"),
+                KeyValuePair::new("", "")
+            ])
+        );
         req.remove_form_param(1);
 
         req.set_body_type(RequestBody::multipart(vec![MultipartItem::default()]));
@@ -890,18 +911,47 @@ mod tests {
         req.remove_multipart_item(1);
 
         req.set_raw_body("hello".to_string(), "text/plain".to_string());
-        assert_eq!(req.body, RequestBody::Raw { content: "hello".to_string(), content_type: "text/plain".to_string() });
+        assert_eq!(
+            req.body,
+            RequestBody::Raw {
+                content: "hello".to_string(),
+                content_type: "text/plain".to_string()
+            }
+        );
 
         req.set_binary_file("/tmp/file.bin".to_string());
-        assert_eq!(req.body, RequestBody::Binary { file_path: "/tmp/file.bin".to_string() });
+        assert_eq!(
+            req.body,
+            RequestBody::Binary {
+                file_path: "/tmp/file.bin".to_string()
+            }
+        );
 
         // Auth
         req.set_bearer_token("tok123".to_string());
-        assert_eq!(req.auth, Auth::Bearer { token: "tok123".to_string() });
+        assert_eq!(
+            req.auth,
+            Auth::Bearer {
+                token: "tok123".to_string()
+            }
+        );
         req.set_basic_auth("u".to_string(), "p".to_string());
-        assert_eq!(req.auth, Auth::Basic { username: "u".to_string(), password: "p".to_string() });
+        assert_eq!(
+            req.auth,
+            Auth::Basic {
+                username: "u".to_string(),
+                password: "p".to_string()
+            }
+        );
         req.set_api_key("x-api-key".to_string(), "secret".to_string(), true);
-        assert_eq!(req.auth, Auth::ApiKey { key: "x-api-key".to_string(), value: "secret".to_string(), in_header: true });
+        assert_eq!(
+            req.auth,
+            Auth::ApiKey {
+                key: "x-api-key".to_string(),
+                value: "secret".to_string(),
+                in_header: true
+            }
+        );
 
         // Settings
         req.set_timeout_secs(42);
@@ -913,8 +963,14 @@ mod tests {
 
         // Scripts
         req.set_pre_script("console.log(1);".to_string());
-        assert_eq!(req.script.as_ref().unwrap().pre_request.as_deref(), Some("console.log(1);"));
+        assert_eq!(
+            req.script.as_ref().unwrap().pre_request.as_deref(),
+            Some("console.log(1);")
+        );
         req.set_test_script("pm.test('ok');".to_string());
-        assert_eq!(req.script.as_ref().unwrap().post_response.as_deref(), Some("pm.test('ok');"));
+        assert_eq!(
+            req.script.as_ref().unwrap().post_response.as_deref(),
+            Some("pm.test('ok');")
+        );
     }
 }

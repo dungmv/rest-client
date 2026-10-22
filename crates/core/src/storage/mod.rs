@@ -9,7 +9,7 @@ pub mod watcher;
 pub use fs_store::FsWorkspaceStore;
 pub use models::*;
 pub use traits::WorkspaceStore;
-pub use watcher::{start_workspace_watcher, FsEvent, WorkspaceWatcher};
+pub use watcher::{FsEvent, WorkspaceWatcher, start_workspace_watcher};
 
 #[cfg(test)]
 mod tests {
@@ -47,7 +47,9 @@ mod tests {
             },
             script: Some(RequestScriptFile {
                 pre_request: None,
-                post_response: Some("if (res.status === 200) { env.token = res.body.token }".to_string()),
+                post_response: Some(
+                    "if (res.status === 200) { env.token = res.body.token }".to_string(),
+                ),
             }),
             examples: vec![RequestExampleFile {
                 name: "Success".to_string(),
@@ -66,7 +68,10 @@ mod tests {
         let yaml_1 = to_yaml_string(&req).unwrap();
 
         // Check LF on Windows too
-        assert!(!yaml_1.contains("\r\n"), "Must use LF line endings on all platforms");
+        assert!(
+            !yaml_1.contains("\r\n"),
+            "Must use LF line endings on all platforms"
+        );
         assert!(yaml_1.ends_with('\n'), "Must have trailing newline");
 
         // Check key order: examples must be last!
@@ -80,7 +85,10 @@ mod tests {
 
         // 3. Serialize again: Must be byte-identical!
         let yaml_2 = to_yaml_string(&req_deser).unwrap();
-        assert_eq!(yaml_1, yaml_2, "Roundtrip serialization must be byte-identical");
+        assert_eq!(
+            yaml_1, yaml_2,
+            "Roundtrip serialization must be byte-identical"
+        );
     }
 
     #[test]
@@ -99,7 +107,10 @@ mod tests {
 
         let invalid_env = "variables: []\nunknown_env_key: baz\n";
         let res_env = serde_yaml::from_str::<EnvironmentFile>(invalid_env);
-        assert!(res_env.is_err(), "EnvironmentFile must reject unknown fields");
+        assert!(
+            res_env.is_err(),
+            "EnvironmentFile must reject unknown fields"
+        );
     }
 
     #[test]
@@ -130,7 +141,11 @@ mod tests {
         // Folder
         let folder = FolderFile {
             name: "Auth".to_string(),
-            order: vec!["login".to_string(), "refresh".to_string(), "logout".to_string()],
+            order: vec![
+                "login".to_string(),
+                "refresh".to_string(),
+                "logout".to_string(),
+            ],
             headers: Vec::new(),
             auth: RequestAuth::Inherit,
         };
@@ -142,7 +157,8 @@ mod tests {
 
     #[test]
     fn test_ordering_with_missing_and_extra_entries() {
-        let temp_dir = std::env::temp_dir().join(format!("test_order_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_order_{}", uuid::Uuid::new_v4().simple()));
         let store = FsWorkspaceStore::new(&temp_dir);
         store.init_workspace("Test Order").unwrap();
 
@@ -151,12 +167,38 @@ mod tests {
         let folder_name = group_path;
 
         // Create requests: c_req, a_req, b_req
-        store.create_request(Some(&folder_name), "C Req", HttpMethod::Get, "https://api.com/c").unwrap();
-        store.create_request(Some(&folder_name), "A Req", HttpMethod::Get, "https://api.com/a").unwrap();
-        store.create_request(Some(&folder_name), "B Req", HttpMethod::Get, "https://api.com/b").unwrap();
+        store
+            .create_request(
+                Some(&folder_name),
+                "C Req",
+                HttpMethod::Get,
+                "https://api.com/c",
+            )
+            .unwrap();
+        store
+            .create_request(
+                Some(&folder_name),
+                "A Req",
+                HttpMethod::Get,
+                "https://api.com/a",
+            )
+            .unwrap();
+        store
+            .create_request(
+                Some(&folder_name),
+                "B Req",
+                HttpMethod::Get,
+                "https://api.com/b",
+            )
+            .unwrap();
 
         // In _folder.yaml: order specifies ["b-req", "missing-req"]
-        store.reorder_folder(Some(&folder_name), &["b-req".to_string(), "missing-req".to_string()]).unwrap();
+        store
+            .reorder_folder(
+                Some(&folder_name),
+                &["b-req".to_string(), "missing-req".to_string()],
+            )
+            .unwrap();
 
         let tree = store.scan_tree().unwrap();
         let auth_folder = tree.folders.iter().find(|f| f.dir_name == "auth").unwrap();
@@ -165,7 +207,11 @@ mod tests {
         // 1. "b-req" (from order)
         // 2. "missing-req" ignored silently
         // 3. remaining alphabetical: "a-req", then "c-req"
-        let stems: Vec<_> = auth_folder.requests.iter().map(|r| r.slug.as_str()).collect();
+        let stems: Vec<_> = auth_folder
+            .requests
+            .iter()
+            .map(|r| r.slug.as_str())
+            .collect();
         assert_eq!(stems, vec!["b-req", "a-req", "c-req"]);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -173,7 +219,8 @@ mod tests {
 
     #[test]
     fn test_secret_split() {
-        let temp_dir = std::env::temp_dir().join(format!("test_sec_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_sec_{}", uuid::Uuid::new_v4().simple()));
         let store = FsWorkspaceStore::new(&temp_dir);
         store.init_workspace("Test Sec").unwrap();
 
@@ -197,9 +244,13 @@ mod tests {
         store.save_environment("prod", &env_file).unwrap();
 
         // 1. Inspect on-disk committed environment file
-        let committed_raw = std::fs::read_to_string(store.environments_dir().join("prod.yaml")).unwrap();
+        let committed_raw =
+            std::fs::read_to_string(store.environments_dir().join("prod.yaml")).unwrap();
         assert!(committed_raw.contains("public_123"));
-        assert!(!committed_raw.contains("super_secret_value"), "Secret values must NOT be in environments/*.yaml");
+        assert!(
+            !committed_raw.contains("super_secret_value"),
+            "Secret values must NOT be in environments/*.yaml"
+        );
 
         // 2. Inspect on-disk .local/secrets/prod.yaml
         let secret_raw = std::fs::read_to_string(store.secrets_dir().join("prod.yaml")).unwrap();
@@ -207,7 +258,11 @@ mod tests {
 
         // 3. Load environment back through store: secrets should be merged
         let loaded = store.load_environment("prod").unwrap();
-        let sec_item = loaded.variables.iter().find(|v| v.name == "secret_var").unwrap();
+        let sec_item = loaded
+            .variables
+            .iter()
+            .find(|v| v.name == "secret_var")
+            .unwrap();
         assert_eq!(sec_item.value.as_deref(), Some("super_secret_value"));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -215,12 +270,15 @@ mod tests {
 
     #[test]
     fn test_request_lifecycle_and_orphan_loc_cleanup() {
-        let temp_dir = std::env::temp_dir().join(format!("test_life_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_life_{}", uuid::Uuid::new_v4().simple()));
         let store = FsWorkspaceStore::new(&temp_dir);
         store.init_workspace("Test Life").unwrap();
 
         // 1. Create request
-        let (slug, rel_path) = store.create_request(None, "Login", HttpMethod::Post, "http://api.com").unwrap();
+        let (slug, rel_path) = store
+            .create_request(None, "Login", HttpMethod::Post, "http://api.com")
+            .unwrap();
         assert_eq!(slug, "login");
         assert_eq!(rel_path, "login.yaml");
 
@@ -271,7 +329,8 @@ mod tests {
         assert!(!store.collections_dir().join("login-user.yaml").exists());
         assert!(!store.collections_dir().join("login-user.loc").exists());
         // Verify target .loc contains the real cached response, not the stale ghost
-        let admin_loc_content = std::fs::read_to_string(store.collections_dir().join("login-admin.loc")).unwrap();
+        let admin_loc_content =
+            std::fs::read_to_string(store.collections_dir().join("login-admin.loc")).unwrap();
         assert!(admin_loc_content.contains("\"status\": 200"));
 
         let new_rel = admin_rel;
@@ -280,8 +339,18 @@ mod tests {
         let (_, group_rel) = store.create_group(None, "Auth").unwrap();
         let moved_rel = store.move_request(&new_rel, Some(&group_rel)).unwrap();
         assert_eq!(moved_rel, "auth/login-admin.yaml");
-        assert!(store.collections_dir().join("auth/login-admin.yaml").exists());
-        assert!(store.collections_dir().join("auth/login-admin.loc").exists());
+        assert!(
+            store
+                .collections_dir()
+                .join("auth/login-admin.yaml")
+                .exists()
+        );
+        assert!(
+            store
+                .collections_dir()
+                .join("auth/login-admin.loc")
+                .exists()
+        );
 
         // 4. Create an orphan .loc in auth/
         let orphan_loc = store.collections_dir().join("auth/ghost.loc");
@@ -290,7 +359,10 @@ mod tests {
 
         // Scanning should clean up the orphan .loc lazily
         let _ = store.scan_tree().unwrap();
-        assert!(!orphan_loc.exists(), "Orphan .loc must be deleted lazily on scan");
+        assert!(
+            !orphan_loc.exists(),
+            "Orphan .loc must be deleted lazily on scan"
+        );
 
         // 5. Delete group leaves nothing behind
         store.delete_group(&group_rel).unwrap();
@@ -301,11 +373,14 @@ mod tests {
 
     #[test]
     fn test_loc_cache_binary_and_large_truncation() {
-        let temp_dir = std::env::temp_dir().join(format!("test_cache_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_cache_{}", uuid::Uuid::new_v4().simple()));
         let store = FsWorkspaceStore::new(&temp_dir);
         store.init_workspace("Test Cache").unwrap();
 
-        let (_, rel_path) = store.create_request(None, "Large", HttpMethod::Get, "http://api.com").unwrap();
+        let (_, rel_path) = store
+            .create_request(None, "Large", HttpMethod::Get, "http://api.com")
+            .unwrap();
 
         // 1. Large body > 512KB
         let huge_string = "x".repeat(600 * 1024);
@@ -367,7 +442,8 @@ mod tests {
 
     #[test]
     fn test_burst_state_changes_and_pins() {
-        let temp_dir = std::env::temp_dir().join(format!("test_burst_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_burst_{}", uuid::Uuid::new_v4().simple()));
         let store = FsWorkspaceStore::new(&temp_dir);
         store.init_workspace("Burst Workspace").unwrap();
 
@@ -397,19 +473,29 @@ mod tests {
 
     #[test]
     fn test_invalid_yaml_handling_and_corrupt_secret_backup() {
-        let temp_dir = std::env::temp_dir().join(format!("test_invalid_yaml_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "test_invalid_yaml_{}",
+            uuid::Uuid::new_v4().simple()
+        ));
         let store = FsWorkspaceStore::new(&temp_dir);
         store.init_workspace("Invalid Yaml Test").unwrap();
 
         // 1. Write an invalid request YAML
         let req_path = store.collections_dir().join("broken.yaml");
-        std::fs::write(&req_path, "name: Broken\nmethod: NOT_A_METHOD\nurl: ://broken\n  invalid_indent").unwrap();
+        std::fs::write(
+            &req_path,
+            "name: Broken\nmethod: NOT_A_METHOD\nurl: ://broken\n  invalid_indent",
+        )
+        .unwrap();
 
         let tree = store.scan_tree().unwrap();
         assert_eq!(tree.root_requests.len(), 1);
         let node = &tree.root_requests[0];
         assert_eq!(node.rel_path, "broken.yaml");
-        assert!(node.parse_error.is_some(), "Node must contain parse error message");
+        assert!(
+            node.parse_error.is_some(),
+            "Node must contain parse error message"
+        );
 
         // 2. Corrupt secret file: should rename to *.bak and return Err
         let secret_path = store.secrets_dir().join("local.yaml");
@@ -417,17 +503,24 @@ mod tests {
         std::fs::write(&secret_path, "invalid: : yaml content").unwrap();
 
         let load_res = store.load_secrets("local");
-        assert!(load_res.is_err(), "Must return error for corrupt secret file");
+        assert!(
+            load_res.is_err(),
+            "Must return error for corrupt secret file"
+        );
 
         let bak_path = store.secrets_dir().join("local.yaml.bak");
-        assert!(bak_path.exists(), "Corrupt secret file must be backed up to .bak");
+        assert!(
+            bak_path.exists(),
+            "Corrupt secret file must be backed up to .bak"
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
     fn test_gitignore_management() {
-        let temp_dir = std::env::temp_dir().join(format!("test_gitignore_{}", uuid::Uuid::new_v4().simple()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_gitignore_{}", uuid::Uuid::new_v4().simple()));
         let store = FsWorkspaceStore::new(&temp_dir);
         store.init_workspace("Gitignore Test").unwrap();
 
@@ -447,8 +540,54 @@ mod tests {
     }
 
     #[test]
+    fn test_suppress_path_worker_lifecycle() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "restclient-suppress-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        let store = FsWorkspaceStore::new(&temp_dir);
+        let test_path = temp_dir.join("test.yaml");
+
+        assert!(
+            !store
+                .suppressed_paths
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains(&test_path)
+        );
+        store.suppress_path(&test_path);
+        assert!(
+            store
+                .suppressed_paths
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains(&test_path)
+        );
+
+        // Calling multiple times in a burst does not panic and tracks suppressed paths via single queue
+        for i in 0..50 {
+            let p = temp_dir.join(format!("burst_{}.yaml", i));
+            store.suppress_path(&p);
+            assert!(
+                store
+                    .suppressed_paths
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .contains(&p)
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
     fn test_benchmark_yaml_and_clone() {
-        let speedt_path = std::path::Path::new(r"C:\Users\maiva\Documents\speedtest\collections\new-folder\new\new-folder\speedt.yaml");
+        let speedt_path = std::path::Path::new(
+            r"C:\Users\maiva\Documents\speedtest\collections\new-folder\new\new-folder\speedt.yaml",
+        );
         if speedt_path.exists() {
             let content = std::fs::read_to_string(speedt_path).unwrap();
             let t0 = std::time::Instant::now();

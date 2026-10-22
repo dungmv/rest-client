@@ -26,12 +26,18 @@ pub fn parse_query_from_url(raw_url: &str) -> (String, Vec<KeyValuePair>) {
             if let Some((k, v)) = part.split_once('=') {
                 let k_norm = k.replace('+', " ");
                 let v_norm = v.replace('+', " ");
-                let dec_k = urlencoding::decode(&k_norm).unwrap_or(std::borrow::Cow::Borrowed(&k_norm)).to_string();
-                let dec_v = urlencoding::decode(&v_norm).unwrap_or(std::borrow::Cow::Borrowed(&v_norm)).to_string();
+                let dec_k = urlencoding::decode(&k_norm)
+                    .unwrap_or(std::borrow::Cow::Borrowed(&k_norm))
+                    .to_string();
+                let dec_v = urlencoding::decode(&v_norm)
+                    .unwrap_or(std::borrow::Cow::Borrowed(&v_norm))
+                    .to_string();
                 pairs.push(KeyValuePair::new(dec_k, dec_v));
             } else {
                 let part_norm = part.replace('+', " ");
-                let dec_k = urlencoding::decode(&part_norm).unwrap_or(std::borrow::Cow::Borrowed(&part_norm)).to_string();
+                let dec_k = urlencoding::decode(&part_norm)
+                    .unwrap_or(std::borrow::Cow::Borrowed(&part_norm))
+                    .to_string();
                 pairs.push(KeyValuePair::new(dec_k, ""));
             }
         }
@@ -147,7 +153,12 @@ impl ResolvedRequest {
         }
 
         // Check if auth is ApiKey in query
-        if let Auth::ApiKey { key, value, in_header } = &item.auth {
+        if let Auth::ApiKey {
+            key,
+            value,
+            in_header,
+        } = &item.auth
+        {
             if !in_header && !key.trim().is_empty() {
                 let k = interpolator.interpolate_cow(key);
                 let v = interpolator.interpolate_cow(value);
@@ -159,13 +170,7 @@ impl ResolvedRequest {
             let delimiter = if full_url.contains('?') { "&" } else { "?" };
             let query_str = enabled_params
                 .into_iter()
-                .map(|(k, v)| {
-                    format!(
-                        "{}={}",
-                        urlencoding::encode(&k),
-                        urlencoding::encode(&v)
-                    )
-                })
+                .map(|(k, v)| format!("{}={}", urlencoding::encode(&k), urlencoding::encode(&v)))
                 .collect::<Vec<_>>()
                 .join("&");
             full_url.push_str(delimiter);
@@ -202,7 +207,11 @@ impl ResolvedRequest {
                 let encoded = base64::engine::general_purpose::STANDARD.encode(creds.as_bytes());
                 headers.push(("Authorization".to_string(), format!("Basic {}", encoded)));
             }
-            Auth::ApiKey { key, value, in_header } => {
+            Auth::ApiKey {
+                key,
+                value,
+                in_header,
+            } => {
                 if *in_header && !key.trim().is_empty() {
                     let k = interpolator.interpolate_cow(key);
                     let v = interpolator.interpolate_cow(value);
@@ -248,7 +257,10 @@ impl ResolvedRequest {
                     .map(|p| {
                         let k = interpolator.interpolate_cow(&p.key);
                         let v = interpolator.interpolate_cow(&p.value);
-                        let file_path = p.file_path.as_ref().map(|path| interpolator.interpolate_cow(path).into_owned());
+                        let file_path = p
+                            .file_path
+                            .as_ref()
+                            .map(|path| interpolator.interpolate_cow(path).into_owned());
                         MultipartItem {
                             enabled: true,
                             key: k.into_owned(),
@@ -261,7 +273,10 @@ impl ResolvedRequest {
                 multipart_data = Some(interpolated_items);
                 None
             }
-            RequestBody::Raw { content, content_type } => {
+            RequestBody::Raw {
+                content,
+                content_type,
+            } => {
                 if !content_type_set && !content_type.trim().is_empty() {
                     headers.push(("Content-Type".to_string(), content_type.clone()));
                 }
@@ -270,7 +285,10 @@ impl ResolvedRequest {
             }
             RequestBody::Binary { file_path } => {
                 if !content_type_set {
-                    headers.push(("Content-Type".to_string(), "application/octet-stream".to_string()));
+                    headers.push((
+                        "Content-Type".to_string(),
+                        "application/octet-stream".to_string(),
+                    ));
                 }
                 let interpolated_path = interpolate(file_path, env).text;
                 std::fs::read(&interpolated_path).ok()
@@ -326,9 +344,12 @@ impl ResolvedRequest {
     pub fn apply_pre_script_mutations(&mut self, pre_output: &crate::scripting::PreRequestOutput) {
         // Ghi đè hoặc thêm headers mới
         for (k, v) in &pre_output.header_mutations {
-            self.headers.retain(|(name, _)| !name.eq_ignore_ascii_case(k));
+            self.headers
+                .retain(|(name, _)| !name.eq_ignore_ascii_case(k));
             self.headers.push((k.clone(), v.clone()));
-            self.sent_info.headers.retain(|(name, _)| !name.eq_ignore_ascii_case(k));
+            self.sent_info
+                .headers
+                .retain(|(name, _)| !name.eq_ignore_ascii_case(k));
             self.sent_info.headers.push((k.clone(), v.clone()));
         }
 
@@ -419,7 +440,9 @@ impl ReqwestExecutor {
             builder = builder.redirect(reqwest::redirect::Policy::none());
         }
 
-        builder.build().map_err(|e| HttpError::Network(e.to_string()))
+        builder
+            .build()
+            .map_err(|e| HttpError::Network(e.to_string()))
     }
 
     pub(crate) fn get_client(
@@ -484,15 +507,13 @@ impl HttpExecutor for ReqwestExecutor {
         let mut request_builder = client.request(reqwest_method, &req.url);
 
         if req.settings.timeout_secs() > 0 {
-            request_builder = request_builder.timeout(Duration::from_secs(req.settings.timeout_secs()));
+            request_builder =
+                request_builder.timeout(Duration::from_secs(req.settings.timeout_secs()));
         }
 
         let mut header_map = HeaderMap::new();
         for (k, v) in &req.headers {
-            if let (Ok(h_name), Ok(h_val)) = (
-                HeaderName::from_str(k),
-                HeaderValue::from_str(v),
-            ) {
+            if let (Ok(h_name), Ok(h_val)) = (HeaderName::from_str(k), HeaderValue::from_str(v)) {
                 header_map.insert(h_name, h_val);
             }
         }
@@ -509,7 +530,8 @@ impl HttpExecutor for ReqwestExecutor {
                                 .and_then(|n| n.to_str())
                                 .unwrap_or("file")
                                 .to_string();
-                            let part = reqwest::multipart::Part::bytes(file_bytes).file_name(file_name);
+                            let part =
+                                reqwest::multipart::Part::bytes(file_bytes).file_name(file_name);
                             form = form.part(item.key.clone(), part);
                         }
                     }
@@ -539,16 +561,13 @@ impl HttpExecutor for ReqwestExecutor {
         };
 
         let ttfb_start = Instant::now();
-        let response = request_builder
-            .send()
-            .await
-            .map_err(|e| {
-                if e.is_timeout() {
-                    HttpError::Timeout(req.settings.timeout_secs())
-                } else {
-                    HttpError::Network(e.to_string())
-                }
-            })?;
+        let response = request_builder.send().await.map_err(|e| {
+            if e.is_timeout() {
+                HttpError::Timeout(req.settings.timeout_secs())
+            } else {
+                HttpError::Network(e.to_string())
+            }
+        })?;
 
         let ttfb_ms = ttfb_start.elapsed().as_millis() as u64;
 
@@ -567,9 +586,9 @@ impl HttpExecutor for ReqwestExecutor {
             }
         }
 
-        let connection_closed = resp_headers.iter().any(|(k, v)| {
-            k.eq_ignore_ascii_case("connection") && v.eq_ignore_ascii_case("close")
-        });
+        let connection_closed = resp_headers
+            .iter()
+            .any(|(k, v)| k.eq_ignore_ascii_case("connection") && v.eq_ignore_ascii_case("close"));
 
         if let Some(key) = host_key {
             let mut hosts = self.active_hosts.lock().unwrap_or_else(|e| e.into_inner());
@@ -602,13 +621,23 @@ impl HttpExecutor for ReqwestExecutor {
 
         let is_https = req.url.starts_with("https://");
         let (dns_ms, connect_ms, tls_ms, effective_ttfb_ms, connection_reused) = if is_reused {
-            (Some(0), Some(0), if is_https { Some(0) } else { None }, Some(ttfb_ms), true)
+            (
+                Some(0),
+                Some(0),
+                if is_https { Some(0) } else { None },
+                Some(ttfb_ms),
+                true,
+            )
         } else {
             // Cold connection: ttfb_ms includes handshake + server wait
             let handshake_est = (ttfb_ms / 2).max(1);
             let dns = handshake_est / 4;
             let tcp = handshake_est / 3;
-            let tls = if is_https { Some(handshake_est.saturating_sub(dns + tcp).max(1)) } else { None };
+            let tls = if is_https {
+                Some(handshake_est.saturating_sub(dns + tcp).max(1))
+            } else {
+                None
+            };
             let wait = ttfb_ms.saturating_sub(dns + tcp + tls.unwrap_or(0));
             (Some(dns), Some(tcp), tls, Some(wait), false)
         };
@@ -676,7 +705,8 @@ pub fn resolve_hierarchical_headers_and_auth<'a>(
 
     // 2. Resolve Headers
     let mut header_order: Vec<String> = Vec::new();
-    let mut header_map: std::collections::HashMap<String, &'a KeyValuePair> = std::collections::HashMap::new();
+    let mut header_map: std::collections::HashMap<String, &'a KeyValuePair> =
+        std::collections::HashMap::new();
 
     let mut apply_kv = |kv: &'a KeyValuePair| {
         let trimmed_key = kv.key.trim();
@@ -756,7 +786,12 @@ mod tests {
 
     #[test]
     fn test_resolved_request_multipart() {
-        let mut item = HttpRequestItem::new("ws-1", "Test Multipart", HttpMethod::Post, "http://localhost:8080/upload");
+        let mut item = HttpRequestItem::new(
+            "ws-1",
+            "Test Multipart",
+            HttpMethod::Post,
+            "http://localhost:8080/upload",
+        );
         item.body = RequestBody::Multipart {
             items: vec![
                 MultipartItem::new_text("description", "A test file upload"),
@@ -778,14 +813,27 @@ mod tests {
     #[test]
     fn test_resolved_request_no_duplicate_query() {
         // Even if item.url has query params and item.params also has them, they shouldn't duplicate
-        let mut item = HttpRequestItem::new("ws-1", "Test Dedupe", HttpMethod::Get, "https://api.example.com/search?q=rust");
-        item.params = vec![KeyValuePair::new("q", "rust"), KeyValuePair::new("page", "2")];
+        let mut item = HttpRequestItem::new(
+            "ws-1",
+            "Test Dedupe",
+            HttpMethod::Get,
+            "https://api.example.com/search?q=rust",
+        );
+        item.params = vec![
+            KeyValuePair::new("q", "rust"),
+            KeyValuePair::new("page", "2"),
+        ];
 
         let resolved = ResolvedRequest::from_item(&item, None).unwrap();
         assert_eq!(resolved.url, "https://api.example.com/search?q=rust&page=2");
 
         // When item.url is clean base and params are defined
-        let mut item_clean = HttpRequestItem::new("ws-1", "Test Clean", HttpMethod::Get, "https://api.example.com/search");
+        let mut item_clean = HttpRequestItem::new(
+            "ws-1",
+            "Test Clean",
+            HttpMethod::Get,
+            "https://api.example.com/search",
+        );
         item_clean.params = vec![KeyValuePair::new("q", "rust")];
         let resolved_clean = ResolvedRequest::from_item(&item_clean, None).unwrap();
         assert_eq!(resolved_clean.url, "https://api.example.com/search?q=rust");
@@ -799,7 +847,9 @@ mod tests {
             KeyValuePair::new("X-Workspace", "ws-val"),
             KeyValuePair::new("X-Override-Me", "from-workspace"),
         ];
-        let ws_auth = Auth::Bearer { token: "ws-token".to_string() };
+        let ws_auth = Auth::Bearer {
+            token: "ws-token".to_string(),
+        };
 
         let folder_headers = [
             KeyValuePair::new("X-Folder", "f-val"),
@@ -823,15 +873,26 @@ mod tests {
         );
 
         // Auth should inherit from workspace through folder
-        assert_eq!(resolved_auth, Auth::Bearer { token: "ws-token".to_string() });
+        assert_eq!(
+            resolved_auth,
+            Auth::Bearer {
+                token: "ws-token".to_string()
+            }
+        );
 
         // Headers should be merged and overridden correctly
         assert_eq!(merged_headers.len(), 4);
-        let override_hdr = merged_headers.iter().find(|h| h.key.eq_ignore_ascii_case("x-override-me")).unwrap();
+        let override_hdr = merged_headers
+            .iter()
+            .find(|h| h.key.eq_ignore_ascii_case("x-override-me"))
+            .unwrap();
         assert_eq!(override_hdr.value, "from-request");
 
         // Folder auth override
-        let folder_auth_override = Auth::Basic { username: "admin".to_string(), password: "secret".to_string() };
+        let folder_auth_override = Auth::Basic {
+            username: "admin".to_string(),
+            password: "secret".to_string(),
+        };
         let folder_chain_2 = [(&folder_headers[..], &folder_auth_override)];
         let (_, resolved_auth_2) = resolve_hierarchical_headers_and_auth(
             &ws_headers,
@@ -840,7 +901,13 @@ mod tests {
             &req_headers,
             &req_auth,
         );
-        assert_eq!(resolved_auth_2, Auth::Basic { username: "admin".to_string(), password: "secret".to_string() });
+        assert_eq!(
+            resolved_auth_2,
+            Auth::Basic {
+                username: "admin".to_string(),
+                password: "secret".to_string()
+            }
+        );
 
         // Request explicit None auth override
         let req_none_auth = Auth::None;
@@ -921,7 +988,10 @@ mod tests {
         // Request 1: Cold connection
         let item1 = HttpRequestItem::new("ws-1", "Test Req 1", HttpMethod::Get, &server_url);
         let resolved1 = ResolvedRequest::from_item(&item1, None).unwrap();
-        let res1 = executor.send(resolved1, None).await.expect("send request 1 should succeed");
+        let res1 = executor
+            .send(resolved1, None)
+            .await
+            .expect("send request 1 should succeed");
         assert_eq!(res1.status_code, 200);
         assert_eq!(res1.body, b"Hello, World!");
         assert!(!res1.timing.connection_reused);
@@ -929,7 +999,10 @@ mod tests {
         // Request 2: Reused keep-alive connection
         let item2 = HttpRequestItem::new("ws-2", "Test Req 2", HttpMethod::Get, &server_url);
         let resolved2 = ResolvedRequest::from_item(&item2, None).unwrap();
-        let res2 = executor.send(resolved2, None).await.expect("send request 2 should succeed");
+        let res2 = executor
+            .send(resolved2, None)
+            .await
+            .expect("send request 2 should succeed");
         assert_eq!(res2.status_code, 200);
         assert_eq!(res2.body, b"Hello, World!");
         assert!(res2.timing.connection_reused);
@@ -971,5 +1044,29 @@ mod tests {
         let resolved2 = ResolvedRequest::from_item(&item2, None).unwrap();
         let res2 = executor.send(resolved2, None).await.unwrap();
         assert!(!res2.timing.connection_reused);
+    }
+
+    #[test]
+    fn test_cookie_store_mutex_poison_recovery() {
+        let executor = ReqwestExecutor::new();
+        let cookie_store = executor.cookie_store();
+
+        // Intentionally poison the mutex
+        let cs_clone = cookie_store.clone();
+        let _ = std::panic::catch_unwind(move || {
+            let _guard = cs_clone.lock().unwrap();
+            panic!("Poisoning cookie store mutex");
+        });
+
+        assert!(cookie_store.lock().is_err());
+
+        // Calling get_all_cookies, get_cookies_for_url, or clear_cookies must not panic
+        let cookies = executor.get_all_cookies();
+        assert!(cookies.is_empty());
+
+        let url_cookies = executor.get_cookies_for_url("https://example.com");
+        assert!(url_cookies.is_empty());
+
+        executor.clear_cookies();
     }
 }

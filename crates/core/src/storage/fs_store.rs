@@ -4,8 +4,8 @@ use crate::storage::fs_ops::{
     path_to_forward_slash, rename_group, rename_request, reorder_folder,
 };
 use crate::storage::models::{
-    EnvironmentFile, FolderFile, FolderNode, LocFile, LocalState, PinsFile, RequestAuth, RequestFile,
-    RequestNode, WorkspaceMeta, WorkspaceTree,
+    EnvironmentFile, FolderFile, FolderNode, LocFile, LocalState, PinsFile, RequestAuth,
+    RequestFile, RequestNode, WorkspaceMeta, WorkspaceTree,
 };
 use crate::storage::serialize::{atomic_write_str, to_yaml_string, with_retry};
 use crate::storage::slug::loc_path_for_yaml;
@@ -18,28 +18,70 @@ use std::sync::{Arc, Mutex};
 pub struct FsWorkspaceStore {
     root_dir: PathBuf,
     pub suppressed_paths: Arc<Mutex<HashSet<PathBuf>>>,
+    suppress_tx: std::sync::mpsc::Sender<PathBuf>,
 }
 
 impl FsWorkspaceStore {
     pub fn new(root_dir: impl Into<PathBuf>) -> Self {
+        let suppressed_paths = Arc::new(Mutex::new(HashSet::new()));
+        let (suppress_tx, suppress_rx) = std::sync::mpsc::channel::<PathBuf>();
+        let sup_worker = suppressed_paths.clone();
+
+        std::thread::Builder::new()
+            .name("workspace-suppress-cleaner".to_string())
+            .spawn(move || {
+                let mut deadlines: std::collections::VecDeque<(PathBuf, std::time::Instant)> =
+                    std::collections::VecDeque::new();
+                loop {
+                    let now = std::time::Instant::now();
+                    while let Some((_, deadline)) = deadlines.front() {
+                        if *deadline <= now {
+                            if let Some((expired_path, _)) = deadlines.pop_front() {
+                                if !deadlines.iter().any(|(p, _)| p == &expired_path) {
+                                    let mut set =
+                                        sup_worker.lock().unwrap_or_else(|e| e.into_inner());
+                                    set.remove(&expired_path);
+                                }
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+
+                    let timeout = if let Some((_, earliest)) = deadlines.front() {
+                        earliest.saturating_duration_since(now)
+                    } else {
+                        std::time::Duration::from_secs(3600)
+                    };
+
+                    match suppress_rx.recv_timeout(timeout) {
+                        Ok(path) => {
+                            deadlines.push_back((
+                                path,
+                                std::time::Instant::now() + std::time::Duration::from_millis(1500),
+                            ));
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    }
+                }
+            })
+            .ok();
+
         Self {
             root_dir: root_dir.into(),
-            suppressed_paths: Arc::new(Mutex::new(HashSet::new())),
+            suppressed_paths,
+            suppress_tx,
         }
     }
 
     pub fn suppress_path(&self, path: &Path) {
-        if let Ok(mut set) = self.suppressed_paths.lock() {
-            set.insert(path.to_path_buf());
-        }
-        let sup = self.suppressed_paths.clone();
-        let p = path.to_path_buf();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(1500));
-            if let Ok(mut set) = sup.lock() {
-                set.remove(&p);
-            }
-        });
+        let mut set = self
+            .suppressed_paths
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        set.insert(path.to_path_buf());
+        let _ = self.suppress_tx.send(path.to_path_buf());
     }
 
     pub fn collections_dir(&self) -> PathBuf {
@@ -149,16 +191,17 @@ impl FsWorkspaceStore {
                 };
 
                 let raw_content = std::fs::read_to_string(&path).unwrap_or_default();
-                let (req_file, parse_error) = match serde_yaml::from_str::<RequestFile>(&raw_content) {
-                    Ok(f) => (f, None),
-                    Err(e) => (
-                        RequestFile {
-                            name: stem.clone(),
-                            ..Default::default()
-                        },
-                        Some(e.to_string()),
-                    ),
-                };
+                let (req_file, parse_error) =
+                    match serde_yaml::from_str::<RequestFile>(&raw_content) {
+                        Ok(f) => (f, None),
+                        Err(e) => (
+                            RequestFile {
+                                name: stem.clone(),
+                                ..Default::default()
+                            },
+                            Some(e.to_string()),
+                        ),
+                    };
 
                 let node = RequestNode {
                     slug: stem.clone(),
@@ -175,10 +218,7 @@ impl FsWorkspaceStore {
 
         // Orphan .loc (no matching yaml) is ignored by the scanner and deleted lazily when its folder is scanned
         for loc in loc_files {
-            let stem = loc
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
+            let stem = loc.file_stem().and_then(|s| s.to_str()).unwrap_or("");
             if !req_map.contains_key(stem) {
                 let _ = std::fs::remove_file(loc);
             }
@@ -257,7 +297,9 @@ impl WorkspaceStore for FsWorkspaceStore {
             String::new()
         };
 
-        let has_local = content.lines().any(|l| l.trim() == ".local/" || l.trim() == ".local");
+        let has_local = content
+            .lines()
+            .any(|l| l.trim() == ".local/" || l.trim() == ".local");
         let has_loc = content.lines().any(|l| l.trim() == "*.loc");
 
         let mut modified = false;
@@ -512,7 +554,11 @@ impl WorkspaceStore for FsWorkspaceStore {
         let old_loc = loc_path_for_yaml(&old_p);
         self.suppress_path(&old_p);
         self.suppress_path(&old_loc);
-        let new_path = move_request(&self.collections_dir(), Path::new(rel_path), target_folder_rel)?;
+        let new_path = move_request(
+            &self.collections_dir(),
+            Path::new(rel_path),
+            target_folder_rel,
+        )?;
         let full_new_yaml = self.collections_dir().join(&new_path);
         let full_new_loc = loc_path_for_yaml(&full_new_yaml);
         self.suppress_path(&full_new_yaml);
@@ -520,7 +566,11 @@ impl WorkspaceStore for FsWorkspaceStore {
         Ok(path_to_forward_slash(&new_path))
     }
 
-    fn create_group(&self, parent_folder_rel: Option<&str>, name: &str) -> Result<(String, String)> {
+    fn create_group(
+        &self,
+        parent_folder_rel: Option<&str>,
+        name: &str,
+    ) -> Result<(String, String)> {
         let (dir_name, path) = create_group(&self.collections_dir(), parent_folder_rel, name)?;
         Ok((dir_name, path_to_forward_slash(&path)))
     }
@@ -660,7 +710,12 @@ impl WorkspaceStore for FsWorkspaceStore {
                 // Corrupt .local/secrets/*.yaml: rename to *.bak, user data that cannot be regenerated
                 let bak_path = self.secrets_dir().join(format!("{}.yaml.bak", env_name));
                 let _ = with_retry(|| std::fs::rename(&path, &bak_path));
-                Err(anyhow::anyhow!("Corrupt secret file for environment '{}' ({}), backed up to {}.yaml.bak", env_name, e, env_name))
+                Err(anyhow::anyhow!(
+                    "Corrupt secret file for environment '{}' ({}), backed up to {}.yaml.bak",
+                    env_name,
+                    e,
+                    env_name
+                ))
             }
         }
     }
@@ -781,7 +836,9 @@ impl WorkspaceStore for FsWorkspaceStore {
         Ok(())
     }
 
-    fn suppressed_paths(&self) -> std::sync::Arc<std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>>> {
+    fn suppressed_paths(
+        &self,
+    ) -> std::sync::Arc<std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>>> {
         self.suppressed_paths.clone()
     }
 }

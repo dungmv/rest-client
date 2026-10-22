@@ -9,10 +9,10 @@
 | Mức độ | Đã giải quyết | Còn lại | Chi tiết ưu tiên tiếp theo |
 | :--- | :---: | :---: | :--- |
 | 🔴 **CRITICAL** | 2 | 0 | Đã giải quyết toàn bộ (PERF-001, TD-01) |
-| 🟠 **HIGH** | 12 | 2 | **PERF-005** (`suppress_path` thread spawn), **CC-002** (FsEvent cascade notification) |
-| 🟡 **MEDIUM** | 5 | 8 | **PERF-007**, **TD-07/TD-005** (`unwrap` Mutex), **TD-08/TD-007**, **TD-006**, **PERF-008**, **PERF-009**, **PERF-010**, **CC-003** |
+| 🟠 **HIGH** | 14 | 0 | Đã giải quyết toàn bộ (**PERF-005**, **CC-002**) |
+| 🟡 **MEDIUM** | 8 | 5 | **TD-08/TD-007**, **TD-006**, **PERF-009**, **PERF-010**, **CC-003** (Đã xong: **PERF-007**, **TD-07/TD-005**, **PERF-008**) |
 | 🔵 **LOW** | 0 | 7 | **TD-09**, **TD-014** (OpenAPI ref recursion), **TD-015**, **TD-017** (`body_editor` split), **TD-018**, **TD-019**, **SL-007** |
-| **TỔNG** | **19** | **17** | **Tập trung xử lý Top 3: PERF-005, CC-002, TD-07/TD-005** |
+| **TỔNG** | **24** | **12** | **Đã hoàn thành Top 5: PERF-005, CC-002, TD-07/TD-005, PERF-007, PERF-008** |
 
 ---
 
@@ -20,13 +20,13 @@
 
 | ID | Vấn đề / Khoản nợ | Khu vực ảnh hưởng | Mức độ | Độ phức tạp | Trạng thái |
 | :--- | :--- | :--- | :---: | :---: | :---: |
-| **PERF-005** | `suppress_path()` spawn OS thread mới mỗi lần write file | `crates/core/src/storage/fs_store.rs` | **P1 (High)** | Thấp | 🔴 Chưa xử lý |
-| **CC-002** | `FsEvent` reload cascade render notifications | `crates/app/src/state/persistence_state.rs` | **P1 (High)** | Trung bình | 🔴 Chưa xử lý |
-| **TD-07 / TD-005** | Panics tiềm ẩn do `unwrap()` trên Mutex lock / Option | `crates/core/src/http/executor.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
-| **PERF-007** | `refresh_formatted_body()` parse lại JSON mỗi lần đổi view mode | `crates/app/src/state/response_state.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
+| **PERF-005** | `suppress_path()` spawn OS thread mới mỗi lần write file | `crates/core/src/storage/fs_store.rs` | **P1 (High)** | Thấp | ✅ RESOLVED (2026-10-22) |
+| **CC-002** | `FsEvent` reload cascade render notifications | `crates/app/src/state/persistence_state.rs` | **P1 (High)** | Trung bình | ✅ RESOLVED (2026-10-22) |
+| **TD-07 / TD-005** | Panics tiềm ẩn do `unwrap()` trên Mutex lock / Option | `crates/core/src/http/executor.rs`, `cache/mod.rs` | **P2 (Med)** | Thấp | ✅ RESOLVED (2026-10-22) |
+| **PERF-007** | `refresh_formatted_body()` parse lại JSON mỗi lần đổi view mode | `crates/app/src/state/response_state.rs` | **P2 (Med)** | Thấp | ✅ RESOLVED (2026-10-22) |
 | **TD-08 / TD-007** | Doc comments & code comments tiếng Việt trong core | `crates/core/src/scripting/`, `executor.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
 | **TD-006** | Hardcoded developer machine path trong test | `crates/core/src/storage/mod.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
-| **PERF-008** | Clone chuỗi trong `RequestFile::to_item()` và `update_from_item()` | `crates/core/src/storage/models.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
+| **PERF-008** | Clone chuỗi trong `RequestFile::to_item()` và `update_from_item()` | `crates/core/src/storage/models.rs` | **P2 (Med)** | Thấp | ✅ RESOLVED (2026-10-22) |
 | **PERF-009** | `interpolate_cow()` tạo `VariableInterpolator` mới mỗi iteration | `crates/core/src/interpolation.rs` | **P2 (Med)** | Thấp | 🔴 Chưa xử lý |
 | **PERF-010** | Pre/post-request script chạy blocking trên UI thread | `crates/app/src/services/` | **P2 (Med)** | Trung bình | 🔴 Chưa xử lý |
 | **CC-003** | Git operations (`pull`, `push`) đồng bộ trên UI path | `crates/app/src/state/git_ops.rs` | **P2 (Med)** | Trung bình | 🔴 Chưa xử lý |
@@ -66,25 +66,25 @@
 
 ## 🔍 Chi tiết các khoản nợ kỹ thuật còn tồn đọng (Unresolved Items)
 
-### 1. PERF-005: `suppress_path()` spawn OS thread mới mỗi lần write file (🟠 High)
+### 1. PERF-005: `suppress_path()` spawn OS thread mới mỗi lần write file (🟠 High) — ✅ RESOLVED (2026-10-22)
 - **Vị trí:** [`crates/core/src/storage/fs_store.rs:37-42`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/storage/fs_store.rs#L37-L42)
 - **Vấn đề:** Mỗi lần ghi một file xuống đĩa, hàm gọi `std::thread::spawn` rồi `thread::sleep(1500ms)` để gỡ đường dẫn khỏi danh sách suppressed. Khi import hoặc lưu hàng loạt 50 files sẽ tạo 50 OS threads đồng thời.
-- **Giải pháp:** Sử dụng async timer trong executor nền hoặc một hàng đợi ưu tiên (priority queue / timer wheel) chạy trên một single worker task duy nhất.
+- **Giải pháp đã áp dụng:** Sử dụng một background worker thread duy nhất (`workspace-suppress-cleaner`) với channel và queue timeout để giải phóng đường dẫn theo deadline, loại bỏ hoàn toàn việc tạo OS thread mới trên mỗi lần ghi file.
 
-### 2. CC-002: `FsEvent` reload cascade render notifications (🟠 High)
+### 2. CC-002: `FsEvent` reload cascade render notifications (🟠 High) — ✅ RESOLVED (2026-10-22)
 - **Vị trí:** [`crates/app/src/state/persistence_state.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/state/persistence_state.rs)
 - **Vấn đề:** Khi có nhiều thay đổi file bên ngoài, watcher bắn nhiều `FsEvent` riêng lẻ liên tiếp khiến `WorkspaceDataState` reload và gọi `cx.notify()`, gây cascade re-render liên tục.
-- **Giải pháp:** Áp dụng cơ chế batching events (debounce 100-200ms gom nhóm các FsEvent) và chỉ phát ra duy nhất một thông báo cập nhật cây thư mục sau khi gom xong.
+- **Giải pháp đã áp dụng:** Triển khai `handle_fs_events_batch()` với debounce gom nhóm (100ms) qua channel `try_recv()`: gộp `TreeChanged` reload toàn bộ một lần duy nhất, gộp cập nhật nhiều requests trong một lần mutate state và chỉ gọi `cx.notify()` một lần ở cuối batch.
 
-### 3. TD-07 / TD-005: Tiềm ẩn Panic do `unwrap()` trên Mutex / Option (🟡 Medium)
-- **Vị trí:** [`crates/core/src/http/executor.rs:370-385`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/http/executor.rs#L370-L385)
-- **Vấn đề:** `self.cookie_store.lock().unwrap()` có thể hoảng loạn (panic) nếu Mutex bị poisoned do một thread trước đó gặp sự cố.
-- **Giải pháp:** Thay bằng `.lock().unwrap_or_else(|poisoned| poisoned.into_inner())` để thu hồi guard an toàn.
+### 3. TD-07 / TD-005: Tiềm ẩn Panic do `unwrap()` trên Mutex / Option (🟡 Medium) — ✅ RESOLVED (2026-10-22)
+- **Vị trí:** [`crates/core/src/http/executor.rs:370-385`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/http/executor.rs#L370-L385), [`crates/core/src/cache/mod.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/cache/mod.rs), [`crates/app/src/components/response_inspector.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/components/response_inspector.rs)
+- **Vấn đề:** `self.cookie_store.lock().unwrap()` có thể hoảng loạn (panic) nếu Mutex bị poisoned do một thread trước đó gặp sự cố; các lệnh `unwrap()` trên Option trong `cache/mod.rs` và `response_inspector.rs`.
+- **Giải pháp đã áp dụng:** Sử dụng `.lock().unwrap_or_else(|poisoned| poisoned.into_inner())` để thu hồi guard an toàn ngay cả khi mutex bị poisoned (kèm unit test kiểm thử); thay thế các unwrap Option thành `if let Some` / `when_some` an toàn tuyệt đối.
 
-### 4. PERF-007: `refresh_formatted_body()` parse lại JSON mỗi lần đổi view mode (🟡 Medium)
+### 4. PERF-007: `refresh_formatted_body()` parse lại JSON mỗi lần đổi view mode (🟡 Medium) — ✅ RESOLVED (2026-10-22)
 - **Vị trí:** [`crates/app/src/state/response_state.rs:219-253`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/app/src/state/response_state.rs#L219-L253)
 - **Vấn đề:** `serde_json::from_str()` và `to_string_pretty()` chạy lại toàn bộ khi người dùng toggle view settings. Payload lớn (500KB - 5MB) gây giật lag 10-50ms trên UI.
-- **Giải pháp:** Lưu cache chuỗi `formatted_body` trong `ResponseState`, chỉ định dạng lại khi raw body bytes thực sự thay đổi.
+- **Giải pháp đã áp dụng:** Lưu cache cấu trúc `CachedResponseFormat` (raw text + lines, pretty text + lines) keyed theo con trỏ `Arc<HttpResponseRecord>` bên trong `FormattedResponseBody`. Khi người dùng chuyển qua lại giữa Pretty và Raw, hệ thống hoán đổi Arc trong thời gian $O(1)$ mà không cần parse hay serialize lại JSON.
 
 ### 5. TD-08 / TD-007: Doc Comments & Code Comments tiếng Việt trong Core (🟡 Medium)
 - **Vị trí:** [`crates/core/src/scripting/sandbox.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/scripting/sandbox.rs), [`crates/core/src/http/executor.rs:324`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/http/executor.rs#L324)
@@ -96,10 +96,10 @@
 - **Vấn đề:** Đường dẫn tuyệt đối Windows `C:\Users\maiva\...` bị fix cứng khiến unit test âm thầm bị bỏ qua (skip) trên các máy khác hoặc CI.
 - **Giải pháp:** Chuyển sang sử dụng `tempfile::tempdir()` hoặc fixture nội bộ từ `env!("CARGO_MANIFEST_DIR")`.
 
-### 7. PERF-008 & PERF-009: Cấp phát chuỗi dư thừa trong `models` và `interpolation` (🟡 Medium)
+### 7. PERF-008 & PERF-009: Cấp phát chuỗi dư thừa trong `models` và `interpolation` (🟡 Medium) — PERF-008 ✅ RESOLVED (2026-10-22)
 - **Vị trí:** [`crates/core/src/storage/models.rs`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/storage/models.rs), [`crates/core/src/interpolation.rs:78-83`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/interpolation.rs#L78-L83)
 - **Vấn đề:** `interpolate_cow()` tạo mới `VariableInterpolator` (cùng HashMap) ở mỗi header loop; `RequestFile::to_item()` clone từng trường chuỗi.
-- **Giải pháp:** Tái sử dụng một `VariableInterpolator` duy nhất xuyên suốt quá trình resolve một request; tối ưu hoá move semantics cho `to_item()`.
+- **Giải pháp đã áp dụng cho PERF-008:** Bổ sung `into_item(self, id, workspace_id, folder_id)` và `from_item_owned(item)` với move-semantics thuần túy trong `RequestFile`, áp dụng khi load cây thư mục (`reload_tree`), resolve conflict và chuyển đổi request sở hữu mà không phát sinh bất kỳ bản sao chuỗi nào.
 
 ### 8. TD-014: `resolve_ref` trong OpenAPI Importer đệ quy vô hạn (🔵 Low)
 - **Vị trí:** [`crates/core/src/importers/openapi.rs:291-300`](file:///Users/dungmv/Documents/macos-native-apps/rest-client/crates/core/src/importers/openapi.rs#L291-L300)

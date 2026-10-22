@@ -3,9 +3,20 @@ use restclient_core::cache::ResponseCache;
 use restclient_core::models::{
     ConsoleLogEntry, ConsoleLogLevel, ConsoleLogSource, HttpResponseRecord, TestResult,
 };
-use restclient_core::storage::models::RequestExampleFile;
 use restclient_core::storage::WorkspaceStore;
+use restclient_core::storage::models::RequestExampleFile;
 use std::sync::Arc;
+
+#[derive(Clone, Debug)]
+pub(crate) struct CachedResponseFormat {
+    pub(crate) response_ptr: usize,
+    pub(crate) raw_text: Arc<String>,
+    pub(crate) raw_lines: Arc<Vec<String>>,
+    pub(crate) pretty_text: Arc<String>,
+    pub(crate) pretty_lines: Arc<Vec<String>>,
+    pub(crate) is_json: bool,
+    pub(crate) is_xml: bool,
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct FormattedResponseBody {
@@ -13,6 +24,7 @@ pub struct FormattedResponseBody {
     pub lines: Arc<Vec<String>>,
     pub is_json: bool,
     pub is_xml: bool,
+    pub(crate) cached_format: Option<Arc<CachedResponseFormat>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -83,11 +95,7 @@ impl ResponseState {
         }
     }
 
-    pub fn load_for_request_internal(
-        &mut self,
-        req_id: &str,
-        store: &dyn WorkspaceStore,
-    ) {
+    pub fn load_for_request_internal(&mut self, req_id: &str, store: &dyn WorkspaceStore) {
         self.active_example_name = None;
         if let Some(cached) = self.cache.get(&req_id.to_string()).cloned() {
             self.test_results = cached.test_results.clone();
@@ -170,7 +178,8 @@ impl ResponseState {
             .collect();
         let body = example.body.as_deref().unwrap_or("").as_bytes().to_vec();
         let size_bytes = body.len();
-        let status_text = restclient_core::models::status_code_to_reason(example.status).to_string();
+        let status_text =
+            restclient_core::models::status_code_to_reason(example.status).to_string();
         let record = HttpResponseRecord {
             id: format!("example-{}", example.name),
             request_id: String::new(),
@@ -215,40 +224,76 @@ impl ResponseState {
 
     pub fn refresh_formatted_body(&mut self) {
         if let Some(resp) = &self.current_response {
-            let raw_str = String::from_utf8_lossy(&resp.body).to_string();
-            let parsed_json = serde_json::from_str::<serde_json::Value>(&raw_str).ok();
-            let is_json = parsed_json.is_some()
-                || resp.is_json()
-                || raw_str.trim_start().starts_with('{')
-                || raw_str.trim_start().starts_with('[');
+            let resp_ptr = Arc::as_ptr(resp) as usize;
 
-            let is_xml = !is_json && (
-                resp.is_xml()
-                || raw_str.trim_start().starts_with("<?xml")
-                || (raw_str.trim_start().starts_with('<') && raw_str.trim_end().ends_with('>'))
-            );
-
-            let display_text = if matches!(self.view_mode, ResponseViewMode::Pretty) {
-                if let Some(parsed) = &parsed_json {
-                    serde_json::to_string_pretty(parsed).unwrap_or(raw_str)
-                } else if is_xml {
-                    crate::components::body_editor::format_xml(&raw_str).unwrap_or(raw_str)
-                } else {
-                    raw_str
-                }
-            } else {
-                raw_str
+            let cached_format = match &self.formatted_body {
+                Some(current) => match &current.cached_format {
+                    Some(cf) if cf.response_ptr == resp_ptr => cf.clone(),
+                    _ => Arc::new(Self::build_cached_format(resp)),
+                },
+                None => Arc::new(Self::build_cached_format(resp)),
             };
 
-            let lines: Vec<String> = display_text.lines().map(|s| s.to_string()).collect();
+            let (display_text, lines) = if matches!(self.view_mode, ResponseViewMode::Pretty) {
+                (
+                    cached_format.pretty_text.clone(),
+                    cached_format.pretty_lines.clone(),
+                )
+            } else {
+                (
+                    cached_format.raw_text.clone(),
+                    cached_format.raw_lines.clone(),
+                )
+            };
+
             self.formatted_body = Some(FormattedResponseBody {
-                display_text: Arc::new(display_text),
-                lines: Arc::new(lines),
-                is_json,
-                is_xml,
+                display_text,
+                lines,
+                is_json: cached_format.is_json,
+                is_xml: cached_format.is_xml,
+                cached_format: Some(cached_format),
             });
         } else {
             self.formatted_body = None;
+        }
+    }
+
+    fn build_cached_format(resp: &Arc<HttpResponseRecord>) -> CachedResponseFormat {
+        let raw_str = String::from_utf8_lossy(&resp.body).to_string();
+        let parsed_json = serde_json::from_str::<serde_json::Value>(&raw_str).ok();
+        let is_json = parsed_json.is_some()
+            || resp.is_json()
+            || raw_str.trim_start().starts_with('{')
+            || raw_str.trim_start().starts_with('[');
+
+        let is_xml = !is_json
+            && (resp.is_xml()
+                || raw_str.trim_start().starts_with("<?xml")
+                || (raw_str.trim_start().starts_with('<') && raw_str.trim_end().ends_with('>')));
+
+        let pretty_str = if let Some(parsed) = &parsed_json {
+            serde_json::to_string_pretty(parsed).unwrap_or_else(|_| raw_str.clone())
+        } else if is_xml {
+            crate::components::body_editor::format_xml(&raw_str).unwrap_or_else(|_| raw_str.clone())
+        } else {
+            raw_str.clone()
+        };
+
+        let raw_lines: Vec<String> = raw_str.lines().map(|s| s.to_string()).collect();
+        let pretty_lines: Vec<String> = if pretty_str == raw_str {
+            raw_lines.clone()
+        } else {
+            pretty_str.lines().map(|s| s.to_string()).collect()
+        };
+
+        CachedResponseFormat {
+            response_ptr: Arc::as_ptr(resp) as usize,
+            raw_text: Arc::new(raw_str),
+            raw_lines: Arc::new(raw_lines),
+            pretty_text: Arc::new(pretty_str),
+            pretty_lines: Arc::new(pretty_lines),
+            is_json,
+            is_xml,
         }
     }
 
@@ -316,11 +361,7 @@ impl ResponseState {
         cx.notify();
     }
 
-    pub fn set_pre_request_logs(
-        &mut self,
-        logs: Vec<ConsoleLogEntry>,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn set_pre_request_logs(&mut self, logs: Vec<ConsoleLogEntry>, cx: &mut Context<Self>) {
         self.console_logs = logs;
         cx.notify();
     }
@@ -457,7 +498,9 @@ mod tests {
         let mut state = ResponseState::new();
 
         // Create a 500-item JSON array
-        let items: Vec<String> = (0..500).map(|i| format!(r#"{{"id": {}, "title": "item {}"}}"#, i, i)).collect();
+        let items: Vec<String> = (0..500)
+            .map(|i| format!(r#"{{"id": {}, "title": "item {}"}}"#, i, i))
+            .collect();
         let json_body = format!("[\n{}\n]", items.join(",\n"));
 
         let rec = HttpResponseRecord {
@@ -480,7 +523,10 @@ mod tests {
         state.current_response = Some(Arc::new(rec));
         state.refresh_formatted_body();
 
-        let fmt = state.formatted_body.as_ref().expect("formatted body should be present");
+        let fmt = state
+            .formatted_body
+            .as_ref()
+            .expect("formatted body should be present");
         assert!(fmt.is_json);
         // Each item has 4 lines in pretty JSON (bracket, id, title, bracket), so > 1000 lines
         assert!(fmt.lines.len() >= 500);
@@ -498,7 +544,12 @@ mod tests {
         let store = restclient_core::storage::FsWorkspaceStore::new(temp.path());
         store.init_workspace("Test WS").unwrap();
         let (_, rel_path) = store
-            .create_request(None, "Login", restclient_core::models::HttpMethod::Post, "http://localhost:8000/login")
+            .create_request(
+                None,
+                "Login",
+                restclient_core::models::HttpMethod::Post,
+                "http://localhost:8000/login",
+            )
             .unwrap();
 
         let loc_file = restclient_core::storage::models::LocFile {
@@ -544,7 +595,9 @@ mod tests {
             status_text: "OK".to_string(),
             headers: vec![("content-type".to_string(), "application/xml".to_string())],
             cookies: vec![],
-            body: "<root><user><name>Bob</name></user></root>".as_bytes().to_vec(),
+            body: "<root><user><name>Bob</name></user></root>"
+                .as_bytes()
+                .to_vec(),
             duration_ms: 10,
             size_bytes: 42,
             timing: Default::default(),
@@ -608,7 +661,10 @@ mod tests {
         state.view_example_internal(&ex);
 
         assert_eq!(state.active_example_name.as_deref(), Some("Success 200"));
-        let resp = state.current_response.as_ref().expect("Response should exist");
+        let resp = state
+            .current_response
+            .as_ref()
+            .expect("Response should exist");
         assert_eq!(resp.status_code, 200);
         // Requirement 2: HTTP status is preserved like request, NOT containing example name
         assert_eq!(resp.status_text, "OK");
@@ -616,8 +672,14 @@ mod tests {
 
         // Renaming example should update active_example_name, but status_text stays "OK"
         state.rename_example_internal("Success 200", "Renamed Success");
-        assert_eq!(state.active_example_name.as_deref(), Some("Renamed Success"));
-        let resp_after = state.current_response.as_ref().expect("Response should exist");
+        assert_eq!(
+            state.active_example_name.as_deref(),
+            Some("Renamed Success")
+        );
+        let resp_after = state
+            .current_response
+            .as_ref()
+            .expect("Response should exist");
         assert_eq!(resp_after.status_text, "OK");
     }
 
@@ -693,5 +755,60 @@ mod tests {
         assert!(state.cache.contains_key(&"req-2".to_string()));
         assert!(state.cache.contains_key(&"req-3".to_string()));
     }
-}
 
+    #[test]
+    fn test_formatted_body_caching_on_view_mode_toggle() {
+        let mut state = ResponseState::new();
+        let payload = r#"{"hello": "world", "number": 42}"#.as_bytes().to_vec();
+        let record = Arc::new(HttpResponseRecord {
+            body: payload,
+            headers: vec![("content-type".to_string(), "application/json".to_string())],
+            ..Default::default()
+        });
+
+        state.current_response = Some(record);
+        state.view_mode = ResponseViewMode::Pretty;
+        state.refresh_formatted_body();
+
+        let (is_json1, display_text1, cache_ptr1) = {
+            let fmt = state.formatted_body.as_ref().unwrap();
+            (
+                fmt.is_json,
+                fmt.display_text.clone(),
+                fmt.cached_format.as_ref().map(Arc::as_ptr).unwrap(),
+            )
+        };
+        assert!(is_json1);
+        assert!(display_text1.contains('\n'));
+
+        // Toggle to Raw mode
+        state.view_mode = ResponseViewMode::Raw;
+        state.refresh_formatted_body();
+
+        let (display_text2, cache_ptr2) = {
+            let fmt = state.formatted_body.as_ref().unwrap();
+            (
+                fmt.display_text.clone(),
+                fmt.cached_format.as_ref().map(Arc::as_ptr).unwrap(),
+            )
+        };
+
+        // Cached format must be reused with identical Arc pointer (zero re-parsing)
+        assert_eq!(cache_ptr1, cache_ptr2);
+        assert_eq!(&*display_text2, r#"{"hello": "world", "number": 42}"#);
+
+        // Toggle back to Pretty mode
+        state.view_mode = ResponseViewMode::Pretty;
+        state.refresh_formatted_body();
+
+        let (display_text3, cache_ptr3) = {
+            let fmt = state.formatted_body.as_ref().unwrap();
+            (
+                fmt.display_text.clone(),
+                fmt.cached_format.as_ref().map(Arc::as_ptr).unwrap(),
+            )
+        };
+        assert_eq!(cache_ptr1, cache_ptr3);
+        assert_eq!(display_text3, display_text1);
+    }
+}

@@ -1,7 +1,7 @@
+use crate::models::HttpResponseRecord;
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
 use std::sync::Arc;
-use crate::models::HttpResponseRecord;
 
 /// Trait to report the estimated memory footprint in bytes of an item stored in cache.
 pub trait ByteSized {
@@ -78,8 +78,9 @@ where
     pub fn get(&mut self, key: &K) -> Option<&V> {
         if self.entries.contains_key(key) {
             if let Some(pos) = self.order.iter().position(|k| k == key) {
-                let k = self.order.remove(pos).unwrap();
-                self.order.push_back(k);
+                if let Some(k) = self.order.remove(pos) {
+                    self.order.push_back(k);
+                }
             }
             self.entries.get(key)
         } else {
@@ -103,7 +104,8 @@ where
             }
             let old = self.entries.insert(key.clone(), value);
             if let Some(old_ref) = &old {
-                self.current_total_bytes = self.current_total_bytes.saturating_sub(old_ref.byte_size());
+                self.current_total_bytes =
+                    self.current_total_bytes.saturating_sub(old_ref.byte_size());
             }
             self.current_total_bytes = self.current_total_bytes.saturating_add(new_bytes);
             self.order.push_back(key);
@@ -121,8 +123,9 @@ where
         {
             if let Some(evict_key) = self.order.pop_front() {
                 if let Some(evicted_val) = self.entries.remove(&evict_key) {
-                    self.current_total_bytes =
-                        self.current_total_bytes.saturating_sub(evicted_val.byte_size());
+                    self.current_total_bytes = self
+                        .current_total_bytes
+                        .saturating_sub(evicted_val.byte_size());
                 }
             } else {
                 break;
@@ -153,8 +156,9 @@ where
         if let Some(val) = self.entries.remove(old_key) {
             // If new_key already existed, subtract its byte size and remove from order
             if let Some(overwritten) = self.entries.insert(new_key.clone(), val) {
-                self.current_total_bytes =
-                    self.current_total_bytes.saturating_sub(overwritten.byte_size());
+                self.current_total_bytes = self
+                    .current_total_bytes
+                    .saturating_sub(overwritten.byte_size());
                 if let Some(pos) = self.order.iter().position(|k| k == &new_key) {
                     self.order.remove(pos);
                 }

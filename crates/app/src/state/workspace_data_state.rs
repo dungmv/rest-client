@@ -1,8 +1,6 @@
 use crate::settings::AppSettings;
 use gpui::Context;
-use restclient_core::models::{
-    Auth, Folder, HttpRequestItem, KeyValuePair, Workspace,
-};
+use restclient_core::models::{Auth, Folder, HttpRequestItem, KeyValuePair, Workspace};
 use restclient_core::storage::models::{FolderNode, WorkspaceMeta};
 use restclient_core::storage::{FsWorkspaceStore, WorkspaceStore};
 use std::collections::HashMap;
@@ -56,7 +54,12 @@ impl WorkspaceDataState {
             active_workspace: Some(Workspace::new(&default_name)),
             folders: Vec::new(),
             requests: Vec::new(),
-            scratch_request: HttpRequestItem::new("scratch", "Untitled Request", restclient_core::models::HttpMethod::Get, ""),
+            scratch_request: HttpRequestItem::new(
+                "scratch",
+                "Untitled Request",
+                restclient_core::models::HttpMethod::Get,
+                "",
+            ),
             parse_errors: HashMap::new(),
             pins: Vec::new(),
             last_renamed_request: None,
@@ -76,7 +79,12 @@ impl WorkspaceDataState {
             active_workspace: Some(Workspace::new("Test Workspace")),
             folders: Vec::new(),
             requests: Vec::new(),
-            scratch_request: HttpRequestItem::new("scratch", "Untitled Request", restclient_core::models::HttpMethod::Get, ""),
+            scratch_request: HttpRequestItem::new(
+                "scratch",
+                "Untitled Request",
+                restclient_core::models::HttpMethod::Get,
+                "",
+            ),
             parse_errors: HashMap::new(),
             pins: Vec::new(),
             last_renamed_request: None,
@@ -90,7 +98,10 @@ impl WorkspaceDataState {
     pub fn open_workspace(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let store: Arc<dyn WorkspaceStore> = Arc::new(FsWorkspaceStore::new(&path));
         if !path.join("workspace.yaml").exists() {
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("Workspace");
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Workspace");
             let _ = store.init_workspace(name);
         }
         let _ = store.ensure_gitignore();
@@ -180,17 +191,17 @@ impl WorkspaceDataState {
             let mut all_folders = Vec::new();
             let mut errors = HashMap::new();
 
-            for req_node in &tree.root_requests {
-                let mut item = req_node.file.to_item(&req_node.rel_path, &ws_name, None);
+            for req_node in tree.root_requests {
+                let mut item = req_node.file.into_item(&req_node.rel_path, &ws_name, None);
                 item.last_status_code = req_node.last_status_code;
                 all_requests.push(item);
-                if let Some(err) = &req_node.parse_error {
-                    errors.insert(req_node.rel_path.clone(), err.clone());
+                if let Some(err) = req_node.parse_error {
+                    errors.insert(req_node.rel_path, err);
                 }
             }
 
             fn process_folder(
-                folder_node: &FolderNode,
+                folder_node: FolderNode,
                 parent_id: Option<String>,
                 ws_name: &str,
                 all_folders: &mut Vec<Folder>,
@@ -200,25 +211,28 @@ impl WorkspaceDataState {
                 let mut f = Folder::new(ws_name, &folder_node.file.name);
                 f.id = folder_node.rel_path.clone();
                 f.parent_id = parent_id;
-                f.headers = folder_node.file.headers.clone();
-                f.auth = folder_node.file.auth.clone();
+                f.headers = folder_node.file.headers;
+                f.auth = folder_node.file.auth;
                 all_folders.push(f);
 
-                for req_node in &folder_node.requests {
-                    let mut item = req_node
-                        .file
-                        .to_item(&req_node.rel_path, ws_name, Some(folder_node.rel_path.clone()));
+                let folder_rel = folder_node.rel_path;
+                for req_node in folder_node.requests {
+                    let mut item = req_node.file.into_item(
+                        &req_node.rel_path,
+                        ws_name,
+                        Some(folder_rel.clone()),
+                    );
                     item.last_status_code = req_node.last_status_code;
                     all_requests.push(item);
-                    if let Some(err) = &req_node.parse_error {
-                        errors.insert(req_node.rel_path.clone(), err.clone());
+                    if let Some(err) = req_node.parse_error {
+                        errors.insert(req_node.rel_path, err);
                     }
                 }
 
-                for sub in &folder_node.subfolders {
+                for sub in folder_node.subfolders {
                     process_folder(
                         sub,
-                        Some(folder_node.rel_path.clone()),
+                        Some(folder_rel.clone()),
                         ws_name,
                         all_folders,
                         all_requests,
@@ -227,7 +241,7 @@ impl WorkspaceDataState {
                 }
             }
 
-            for f_node in &tree.folders {
+            for f_node in tree.folders {
                 process_folder(
                     f_node,
                     None,
@@ -327,8 +341,16 @@ impl WorkspaceDataState {
     }
 
     pub fn resolve_request_hierarchy(&self, req: &HttpRequestItem) -> (Vec<KeyValuePair>, Auth) {
-        let ws_headers = self.active_workspace.as_ref().map(|w| w.headers.as_slice()).unwrap_or(&[]);
-        let ws_auth = self.active_workspace.as_ref().map(|w| &w.auth).unwrap_or(&Auth::None);
+        let ws_headers = self
+            .active_workspace
+            .as_ref()
+            .map(|w| w.headers.as_slice())
+            .unwrap_or(&[]);
+        let ws_auth = self
+            .active_workspace
+            .as_ref()
+            .map(|w| &w.auth)
+            .unwrap_or(&Auth::None);
 
         let folder_chain_refs = self.get_folder_hierarchy(req.folder_id.as_deref());
         let folder_chain: Vec<(&[KeyValuePair], &Auth)> = folder_chain_refs
@@ -359,11 +381,21 @@ impl WorkspaceDataState {
                 return format!("Inherited from folder \"{}\" ({})", f.name, kind);
             }
         }
-        let ws_auth = self.active_workspace.as_ref().map(|w| &w.auth).unwrap_or(&Auth::None);
-        let ws_name = self.active_workspace.as_ref().map(|w| w.name.as_str()).unwrap_or("Workspace");
+        let ws_auth = self
+            .active_workspace
+            .as_ref()
+            .map(|w| &w.auth)
+            .unwrap_or(&Auth::None);
+        let ws_name = self
+            .active_workspace
+            .as_ref()
+            .map(|w| w.name.as_str())
+            .unwrap_or("Workspace");
         match ws_auth {
             Auth::None => format!("Inherited from workspace \"{}\" (No Auth)", ws_name),
-            Auth::Bearer { .. } => format!("Inherited from workspace \"{}\" (Bearer Token)", ws_name),
+            Auth::Bearer { .. } => {
+                format!("Inherited from workspace \"{}\" (Bearer Token)", ws_name)
+            }
             Auth::Basic { .. } => format!("Inherited from workspace \"{}\" (Basic Auth)", ws_name),
             Auth::ApiKey { .. } => format!("Inherited from workspace \"{}\" (API Key)", ws_name),
             Auth::Inherit => "No auth configured in parent hierarchy".to_string(),

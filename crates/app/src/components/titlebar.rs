@@ -2,12 +2,12 @@ use crate::state::{
     EnvironmentState, ModalState, RequestSessionState, ResponseState, ScopeSettingsTarget,
     SidebarState, WorkspaceDataState,
 };
-use crate::theme::theme;
+use crate::theme::{hex_to_hsla, theme};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, img, px, App, Context, Entity, Image, ImageFormat, InteractiveElement as _, IntoElement,
-    MouseButton, ParentElement, Render, RenderOnce, StatefulInteractiveElement as _, Styled,
-    Window, WindowControlArea,
+    App, Context, Entity, Image, ImageFormat, InteractiveElement as _, IntoElement, MouseButton,
+    ParentElement, Render, RenderOnce, StatefulInteractiveElement as _, Styled, Window,
+    WindowControlArea, div, img, px,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
@@ -56,7 +56,14 @@ impl AppTitleBar {
         editor_state: Entity<RequestSessionState>,
         response_state: Entity<ResponseState>,
     ) -> Self {
-        Self { workspace_state, env_state, modal_state, sidebar_state, editor_state, response_state }
+        Self {
+            workspace_state,
+            env_state,
+            modal_state,
+            sidebar_state,
+            editor_state,
+            response_state,
+        }
     }
 }
 
@@ -181,9 +188,17 @@ impl RenderOnce for AppTitleBar {
                     .justify_center()
                     .rounded(px(4.))
                     .cursor_pointer()
-                    .bg(if !sidebar_collapsed { t.bg_hover } else { gpui::transparent_black() })
+                    .bg(if !sidebar_collapsed {
+                        t.bg_hover
+                    } else {
+                        gpui::transparent_black()
+                    })
                     .hover(|s| s.bg(t.bg_hover))
-                    .text_color(if !sidebar_collapsed { t.text_primary } else { t.text_secondary })
+                    .text_color(if !sidebar_collapsed {
+                        t.text_primary
+                    } else {
+                        t.text_secondary
+                    })
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(move |_, _, cx| {
                         sb_s.update(cx, |state, cx| {
@@ -210,23 +225,18 @@ impl RenderOnce for AppTitleBar {
                     .bg(t.bg_card)
                     .border_1()
                     .border_color(t.border)
-                    .child(
-                        img(app_icon_image())
-                            .w(px(16.))
-                            .h(px(16.))
-                            .rounded(px(3.))
-                    )
+                    .child(img(app_icon_image()).w(px(16.)).h(px(16.)).rounded(px(3.)))
                     .child(
                         div()
                             .text_xs()
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(t.text_primary)
-                            .child(ws_name.clone())
+                            .child(ws_name.clone()),
                     )
                     .child(
                         Icon::new(IconName::ChevronDown)
                             .size(px(12.))
-                            .text_color(t.text_muted)
+                            .text_color(t.text_muted),
                     )
                     .dropdown_menu(move |menu, _window, _cx| {
                         let ws_new = ws_s.clone();
@@ -241,58 +251,73 @@ impl RenderOnce for AppTitleBar {
 
                         let mut m = menu
                             .item(
-                                PopupMenuItem::new("Workspace Settings...").icon(IconName::Settings)
+                                PopupMenuItem::new("Workspace Settings...")
+                                    .icon(IconName::Settings)
                                     .on_click(move |_, _, cx| {
                                         modal_settings.update(cx, |state, cx| {
-                                            state.open_scope_settings(ScopeSettingsTarget::Workspace, cx);
+                                            state.open_scope_settings(
+                                                ScopeSettingsTarget::Workspace,
+                                                cx,
+                                            );
                                         });
-                                    })
+                                    }),
                             )
                             .item(
-                                PopupMenuItem::new("Rename Workspace...").icon(IconName::Pencil)
+                                PopupMenuItem::new("Rename Workspace...")
+                                    .icon(IconName::Pencil)
                                     .on_click(move |_, window, cx| {
                                         sb_rename.update(cx, |state, cx| {
-                                            state.start_renaming_workspace(curr_ws_name.clone(), ws_rename.clone(), window, cx);
+                                            state.start_renaming_workspace(
+                                                curr_ws_name.clone(),
+                                                ws_rename.clone(),
+                                                window,
+                                                cx,
+                                            );
                                         });
-                                    })
+                                    }),
                             )
                             .item(
-                                PopupMenuItem::new("Open Folder").icon(IconName::FolderOpen)
+                                PopupMenuItem::new("Open Folder")
+                                    .icon(IconName::FolderOpen)
                                     .on_click(move |_, _, cx| {
                                         ws_folder.update(cx, |state, _| {
                                             state.open_workspace_folder();
                                         });
-                                    })
+                                    }),
                             )
                             .item(
-                                PopupMenuItem::new("Clean History").icon(IconName::Trash)
+                                PopupMenuItem::new("Clean History")
+                                    .icon(IconName::Trash)
                                     .on_click(move |_, _, cx| {
                                         ws_clean.update(cx, |state, cx| {
                                             state.clean_history(cx);
                                         });
-                                    })
+                                    }),
                             )
                             .item(
-                                PopupMenuItem::new("Import...").icon(IconName::Download)
+                                PopupMenuItem::new("Import...")
+                                    .icon(IconName::Download)
                                     .on_click(move |_, _, cx| {
                                         modal_import.update(cx, |state, cx| {
                                             state.open_import_modal(None, cx);
                                         });
-                                    })
+                                    }),
                             )
                             .separator()
                             .item(
-                                PopupMenuItem::new("Open Workspace...").icon(IconName::Folder)
+                                PopupMenuItem::new("Open Workspace...")
+                                    .icon(IconName::Folder)
                                     .on_click(move |_, _, cx| {
                                         if let Some(folder) = rfd::FileDialog::new().pick_folder() {
                                             ws_open.update(cx, |state, cx| {
                                                 state.open_workspace(folder, cx);
                                             });
                                         }
-                                    })
+                                    }),
                             )
                             .item(
-                                PopupMenuItem::new("New Workspace...").icon(IconName::FolderPlus)
+                                PopupMenuItem::new("New Workspace...")
+                                    .icon(IconName::FolderPlus)
                                     .on_click(move |_, _, cx| {
                                         if let Some(folder) = rfd::FileDialog::new().pick_folder() {
                                             let name = folder
@@ -304,7 +329,7 @@ impl RenderOnce for AppTitleBar {
                                                 state.new_workspace(folder, &name, cx);
                                             });
                                         }
-                                    })
+                                    }),
                             );
 
                         if !recent.is_empty() {
@@ -321,13 +346,18 @@ impl RenderOnce for AppTitleBar {
                                 let r_path_clone = r_path.clone();
 
                                 m = m.item(
-                                    PopupMenuItem::new(format!("{} ({})", display_name, r_path_str))
-                                        .checked(is_curr)
-                                        .on_click(move |_, _, cx| {
+                                    PopupMenuItem::new(format!(
+                                        "{} ({})",
+                                        display_name, r_path_str
+                                    ))
+                                    .checked(is_curr)
+                                    .on_click(
+                                        move |_, _, cx| {
                                             ws_r.update(cx, |state, cx| {
                                                 state.open_workspace(r_path_clone.clone(), cx);
                                             });
-                                        })
+                                        },
+                                    ),
                                 );
                             }
                         }
@@ -353,13 +383,11 @@ impl RenderOnce for AppTitleBar {
                     .bg(t.bg_card)
                     .border_1()
                     .border_color(t.border)
-                    .child(
-                        div()
-                            .w(px(7.))
-                            .h(px(7.))
-                            .rounded_full()
-                            .bg(if has_active { t.status_2xx } else { t.text_muted }),
-                    )
+                    .child(div().w(px(7.)).h(px(7.)).rounded_full().bg(if has_active {
+                        t.status_2xx
+                    } else {
+                        t.text_muted
+                    }))
                     .child(
                         div()
                             .text_xs()
@@ -370,7 +398,7 @@ impl RenderOnce for AppTitleBar {
                     .child(
                         Icon::new(IconName::ChevronDown)
                             .size(px(12.))
-                            .text_color(t.text_muted)
+                            .text_color(t.text_muted),
                     )
                     .dropdown_menu(move |menu, _window, _cx| {
                         let mut m = menu;
@@ -407,7 +435,8 @@ impl RenderOnce for AppTitleBar {
                         // 3. Separator and "Environment Settings..."
                         let modal_settings = modal_settings_clone.clone();
                         m = m.separator().item(
-                            PopupMenuItem::new("Environment Settings...").icon(IconName::Settings)
+                            PopupMenuItem::new("Environment Settings...")
+                                .icon(IconName::Settings)
                                 .on_click(move |_, _, cx| {
                                     modal_settings.update(cx, |state, cx| {
                                         state.open_env_modal(cx);
@@ -475,7 +504,11 @@ impl RenderOnce for AppTitleBar {
                                     .truncate()
                                     .text_xs()
                                     .font_family(".SystemMonoFont")
-                                    .text_color(if has_title { t.text_primary } else { t.text_muted })
+                                    .text_color(if has_title {
+                                        t.text_primary
+                                    } else {
+                                        t.text_muted
+                                    })
                                     .child(label),
                             ),
                     )
@@ -506,21 +539,47 @@ impl RenderOnce for AppTitleBar {
             .child({
                 let modal_s = modal_clone.clone();
                 let is_vert = modal.split_layout_vertical;
-                div().id("btn-split-toggle").occlude().w(px(28.)).h(px(26.))
-                    .flex().items_center().justify_center().rounded(px(4.)).cursor_pointer()
-                    .hover(|s| s.bg(t.bg_hover)).text_color(t.text_secondary)
+                div()
+                    .id("btn-split-toggle")
+                    .occlude()
+                    .w(px(28.))
+                    .h(px(26.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(4.))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(t.bg_hover))
+                    .text_color(t.text_secondary)
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(move |_, _, cx| modal_s.update(cx, |state, cx| state.toggle_split_layout(cx)))
-                    .child(if is_vert { Icon::new(IconName::PanelBottom).size(px(16.)) } else { Icon::new(IconName::PanelRight).size(px(16.)) })
+                    .on_click(move |_, _, cx| {
+                        modal_s.update(cx, |state, cx| state.toggle_split_layout(cx))
+                    })
+                    .child(if is_vert {
+                        Icon::new(IconName::PanelBottom).size(px(16.))
+                    } else {
+                        Icon::new(IconName::PanelRight).size(px(16.))
+                    })
             })
             // Settings button
             .child({
                 let modal_s = modal_clone.clone();
-                div().id("btn-settings").occlude().w(px(28.)).h(px(26.))
-                    .flex().items_center().justify_center().rounded(px(4.)).cursor_pointer()
-                    .hover(|s| s.bg(t.bg_hover)).text_color(t.text_secondary)
+                div()
+                    .id("btn-settings")
+                    .occlude()
+                    .w(px(28.))
+                    .h(px(26.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(4.))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(t.bg_hover))
+                    .text_color(t.text_secondary)
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(move |_, _, cx| modal_s.update(cx, |state, cx| state.toggle_settings_modal(cx)))
+                    .on_click(move |_, _, cx| {
+                        modal_s.update(cx, |state, cx| state.toggle_settings_modal(cx))
+                    })
                     .child(Icon::new(IconName::Settings).size(px(16.)))
             });
 
@@ -604,7 +663,10 @@ impl RenderOnce for AppTitleBar {
                             .justify_center()
                             .cursor_pointer()
                             .window_control_area(WindowControlArea::Close)
-                            .hover(|s| s.bg(hex_to_hsla(0xe81123)).text_color(hex_to_hsla(0xffffff)))
+                            .hover(|s| {
+                                s.bg(hex_to_hsla(0xe81123))
+                                    .text_color(hex_to_hsla(0xffffff))
+                            })
                             .text_color(icon_color)
                             .on_click(|_, window, cx| {
                                 cx.stop_propagation();
