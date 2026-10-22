@@ -416,7 +416,7 @@ pub fn setup_app_subscriptions(
                 (id, ws_ref.store.clone())
             };
             ed_sync.update(cx, |ed, cx| {
-                ed.set_active_request_id(&next_id, true, cx);
+                ed.set_active_request_id(&next_id, cx);
             });
             resp_sync.update(cx, |resp, cx| {
                 resp.load_for_request(&next_id, ws_store.as_ref(), cx);

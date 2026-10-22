@@ -184,7 +184,7 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                                         state.create_request(Some(f_id_n.clone()), cx)
                                     });
                                     ed_n.update(cx, |state, cx| {
-                                        state.set_active_request_id(&req.id, true, cx);
+                                        state.set_active_request_id(&req.id, cx);
                                     });
                                 },
                             ),

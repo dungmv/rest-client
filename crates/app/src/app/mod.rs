@@ -198,7 +198,7 @@ impl AppView {
         };
         if let Some(req) = &initial_req {
             editor_state.update(cx, |ed, cx| {
-                ed.set_active_request_id(&req.id, true, cx);
+                ed.set_active_request_id(&req.id, cx);
             });
 
             let req_url = req.url.clone();
@@ -535,7 +535,7 @@ impl Render for AppView {
                 move |_: &NavigateBack, _, cx| {
                     if let Some(req_id) = sb_c.update(cx, |sb, _| sb.navigate_back()) {
                         ed_c.update(cx, |ed, cx| {
-                            ed.set_active_request_id(&req_id, false, cx);
+                            ed.set_active_request_id(&req_id, cx);
                         });
                     }
                 }
@@ -546,7 +546,7 @@ impl Render for AppView {
                 move |_: &NavigateForward, _, cx| {
                     if let Some(req_id) = sb_c.update(cx, |sb, _| sb.navigate_forward()) {
                         ed_c.update(cx, |ed, cx| {
-                            ed.set_active_request_id(&req_id, false, cx);
+                            ed.set_active_request_id(&req_id, cx);
                         });
                     }
                 }

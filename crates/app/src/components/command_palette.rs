@@ -480,7 +480,7 @@ impl RenderOnce for CommandPalette {
                                                     state.close_command_palette(cx);
                                                 });
                                                 ed_s.update(cx, |state, cx| {
-                                                    state.set_active_request_id(&r_id, true, cx);
+                                                    state.set_active_request_id(&r_id, cx);
                                                 });
                                             })
                                             .child(MethodBadge::new(req.method))

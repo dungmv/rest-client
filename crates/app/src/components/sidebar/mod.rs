@@ -332,7 +332,7 @@ impl RenderOnce for SidebarTree {
                                                     state.create_request(None, cx)
                                                 });
                                                 ed_req.update(cx, |state, cx| {
-                                                    state.set_active_request_id(&req.id, true, cx);
+                                                    state.set_active_request_id(&req.id, cx);
                                                 });
                                             }),
                                     )
@@ -412,7 +412,7 @@ impl RenderOnce for SidebarTree {
                                                 state.create_request(None, cx)
                                             });
                                             ed_new.update(cx, |state, cx| {
-                                                state.set_active_request_id(&req.id, true, cx);
+                                                state.set_active_request_id(&req.id, cx);
                                             });
                                         })
                                         .child("+ New Request"),

@@ -68,7 +68,7 @@ pub fn render_example_node(
                     state.start_renaming_example(r_id.clone(), ex_name.clone(), ws_c, window, cx);
                 });
                 ed_ex_click.update(cx, |state, cx| {
-                    state.set_active_request_id(&r_id, false, cx);
+                    state.set_active_request_id(&r_id, cx);
                 });
                 if let Some(rf) = ws_ex_click.read(cx).get_request_file(&r_id) {
                     if let Some(ex_file) = rf.examples.iter().find(|e| e.name == ex_name) {
@@ -82,7 +82,7 @@ pub fn render_example_node(
                     state.record_navigation(&r_id);
                 });
                 ed_ex_click.update(cx, |state, cx| {
-                    state.set_active_request_id(&r_id, false, cx);
+                    state.set_active_request_id(&r_id, cx);
                 });
                 if let Some(rf) = ws_ex_click.read(cx).get_request_file(&r_id) {
                     if let Some(ex_file) = rf.examples.iter().find(|e| e.name == ex_name) {

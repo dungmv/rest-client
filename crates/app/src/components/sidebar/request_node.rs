@@ -120,7 +120,7 @@ pub fn render_request_node(
         })
         .on_mouse_down(MouseButton::Right, move |_, _, cx| {
             ed_right.update(cx, |state, cx| {
-                state.set_active_request_id(&r_id_right, false, cx);
+                state.set_active_request_id(&r_id_right, cx);
             });
         })
         .on_click(move |ev, window, cx| {
@@ -135,7 +135,7 @@ pub fn render_request_node(
                     state.start_renaming_request(r_id, init_name, ws_c, window, cx);
                 });
                 ed_s.update(cx, |state, cx| {
-                    state.set_active_request_id(&r_id_click, false, cx);
+                    state.set_active_request_id(&r_id_click, cx);
                 });
             } else {
                 let r_id = r_id_click.clone();
@@ -143,7 +143,7 @@ pub fn render_request_node(
                     state.record_navigation(&r_id);
                 });
                 ed_s.update(cx, |state, cx| {
-                    state.set_active_request_id(&r_id_click, false, cx);
+                    state.set_active_request_id(&r_id_click, cx);
                 });
                 let ws_store = ws_click.read(cx).store.clone();
                 resp_click.update(cx, |state, cx| {
@@ -235,7 +235,7 @@ pub fn render_request_node(
                                     state.duplicate_request(&r_id_d, cx)
                                 }) {
                                     ed_d.update(cx, |state, cx| {
-                                        state.set_active_request_id(&dup.id, false, cx);
+                                        state.set_active_request_id(&dup.id, cx);
                                     });
                                 }
                             }),
@@ -293,7 +293,11 @@ pub fn render_request_node(
                                             });
                                         } else {
                                             ed_disc.update(cx, |ed, cx| {
-                                                ed.close_tab(&r_id_disc, cx);
+                                                if let Some(first_req) = ws.requests.first() {
+                                                    ed.set_active_request_id(&first_req.id, cx);
+                                                } else {
+                                                    ed.set_active_request_id("scratch", cx);
+                                                }
                                             });
                                         }
                                     }

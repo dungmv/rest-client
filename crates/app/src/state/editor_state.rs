@@ -1,6 +1,5 @@
 use gpui::{Context, Task};
 use restclient_core::models::HttpRequestItem;
-use std::collections::HashSet;
 use tokio::sync::oneshot;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -16,8 +15,6 @@ pub enum RequestTabKind {
 
 pub struct EditorState {
     pub active_request_id: Option<String>,
-    pub open_tabs: Vec<String>, // Request IDs
-    pub pinned_tabs: HashSet<String>,
     pub active_tab_kind: RequestTabKind,
     pub is_sending: bool,
     pub running_request_id: Option<String>,
@@ -37,8 +34,6 @@ impl EditorState {
     pub fn new() -> Self {
         Self {
             active_request_id: Some("scratch".to_string()),
-            open_tabs: Vec::new(),
-            pinned_tabs: HashSet::new(),
             active_tab_kind: RequestTabKind::Body,
             is_sending: false,
             running_request_id: None,
@@ -59,54 +54,12 @@ impl EditorState {
         self.active_request_id.as_deref().unwrap_or("scratch")
     }
 
-    pub fn set_active_request_id(&mut self, req_id: &str, pin: bool, cx: &mut Context<Self>) {
-        let req_id_str = req_id.to_string();
-        if !self.open_tabs.contains(&req_id_str) {
-            self.open_tabs.push(req_id_str.clone());
-        }
-        if pin {
-            self.pinned_tabs.insert(req_id_str.clone());
-        }
-        self.active_request_id = Some(req_id_str);
+    pub fn set_active_request_id(&mut self, req_id: &str, cx: &mut Context<Self>) {
+        self.active_request_id = Some(req_id.to_string());
         self.is_dirty = false;
         self.request_version = self.request_version.wrapping_add(1);
         self.body_version = self.body_version.wrapping_add(1);
         cx.notify();
-    }
-
-    pub fn pin_tab(&mut self, req_id: String, cx: &mut Context<Self>) {
-        self.pinned_tabs.insert(req_id);
-        cx.notify();
-    }
-
-    pub fn close_tab_internal(&mut self, req_id: &str) -> Option<String> {
-        let idx = self.open_tabs.iter().position(|id| id == req_id);
-        if let Some(i) = idx {
-            self.open_tabs.remove(i);
-        }
-        self.pinned_tabs.remove(req_id);
-
-        let next_active = if self.active_request_id.as_deref() == Some(req_id) {
-            if !self.open_tabs.is_empty() {
-                let new_idx = idx.unwrap_or(0).min(self.open_tabs.len() - 1);
-                let next = self.open_tabs[new_idx].clone();
-                self.active_request_id = Some(next.clone());
-                Some(next)
-            } else {
-                self.active_request_id = Some("scratch".to_string());
-                Some("scratch".to_string())
-            }
-        } else {
-            self.active_request_id.clone()
-        };
-
-        next_active
-    }
-
-    pub fn close_tab(&mut self, req_id: &str, cx: &mut Context<Self>) -> Option<String> {
-        let next_active = self.close_tab_internal(req_id);
-        cx.notify();
-        next_active
     }
 
     pub fn set_active_tab_kind(&mut self, kind: RequestTabKind, cx: &mut Context<Self>) {
@@ -272,30 +225,15 @@ mod tests {
     use restclient_core::models::HttpMethod;
 
     #[test]
-    fn test_editor_state_initial_and_tabs() {
+    fn test_editor_state_initial_and_active_request() {
         let mut editor = EditorState::new();
         assert_eq!(editor.active_request_id(), "scratch");
-        assert!(editor.open_tabs.is_empty());
         assert!(!editor.is_dirty);
+        assert_eq!(editor.request_version, 0);
+        assert_eq!(editor.body_version, 0);
 
-        editor.open_tabs.push("req_1".to_string());
-        editor.open_tabs.push("req_2".to_string());
         editor.active_request_id = Some("req_1".to_string());
-
-        // Pin tab
-        editor.pinned_tabs.insert("req_1".to_string());
-        assert!(editor.pinned_tabs.contains("req_1"));
-
-        // Close inactive tab
-        let next = editor.close_tab_internal("req_2");
-        assert_eq!(next, Some("req_1".to_string()));
-        assert_eq!(editor.open_tabs.len(), 1);
-
-        // Close active tab -> falls back to scratch
-        let next = editor.close_tab_internal("req_1");
-        assert_eq!(next, Some("scratch".to_string()));
-        assert_eq!(editor.active_request_id(), "scratch");
-        assert!(editor.open_tabs.is_empty());
+        assert_eq!(editor.active_request_id(), "req_1");
     }
 
     #[test]

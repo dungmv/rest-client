@@ -17,28 +17,26 @@ pub fn delete_request_item(
         (ws.requests.clone(), idx)
     });
 
-    let next_tab_id = ed_entity.update(cx, |ed, cx| ed.close_tab(req_id, cx));
-
     if is_active {
-        let next_req_id = next_tab_id
-            .or_else(|| {
-                if let Some(idx) = deleted_idx {
-                    if !remaining_requests.is_empty() {
-                        let new_idx = idx.min(remaining_requests.len() - 1);
-                        return Some(remaining_requests[new_idx].id.clone());
-                    }
-                }
-                remaining_requests.first().map(|r| r.id.clone())
-            });
+        let next_req_id = if let Some(idx) = deleted_idx {
+            if !remaining_requests.is_empty() {
+                let new_idx = idx.min(remaining_requests.len() - 1);
+                Some(remaining_requests[new_idx].id.clone())
+            } else {
+                None
+            }
+        } else {
+            remaining_requests.first().map(|r| r.id.clone())
+        };
 
         if let Some(id) = next_req_id {
             ed_entity.update(cx, |ed, cx| {
-                ed.set_active_request_id(&id, false, cx);
+                ed.set_active_request_id(&id, cx);
             });
         } else {
             let new_req = ws_entity.update(cx, |ws, cx| ws.create_request(None, cx));
             ed_entity.update(cx, |ed, cx| {
-                ed.set_active_request_id(&new_req.id, true, cx);
+                ed.set_active_request_id(&new_req.id, cx);
             });
         }
     }
