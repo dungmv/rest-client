@@ -1,10 +1,10 @@
 use gpui::Context;
+use restclient_core::cache::ResponseCache;
 use restclient_core::models::{
     ConsoleLogEntry, ConsoleLogLevel, ConsoleLogSource, HttpResponseRecord, TestResult,
 };
 use restclient_core::storage::models::RequestExampleFile;
 use restclient_core::storage::WorkspaceStore;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Default)]
@@ -46,9 +46,7 @@ pub enum ResponseViewMode {
 
 pub struct ResponseState {
     pub current_response: Option<Arc<HttpResponseRecord>>,
-    pub previous_response: Option<Arc<HttpResponseRecord>>,
-    pub session_responses: HashMap<String, Arc<HttpResponseRecord>>,
-    pub previous_responses: HashMap<String, Arc<HttpResponseRecord>>,
+    pub cache: ResponseCache,
     pub active_example_name: Option<String>,
     pub active_tab: ResponseTabKind,
     pub view_mode: ResponseViewMode,
@@ -68,9 +66,7 @@ impl ResponseState {
     pub fn new() -> Self {
         Self {
             current_response: None,
-            previous_response: None,
-            session_responses: HashMap::new(),
-            previous_responses: HashMap::new(),
+            cache: ResponseCache::default(),
             active_example_name: None,
             active_tab: ResponseTabKind::Response,
             view_mode: ResponseViewMode::Pretty,
@@ -93,23 +89,20 @@ impl ResponseState {
         store: &dyn WorkspaceStore,
     ) {
         self.active_example_name = None;
-        if let Some(cached) = self.session_responses.get(req_id).cloned() {
+        if let Some(cached) = self.cache.get(&req_id.to_string()).cloned() {
             self.test_results = cached.test_results.clone();
             self.console_logs = cached.console_logs.clone();
             self.current_response = Some(cached);
-            self.previous_response = self.previous_responses.get(req_id).cloned();
         } else if let Ok(Some(loc)) = store.load_response_cache(req_id) {
             let record = Arc::new(loc.to_record(req_id));
             self.test_results = record.test_results.clone();
             self.console_logs = record.console_logs.clone();
-            self.session_responses.insert(req_id.to_string(), record.clone());
+            self.cache.insert(req_id.to_string(), record.clone());
             self.current_response = Some(record);
-            self.previous_response = None;
         } else {
             self.test_results.clear();
             self.console_logs.clear();
             self.current_response = None;
-            self.previous_response = None;
         }
         self.scroll_handle = gpui::UniformListScrollHandle::new();
         self.refresh_formatted_body();
@@ -127,7 +120,7 @@ impl ResponseState {
 
     pub fn start_sending_internal(&mut self, req_id: Option<&str>) {
         if let Some(id) = req_id {
-            self.session_responses.remove(id);
+            self.cache.remove(&id.to_string());
         }
         self.current_response = None;
         self.formatted_body = None;
@@ -152,13 +145,7 @@ impl ResponseState {
         self.test_results = response.test_results.clone();
         self.console_logs = response.console_logs.clone();
 
-        let old = self.session_responses.insert(req_id.clone(), response.clone());
-        if let Some(prev) = old {
-            self.previous_responses.insert(req_id, prev.clone());
-            self.previous_response = Some(prev);
-        } else {
-            self.previous_response = None;
-        }
+        self.cache.insert(req_id, response.clone());
         self.current_response = Some(response);
         self.scroll_handle = gpui::UniformListScrollHandle::new();
         self.refresh_formatted_body();
@@ -166,12 +153,7 @@ impl ResponseState {
     }
 
     pub fn rename_request(&mut self, old_id: &str, new_id: &str) {
-        if let Some(r) = self.session_responses.remove(old_id) {
-            self.session_responses.insert(new_id.to_string(), r);
-        }
-        if let Some(r) = self.previous_responses.remove(old_id) {
-            self.previous_responses.insert(new_id.to_string(), r);
-        }
+        self.cache.rename(&old_id.to_string(), new_id.to_string());
     }
 
     pub fn view_example(&mut self, example: &RequestExampleFile, cx: &mut Context<Self>) {
@@ -212,7 +194,7 @@ impl ResponseState {
 
     pub fn restore_live_response(&mut self, req_id: &str, cx: &mut Context<Self>) {
         self.active_example_name = None;
-        if let Some(resp) = self.session_responses.get(req_id).cloned() {
+        if let Some(resp) = self.cache.get(&req_id.to_string()).cloned() {
             self.current_response = Some(resp);
         }
         self.scroll_handle = gpui::UniformListScrollHandle::new();
@@ -279,7 +261,6 @@ impl ResponseState {
             self.test_results = r.test_results.clone();
             self.console_logs = r.console_logs.clone();
         }
-        self.previous_response = self.current_response.take();
         self.current_response = response;
         self.scroll_handle = gpui::UniformListScrollHandle::new();
         self.refresh_formatted_body();
@@ -399,14 +380,14 @@ mod tests {
         };
 
         let arc_rec = Arc::new(rec);
-        state.session_responses.insert("req-1".to_string(), arc_rec.clone());
+        state.cache.insert("req-1".to_string(), arc_rec.clone());
         state.current_response = Some(arc_rec);
         state.show_timing_popover = true;
         state.active_example_name = Some("example-1".to_string());
         state.refresh_formatted_body();
         assert!(state.current_response.is_some());
         assert!(state.formatted_body.is_some());
-        assert!(state.session_responses.contains_key("req-1"));
+        assert!(state.cache.contains_key(&"req-1".to_string()));
 
         state.start_sending_internal(Some("req-1"));
 
@@ -414,7 +395,7 @@ mod tests {
         assert!(state.formatted_body.is_none());
         assert!(!state.show_timing_popover);
         assert!(state.active_example_name.is_none());
-        assert!(!state.session_responses.contains_key("req-1"));
+        assert!(!state.cache.contains_key(&"req-1".to_string()));
     }
 
     #[test]
@@ -638,6 +619,79 @@ mod tests {
         assert_eq!(state.active_example_name.as_deref(), Some("Renamed Success"));
         let resp_after = state.current_response.as_ref().expect("Response should exist");
         assert_eq!(resp_after.status_text, "OK");
+    }
+
+    #[test]
+    fn test_response_state_cache_rename_and_eviction() {
+        let mut state = ResponseState::new();
+        // Configure a small capacity cache for testing
+        state.cache = ResponseCache::new(2, 10_000);
+
+        let rec1 = Arc::new(HttpResponseRecord {
+            id: "r1".to_string(),
+            request_id: "req-1".to_string(),
+            status_code: 200,
+            status_text: "OK".to_string(),
+            duration_ms: 10,
+            size_bytes: 5,
+            headers: vec![],
+            cookies: vec![],
+            body: b"hello".to_vec(),
+            timing: Default::default(),
+            request_sent: None,
+            test_results: vec![],
+            console_logs: vec![],
+            created_at: chrono::Utc::now(),
+        });
+
+        let rec2 = Arc::new(HttpResponseRecord {
+            id: "r2".to_string(),
+            request_id: "req-2".to_string(),
+            status_code: 201,
+            status_text: "Created".to_string(),
+            duration_ms: 15,
+            size_bytes: 5,
+            headers: vec![],
+            cookies: vec![],
+            body: b"world".to_vec(),
+            timing: Default::default(),
+            request_sent: None,
+            test_results: vec![],
+            console_logs: vec![],
+            created_at: chrono::Utc::now(),
+        });
+
+        state.cache.insert("req-1".to_string(), rec1);
+        state.cache.insert("req-2".to_string(), rec2.clone());
+
+        // Test rename_request
+        state.rename_request("req-1", "req-1-renamed");
+        assert!(!state.cache.contains_key(&"req-1".to_string()));
+        assert!(state.cache.contains_key(&"req-1-renamed".to_string()));
+
+        // Insert a 3rd record, which should evict the oldest entry ("req-1-renamed")
+        let rec3 = Arc::new(HttpResponseRecord {
+            id: "r3".to_string(),
+            request_id: "req-3".to_string(),
+            status_code: 204,
+            status_text: "No Content".to_string(),
+            duration_ms: 5,
+            size_bytes: 0,
+            headers: vec![],
+            cookies: vec![],
+            body: vec![],
+            timing: Default::default(),
+            request_sent: None,
+            test_results: vec![],
+            console_logs: vec![],
+            created_at: chrono::Utc::now(),
+        });
+        state.cache.insert("req-3".to_string(), rec3);
+
+        assert_eq!(state.cache.len(), 2);
+        assert!(!state.cache.contains_key(&"req-1-renamed".to_string()));
+        assert!(state.cache.contains_key(&"req-2".to_string()));
+        assert!(state.cache.contains_key(&"req-3".to_string()));
     }
 }
 

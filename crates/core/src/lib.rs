@@ -1,4 +1,5 @@
 pub mod models;
+pub mod cache;
 pub mod interpolation;
 pub mod storage;
 pub mod http;

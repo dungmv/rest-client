@@ -8,16 +8,16 @@
 | Mức độ | Số vấn đề |
 |--------|-----------|
 | 🔴 CRITICAL | 0 (1 đã sửa: PERF-001) |
-| 🟠 HIGH | 2 (8 đã sửa: PERF-002, PERF-003, CC-001, TD-001, TD-004, TD-002, PERF-004, TD-003) |
+| 🟠 HIGH | 1 (9 đã sửa: PERF-002, PERF-003, CC-001, TD-001, TD-004, TD-002, PERF-004, TD-003, SL-002) |
 | 🟡 MEDIUM | 3 (4 đã sửa: CC-004, SL-004, SL-005, SL-006) |
 | 🔵 LOW | 8 |
-| **Tổng** | **13 còn lại (13 đã sửa)** |
+| **Tổng** | **12 còn lại (14 đã sửa)** |
 
 > [!CAUTION]
 > **Top 3 ưu tiên xử lý tiếp theo:**
-> 1. **SL-002** — `ResponseState` cache không có giới hạn
-> 2. **PERF-005** — `suppress_path()` spawn OS thread mới mỗi lần write file
-> 3. **PERF-006** — `sync_active_request_editors()` gọi mỗi render frame (60fps)
+> 1. **PERF-005** — `suppress_path()` spawn OS thread mới mỗi lần write file
+> 2. **PERF-006** — `sync_active_request_editors()` gọi mỗi render frame (60fps)
+> 3. **CC-002** — `FsEvent` reload cascade render notifications
 
 ---
 
@@ -35,15 +35,14 @@ Gợi ý: Tách AuthInputs, ScriptEditors thành GPUI entity riêng.
 
 ---
 
-### SL-002 🟠 HIGH — `ResponseState` cache không có giới hạn
-**File:** [`crates/app/src/state/response_state.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/state/response_state.rs#L47-L65)
+### SL-002 ✅ RESOLVED (Was 🟠 HIGH) — `ResponseState` cache không có giới hạn
+**File:** [`crates/core/src/cache/mod.rs`](file:///c:/Users/maiva/Documents/restclient/crates/core/src/cache/mod.rs)  ·  [`crates/app/src/state/response_state.rs`](file:///c:/Users/maiva/Documents/restclient/crates/app/src/state/response_state.rs#L47-L65)
 
-Hai `HashMap<String, HttpResponseRecord>` (`session_responses`, `previous_responses`) tăng trưởng vô hạn. `HttpResponseRecord` chứa `body: Vec<u8>` (toàn bộ response body). Sau nhiều request có thể tiêu thụ hàng trăm MB RAM, không có LRU hay size cap.
-
-```
-Gợi ý: Giới hạn mỗi map ≤ 100 entries. Dùng Arc<Vec<u8>> cho body
-        để chia sẻ mà không clone. Cân nhắc on-disk cache cho body lớn.
-```
+*Đã giải quyết*: Xây dựng module hạ tầng bộ nhớ đệm generic `restclient_core::cache` với cấu trúc `LruMemoryCache<K, V>` và trait `ByteSized` để tái sử dụng xuyên suốt toàn bộ ứng dụng.
+- **Kiểm soát kép (Dual Bound)**: Áp dụng đồng thời giới hạn số lượng entries (mặc định 100 entries) và giới hạn dung lượng RAM (mặc định 50 MB tổng kích thước body trong cache). Thuật toán tự động evict các phần tử ít dùng nhất (LRU eviction) khi chạm một trong hai ngưỡng trên, đồng thời luôn bảo lưu tối thiểu 1 entry cho các response dung lượng lớn.
+- **Xóa bỏ triệt để dead code**: Qua rà soát toàn bộ UI và logic, `previous_response` và `previous_responses` trong `ResponseState` hoàn toàn không được bất kỳ view hay test nào sử dụng. Đã loại bỏ 100% hai trường này, giải phóng ngay 50% RAM lãng phí vô ích do duplicate cache.
+- **Thay thế bằng `ResponseCache`**: `ResponseState` nay sở hữu `pub cache: ResponseCache` (`LruMemoryCache<String, Arc<HttpResponseRecord>>`). Các thao tác `get`, `insert`, `remove`, `rename` được tối ưu hóa O(1).
+- **Tích hợp on-demand disk fallback**: Khi một response cũ bị evict khỏi RAM, người dùng click lại request đó trên sidebar -> `load_for_request_internal` tự động nạp lại từ disk `.loc` cache (`store.load_response_cache`) vào lại đỉnh MRU trong cache RAM, hoàn toàn không gây gián đoạn trải nghiệm người dùng.
 
 ---
 
@@ -434,7 +433,7 @@ flowchart LR
     P2 --> i6["PERF-003: [RESOLVED] In-memory tree index"]
     P2 --> i7["TD-003: [RESOLVED] Git ops → async background"]
     P2 --> i8["PERF-005: suppress_path → async"]
-    P2 --> i9["SL-002: Cap ResponseState cache"]
+    P2 --> i9["SL-002: [RESOLVED] Cap ResponseState cache"]
     P2 --> i10["PERF-006: sync → subscriptions"]
 
     P3 --> i11["SL-001: Tách AppView God Struct"]
