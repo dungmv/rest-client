@@ -356,12 +356,20 @@ pub fn setup_app_subscriptions(
         }
     }));
 
-    // 4. Observe editor_state: reload response history when active request switches & auto-save
+    // 4. Observe editor_state: sync inputs, reload response history & auto-save
     let ws_clone = workspace_state.clone();
     let per_clone = persistence_state.clone();
     let resp_clone = response_state.clone();
     let mut last_req_id = initial_req.map(|r| r.id.clone());
-    subscriptions.push(cx.observe(editor_state, move |_, ed, cx| {
+    subscriptions.push(cx.observe_in(editor_state, window, move |this, ed, window, cx| {
+        this.composer_inputs.sync_active_request_editors(
+            &ed,
+            &this.workspace_state,
+            &this.env_state,
+            window,
+            cx,
+        );
+
         let (active_id, is_dirty) = {
             let ed_ref = ed.read(cx);
             (ed_ref.active_request_id().to_string(), ed_ref.is_dirty)
@@ -388,7 +396,15 @@ pub fn setup_app_subscriptions(
     let resp_sync = response_state.clone();
     let per_sync = persistence_state.clone();
     let mut last_workspace_path = workspace_state.read(cx).workspace_path.clone();
-    subscriptions.push(cx.observe(workspace_state, move |_, ws, cx| {
+    subscriptions.push(cx.observe_in(workspace_state, window, move |this, ws, window, cx| {
+        this.composer_inputs.sync_active_request_editors(
+            &this.editor_state,
+            &ws,
+            &this.env_state,
+            window,
+            cx,
+        );
+
         let current_ws_path = ws.read(cx).workspace_path.clone();
         if current_ws_path != last_workspace_path {
             last_workspace_path = current_ws_path;
@@ -436,8 +452,10 @@ pub fn setup_app_subscriptions(
         }
     }));
 
-    // 6. Observe response_state: re-render AppView on response/example changes
-    subscriptions.push(cx.observe(response_state, |_, _, cx| {
+    // 6. Observe response_state: synchronize displays & re-render on response/example changes
+    subscriptions.push(cx.observe_in(response_state, window, move |this, resp, window, cx| {
+        this.inspector_displays.sync_response_editor(&resp, window, cx);
+        this.inspector_displays.sync_sent_request_preview(&resp, window, cx);
         cx.notify();
     }));
 

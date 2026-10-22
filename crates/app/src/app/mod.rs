@@ -86,7 +86,7 @@ impl AppView {
             highlighter_factory.clone(),
             cx,
         );
-        let inspector_displays = InspectorDisplays::new(window, highlighter_factory, cx);
+        let mut inspector_displays = InspectorDisplays::new(window, highlighter_factory, cx);
 
         let executor = Arc::new(ReqwestExecutor::new());
         let tokio_rt = Arc::new(
@@ -123,6 +123,8 @@ impl AppView {
             response_state.update(cx, |resp, cx| {
                 resp.load_for_request(&req_id, ws_store.as_ref(), cx);
             });
+            inspector_displays.sync_response_editor(&response_state, window, cx);
+            inspector_displays.sync_sent_request_preview(&response_state, window, cx);
         }
 
         // Set up subscriptions:
@@ -180,21 +182,6 @@ impl Render for AppView {
         let sidebar_collapsed = self.sidebar_state.read(cx).sidebar_collapsed;
         let sidebar_width = self.sidebar_state.read(cx).sidebar_width;
         let is_vertical_split = self.modal_state.read(cx).split_layout_vertical;
-
-        // Synchronize active request fields into InputState / TextareaState when switched or body version changed
-        self.composer_inputs.sync_active_request_editors(
-            &self.editor_state,
-            &self.workspace_state,
-            &self.env_state,
-            window,
-            cx,
-        );
-
-        // Synchronize response_editor with ResponseState's formatted_body
-        self.inspector_displays.sync_response_editor(&self.response_state, window, cx);
-
-        // Synchronize request_url_textarea and request_body_editor with RequestSent
-        self.inspector_displays.sync_sent_request_preview(&self.response_state, window, cx);
 
         let ws_entity = self.workspace_state.clone();
         let sidebar_entity = self.sidebar_state.clone();
