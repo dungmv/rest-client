@@ -889,7 +889,7 @@ impl ScriptCompletionProvider {
                         insert_text: "client.",
                         kind: CompletionItemKind::MODULE,
                         detail: "Client",
-                        doc: "RestClient root scripting context.",
+                        doc: "Zest root scripting context.",
                     },
                     CandidateDef {
                         name: "pm",

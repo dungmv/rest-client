@@ -65,7 +65,7 @@ Simplify the **Request Sent** tab UI by:
 
 ### Automated Tests
 ```bash
-cargo test --package restclient --bin restclient
+cargo test --package zest --bin zest
 cargo clippy --all-targets -- -D warnings
 ```
 

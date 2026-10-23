@@ -11,13 +11,13 @@ else
     ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
 fi
 
-echo "Removing RestClient..."
-rm -f "$BIN_DIR/restclient"
-rm -f "$APP_DIR/restclient.desktop"
-rm -f "$ICON_DIR/restclient.png"
+echo "Removing Zest..."
+rm -f "$BIN_DIR/zest"
+rm -f "$APP_DIR/zest.desktop"
+rm -f "$ICON_DIR/zest.png"
 
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$APP_DIR" || true
 fi
 
-echo "RestClient uninstalled successfully."
+echo "Zest uninstalled successfully."

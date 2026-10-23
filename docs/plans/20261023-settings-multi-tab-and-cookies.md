@@ -40,7 +40,7 @@ flowchart LR
    - Delete `crates/app/src/components/cookies_modal.rs` and remove `show_cookies_modal` from `ModalState`.
    - Add `SettingsTab` enum (`General`, `Network`, `Cookies`, `Shortcuts`) to `ModalState` so any caller (e.g., Command Palette) can open Settings directly to `SettingsTab::Cookies`.
 3. **Live Cookie Jar Synchronization**:
-   - Introduce `StoredCookie` in `restclient_core::models` with `name`, `value`, `domain`, `path`, `expires`, `secure`, `http_only`, `same_site`.
+   - Introduce `StoredCookie` in `zest_core::models` with `name`, `value`, `domain`, `path`, `expires`, `secure`, `http_only`, `same_site`.
    - Share the `Arc<ReqwestExecutor>` between `WorkspaceDataState` and `HttpEngine`.
    - Sync cookies from `ReqwestExecutor` into `WorkspaceDataState::cookies` and `.local/cookies.json` after each HTTP response and upon cookie deletion/clearing.
 

@@ -23,7 +23,7 @@ use gpui::{
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{Editor, EditorState as CodeEditorState, Textarea, TextareaState};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
-use restclient_core::models::{KeyValuePair, MultipartItem, RequestBody};
+use zest_core::models::{KeyValuePair, MultipartItem, RequestBody};
 
 pub(crate) fn persist_active_request_without_redraw(
     editor: &Entity<RequestSessionState>,

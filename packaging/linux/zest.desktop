@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=RestClient
+Name=Zest
 GenericName=REST Client
 Comment=Fast and native REST client GUI
-Exec=restclient %u
-Icon=restclient
+Exec=zest %u
+Icon=zest
 Terminal=false
 Categories=Development;Network;WebDevelopment;
-StartupWMClass=restclient
+StartupWMClass=zest
 Keywords=api;rest;http;graphql;client;postman;

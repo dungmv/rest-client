@@ -1,5 +1,5 @@
 use super::request_node::SidebarReqItem;
-use restclient_core::models::Folder;
+use zest_core::models::Folder;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SidebarGitStatus {
@@ -10,7 +10,7 @@ pub enum SidebarGitStatus {
 
 pub fn calculate_request_git_status(
     req_id: &str,
-    git_status: Option<&restclient_core::git::GitStatusResult>,
+    git_status: Option<&zest_core::git::GitStatusResult>,
     is_unsaved: bool,
 ) -> SidebarGitStatus {
     if is_unsaved {
@@ -44,7 +44,7 @@ pub fn calculate_request_git_status(
     // 2. Staged
     if let Some(item) = git.staged_files.iter().find(|item| matches(&item.path)) {
         return match item.status {
-            restclient_core::git::GitFileStatus::Added => SidebarGitStatus::New,
+            zest_core::git::GitFileStatus::Added => SidebarGitStatus::New,
             _ => SidebarGitStatus::Modified,
         };
     }
@@ -61,7 +61,7 @@ pub fn calculate_folder_git_status(
     folder_id: &str,
     folders: &[Folder],
     requests: &[SidebarReqItem],
-    git_status: Option<&restclient_core::git::GitStatusResult>,
+    git_status: Option<&zest_core::git::GitStatusResult>,
     unsaved_requests: &std::collections::HashSet<String>,
 ) -> SidebarGitStatus {
     let mut descendant_folders = std::collections::HashSet::new();
@@ -109,9 +109,9 @@ pub fn calculate_folder_git_status(
 mod tests {
     use super::*;
     use crate::components::sidebar::request_node::SidebarExampleItem;
-    use restclient_core::git::{GitFileStatus, GitStatusItem, GitStatusResult};
-    use restclient_core::models::HttpMethod;
     use std::collections::HashSet;
+    use zest_core::git::{GitFileStatus, GitStatusItem, GitStatusResult};
+    use zest_core::models::HttpMethod;
 
     #[test]
     fn test_calculate_request_git_status_untracked_is_new() {
@@ -225,7 +225,7 @@ mod tests {
                 name: "Auth".to_string(),
                 sort_order: 0,
                 headers: Vec::new(),
-                auth: restclient_core::models::Auth::Inherit,
+                auth: zest_core::models::Auth::Inherit,
             },
             Folder {
                 id: "auth/sub".to_string(),
@@ -234,7 +234,7 @@ mod tests {
                 name: "Sub".to_string(),
                 sort_order: 0,
                 headers: Vec::new(),
-                auth: restclient_core::models::Auth::Inherit,
+                auth: zest_core::models::Auth::Inherit,
             },
         ];
 

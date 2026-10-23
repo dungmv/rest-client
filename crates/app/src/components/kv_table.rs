@@ -8,8 +8,8 @@ use gpui::{
     RenderOnce, StatefulInteractiveElement as _, Styled, Subscription, Window,
 };
 use gpui_component::input::{InputEvent, InputState};
-use restclient_core::models::KeyValuePair;
 use std::rc::Rc;
+use zest_core::models::KeyValuePair;
 
 struct KvRowInputHolder {
     key_input: Entity<InputState>,

@@ -3,7 +3,7 @@
 ## 1. Mô Hình Phiên Làm Việc Đơn Nhiệm & Điều Hướng Lịch Sử (Single-Active Request & History Navigation)
 
 ### 1.1 Cơ Chế Hoạt Động Của Trình Soạn Thảo (Request Composer Navigation):
-Thay vì hệ thống multi-tabs truyền thống cồng kềnh dễ gây phân mảnh state và chiếm dụng bộ nhớ (God Object `EditorState`), RestClient áp dụng mô hình Single-Active Request hiện đại tương tự Insomnia và Yaak:
+Thay vì hệ thống multi-tabs truyền thống cồng kềnh dễ gây phân mảnh state và chiếm dụng bộ nhớ (God Object `EditorState`), Zest áp dụng mô hình Single-Active Request hiện đại tương tự Insomnia và Yaak:
 1. **Direct Request Activation:** Nhấp chuột vào bất kỳ request nào ở Sidebar sẽ kích hoạt và mở thẳng request đó trong `RequestComposer`.
 2. **Single Source of Truth:** `RequestSessionState` chỉ lưu con trỏ `active_request_id: Option<String>` đại diện cho request đang làm việc; toàn bộ dữ liệu request được mượn on-demand từ `WorkspaceDataState`.
 3. **Điều Hướng Lịch Sử (History Navigation — Back / Forward):**

@@ -8,7 +8,7 @@ use gpui::{
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
-use restclient_core::models::{ConsoleLogLevel, ConsoleLogSource};
+use zest_core::models::{ConsoleLogLevel, ConsoleLogSource};
 
 #[derive(IntoElement)]
 pub struct ConsolePanel {

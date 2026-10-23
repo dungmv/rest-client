@@ -9,9 +9,9 @@ use gpui_component::input::{Input, InputState};
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
-use restclient_core::importers::{parse_content, ImportFormat, ImportOptions, ImportResult};
-use restclient_core::models::HttpMethod;
 use std::path::PathBuf;
+use zest_core::importers::{parse_content, ImportFormat, ImportOptions, ImportResult};
+use zest_core::models::HttpMethod;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImportSourceTab {

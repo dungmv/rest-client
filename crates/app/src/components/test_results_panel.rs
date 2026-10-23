@@ -4,7 +4,7 @@ use gpui::{
     div, px, App, InteractiveElement as _, IntoElement, ParentElement, RenderOnce, Styled, Window,
 };
 use gpui_component::scroll::ScrollableElement as _;
-use restclient_core::models::{ConsoleLogEntry, ConsoleLogSource, TestResult};
+use zest_core::models::{ConsoleLogEntry, ConsoleLogSource, TestResult};
 
 #[derive(IntoElement)]
 pub struct TestResultsPanel {

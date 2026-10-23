@@ -7,7 +7,7 @@ description: >-
 
 # Scripting Engine & Automation Guide
 
-This skill governs the JavaScript automation engine implemented in `restclient-core::scripting`, providing high compatibility with Postman (`pm.*`) and Insomnia scripting workflows.
+This skill governs the JavaScript automation engine implemented in `zest-core::scripting`, providing high compatibility with Postman (`pm.*`) and Insomnia scripting workflows.
 
 ---
 
@@ -23,7 +23,7 @@ This skill governs the JavaScript automation engine implemented in `restclient-c
 
 ## 2. Supported `pm.*` API Specifications
 
-Scripts executed in RestClient have access to the global `pm` (and alias `postman`) object:
+Scripts executed in Zest have access to the global `pm` (and alias `postman`) object:
 
 ### 2.1 Variables & Environment Management
 - `pm.environment.get(key: string): string`
@@ -89,8 +89,8 @@ Evaluated dynamically during variable interpolation (`crates/core/src/scripting/
 
 ```bash
 # 1. Run all scripting unit tests (sandbox, crypto, assertions, fake vars)
-cargo test --package restclient_core --lib scripting::
+cargo test --package zest_core --lib scripting::
 
 # 2. Run clippy
-cargo clippy --package restclient_core --lib scripting -- -D warnings
+cargo clippy --package zest_core --lib scripting -- -D warnings
 ```

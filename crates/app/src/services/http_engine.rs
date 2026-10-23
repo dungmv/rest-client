@@ -1,21 +1,17 @@
-use restclient_core::http::{
-    HttpError, HttpExecutor, HttpProgress, ReqwestExecutor, ResolvedRequest,
-};
-use restclient_core::models::{
-    Environment, EnvironmentVariable, HttpRequestItem, HttpResponseRecord,
-};
-use restclient_core::scripting::{
+use std::sync::Arc;
+use tokio::sync::{mpsc, oneshot};
+use zest_core::http::{HttpError, HttpExecutor, HttpProgress, ReqwestExecutor, ResolvedRequest};
+use zest_core::models::{Environment, EnvironmentVariable, HttpRequestItem, HttpResponseRecord};
+use zest_core::scripting::{
     resolve_fake_vars_in_request, PostResponseContext, PostResponseOutput, PreRequestContext,
     PreRequestOutput, ScriptSandbox,
 };
-use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug)]
 pub enum ExecEvent {
     Started {
         request_id: String,
-        initial_logs: Vec<restclient_core::models::ConsoleLogEntry>,
+        initial_logs: Vec<zest_core::models::ConsoleLogEntry>,
         pre_script_error: Option<String>,
     },
     Progress(String),
@@ -181,7 +177,7 @@ impl HttpEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use restclient_core::models::HttpMethod;
+    use zest_core::models::HttpMethod;
 
     #[test]
     fn test_http_engine_invalid_url_error() {

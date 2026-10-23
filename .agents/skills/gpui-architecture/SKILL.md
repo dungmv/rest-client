@@ -92,8 +92,8 @@ pub fn register_subscriptions(
 Whenever touching GPUI components or states:
 ```bash
 # 1. Run all unit tests for app components & states
-cargo test --package restclient --bin restclient
+cargo test --package zest --bin zest
 
 # 2. Verify with clippy
-cargo clippy --package restclient --bin restclient -- -D warnings
+cargo clippy --package zest --bin zest -- -D warnings
 ```

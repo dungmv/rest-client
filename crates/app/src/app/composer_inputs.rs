@@ -2,8 +2,8 @@ use crate::components::script_editor::{ScriptCompletionProvider, ScriptEditorKin
 use crate::state::{EnvironmentState, RequestSessionState, WorkspaceDataState};
 use gpui::{App, AppContext as _, Entity, Window};
 use gpui_component::input::{EditorState as CodeEditorState, InputState, TextareaState};
-use restclient_core::models::{Auth, RequestBody};
 use std::rc::Rc;
+use zest_core::models::{Auth, RequestBody};
 
 type HighlighterFactory =
     Rc<dyn Fn(&str) -> Option<Box<dyn gpui_component::input::InputHighlighter>>>;

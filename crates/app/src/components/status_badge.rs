@@ -1,6 +1,6 @@
 use crate::theme::theme;
 use gpui::{div, px, App, IntoElement, ParentElement, RenderOnce, Styled, Window};
-use restclient_core::models::HttpMethod;
+use zest_core::models::HttpMethod;
 
 #[derive(IntoElement)]
 pub struct MethodBadge {

@@ -27,15 +27,15 @@ pub struct GitState {
     pub show_modal: bool,
     pub active_modal: Option<GitActiveModal>,
     pub tab: GitTab,
-    pub status: Option<restclient_core::git::GitStatusResult>,
-    pub history: Vec<restclient_core::git::GitCommitInfo>,
-    pub branches: Vec<restclient_core::git::GitBranchInfo>,
-    pub remotes: Vec<restclient_core::git::GitRemote>,
+    pub status: Option<zest_core::git::GitStatusResult>,
+    pub history: Vec<zest_core::git::GitCommitInfo>,
+    pub branches: Vec<zest_core::git::GitBranchInfo>,
+    pub remotes: Vec<zest_core::git::GitRemote>,
     pub selected_staged_files: HashSet<String>,
     pub selected_unstaged_files: HashSet<String>,
     pub selected_file: Option<(String, bool)>,
     pub diff_content: Option<String>,
-    pub selected_commit: Option<restclient_core::git::GitCommitDetail>,
+    pub selected_commit: Option<zest_core::git::GitCommitDetail>,
     pub expanded_history_files: HashSet<String>,
     pub commit_message: String,
     pub error: Option<String>,
@@ -72,13 +72,13 @@ impl Default for GitState {
 
 impl GitState {
     pub fn new(repo_path: PathBuf) -> Self {
-        let fast = restclient_core::git::detect_git_repo_fast(&repo_path);
+        let fast = zest_core::git::detect_git_repo_fast(&repo_path);
         let (branch, status) = match fast {
             Some((_root, branch_opt)) => {
                 let branch_name = branch_opt.unwrap_or_else(|| "main".to_string());
                 (
                     Some(branch_name.clone()),
-                    Some(restclient_core::git::GitStatusResult {
+                    Some(zest_core::git::GitStatusResult {
                         is_repo: true,
                         branch: branch_name,
                         ..Default::default()
@@ -87,7 +87,7 @@ impl GitState {
             }
             None => (
                 None,
-                Some(restclient_core::git::GitStatusResult {
+                Some(zest_core::git::GitStatusResult {
                     is_repo: false,
                     ..Default::default()
                 }),
@@ -104,12 +104,12 @@ impl GitState {
 
     pub fn set_repo_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         self.repo_path = path;
-        let fast = restclient_core::git::detect_git_repo_fast(&self.repo_path);
+        let fast = zest_core::git::detect_git_repo_fast(&self.repo_path);
         match fast {
             Some((_root, branch_opt)) => {
                 let branch_name = branch_opt.unwrap_or_else(|| "main".to_string());
                 self.branch = Some(branch_name.clone());
-                self.status = Some(restclient_core::git::GitStatusResult {
+                self.status = Some(zest_core::git::GitStatusResult {
                     is_repo: true,
                     branch: branch_name,
                     ..Default::default()
@@ -117,7 +117,7 @@ impl GitState {
             }
             None => {
                 self.branch = None;
-                self.status = Some(restclient_core::git::GitStatusResult {
+                self.status = Some(zest_core::git::GitStatusResult {
                     is_repo: false,
                     ..Default::default()
                 });
@@ -195,7 +195,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let remotes = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_get_remotes(&ws_path).ok() })
+                .spawn(async move { zest_core::git::git_get_remotes(&ws_path).ok() })
                 .await;
             if let Some(remotes) = remotes {
                 if let Some(this) = this.upgrade() {
@@ -223,7 +223,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let res = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_add_remote(&ws_path, &n, &u) })
+                .spawn(async move { zest_core::git::git_add_remote(&ws_path, &n, &u) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
@@ -257,7 +257,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let res = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_remove_remote(&ws_path, &n) })
+                .spawn(async move { zest_core::git::git_remove_remote(&ws_path, &n) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
@@ -291,7 +291,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let res = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_delete_branch(&ws_path, &n, false) })
+                .spawn(async move { zest_core::git::git_delete_branch(&ws_path, &n, false) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
@@ -324,7 +324,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let res = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_fetch(&ws_path) })
+                .spawn(async move { zest_core::git::git_fetch(&ws_path) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
@@ -374,7 +374,7 @@ impl GitState {
             let ws_status = ws_path.clone();
             let status_res = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_status(&ws_status) })
+                .spawn(async move { zest_core::git::git_status(&ws_status) })
                 .await;
 
             let st = match status_res {
@@ -424,7 +424,7 @@ impl GitState {
                     let diff_content = cx
                         .background_executor()
                         .spawn(async move {
-                            match restclient_core::git::git_diff(&ws_diff, Some(&p), staged) {
+                            match zest_core::git::git_diff(&ws_diff, Some(&p), staged) {
                                 Ok(d) => Some(d),
                                 Err(e) => Some(format!("Error loading diff: {}", e)),
                             }
@@ -443,7 +443,7 @@ impl GitState {
                 if need_branches {
                     let ws_b = ws_path.clone();
                     cx.background_executor()
-                        .spawn(async move { restclient_core::git::git_branches(&ws_b).ok() })
+                        .spawn(async move { zest_core::git::git_branches(&ws_b).ok() })
                         .await
                 } else {
                     None
@@ -493,7 +493,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let res = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_diff(&ws_path, Some(&path), staged) })
+                .spawn(async move { zest_core::git::git_diff(&ws_path, Some(&path), staged) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
@@ -515,7 +515,7 @@ impl GitState {
             let ws_hist = ws_path.clone();
             let commits = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_history(&ws_hist, 50).ok() })
+                .spawn(async move { zest_core::git::git_history(&ws_hist, 50).ok() })
                 .await;
             if let Some(commits) = commits {
                 let first_detail = if needs_first {
@@ -523,9 +523,7 @@ impl GitState {
                         let ws_p = ws_path.clone();
                         let h = first.hash.clone();
                         cx.background_executor()
-                            .spawn(async move {
-                                restclient_core::git::git_commit_detail(&ws_p, &h).ok()
-                            })
+                            .spawn(async move { zest_core::git::git_commit_detail(&ws_p, &h).ok() })
                             .await
                     } else {
                         None
@@ -553,7 +551,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let branches = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_branches(&ws_path).ok() })
+                .spawn(async move { zest_core::git::git_branches(&ws_path).ok() })
                 .await;
             if let Some(branches) = branches {
                 if let Some(this) = this.upgrade() {
@@ -579,7 +577,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let detail = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_commit_detail(&ws_path, &h).ok() })
+                .spawn(async move { zest_core::git::git_commit_detail(&ws_path, &h).ok() })
                 .await;
             if let Some(detail) = detail {
                 if let Some(this) = this.upgrade() {

@@ -15,15 +15,15 @@ fi
 
 mkdir -p "$BIN_DIR" "$APP_DIR" "$ICON_DIR"
 
-echo "Installing restclient binary to $BIN_DIR..."
-install -m 755 "$DIR/restclient" "$BIN_DIR/restclient"
+echo "Installing zest binary to $BIN_DIR..."
+install -m 755 "$DIR/zest" "$BIN_DIR/zest"
 
 echo "Installing icon to $ICON_DIR..."
-install -m 644 "$DIR/restclient.png" "$ICON_DIR/restclient.png"
+install -m 644 "$DIR/zest.png" "$ICON_DIR/zest.png"
 
 echo "Installing desktop entry to $APP_DIR..."
-sed "s|^Exec=restclient|Exec=$BIN_DIR/restclient|" "$DIR/restclient.desktop" > "$APP_DIR/restclient.desktop"
-chmod 644 "$APP_DIR/restclient.desktop"
+sed "s|^Exec=zest|Exec=$BIN_DIR/zest|" "$DIR/zest.desktop" > "$APP_DIR/zest.desktop"
+chmod 644 "$APP_DIR/zest.desktop"
 
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$APP_DIR" || true
@@ -34,8 +34,8 @@ if command -v gtk-update-icon-cache >/dev/null 2>&1; then
 fi
 
 echo "========================================="
-echo " RestClient installed successfully!"
-echo " Binary: $BIN_DIR/restclient"
-echo " You can launch RestClient from your desktop application menu"
-echo " or run 'restclient' in your terminal."
+echo " Zest installed successfully!"
+echo " Binary: $BIN_DIR/zest"
+echo " You can launch Zest from your desktop application menu"
+echo " or run 'zest' in your terminal."
 echo "========================================="

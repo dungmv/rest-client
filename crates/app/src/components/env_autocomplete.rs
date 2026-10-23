@@ -195,7 +195,7 @@ pub fn get_variable_details(env: &EnvironmentState, var_name: &str) -> (String, 
 
     // 3. Check dynamic variables
     if var_name.starts_with('$') {
-        if let Some(fake) = restclient_core::scripting::generate_fake_var_value(var_name) {
+        if let Some(fake) = zest_core::scripting::generate_fake_var_value(var_name) {
             return (format!("Dynamic: {}", fake), "Dynamic".to_string(), true);
         }
     }
@@ -258,7 +258,7 @@ pub fn build_tokenized_content(text: &str, env: &EnvironmentState) -> InputConte
     }
     let mut content = InputContent::new(text);
     let effective_env = env.effective_environment();
-    let spans = restclient_core::interpolation::scan_variables(text, Some(&effective_env));
+    let spans = zest_core::interpolation::scan_variables(text, Some(&effective_env));
     for span in spans {
         if span.start < text.len() && span.end <= text.len() {
             let matched_text = &text[span.start..span.end];
@@ -403,23 +403,23 @@ mod tests {
 
     #[test]
     fn test_get_env_completions_and_details() {
-        let store = std::sync::Arc::new(restclient_core::storage::FsWorkspaceStore::new(
+        let store = std::sync::Arc::new(zest_core::storage::FsWorkspaceStore::new(
             std::path::Path::new("./test-env-comp"),
         ));
         let mut env = EnvironmentState::new(store, "default".to_string(), None);
         env.global_environment
             .variables
-            .push(restclient_core::models::EnvironmentVariable {
+            .push(zest_core::models::EnvironmentVariable {
                 key: "apiKey".to_string(),
                 initial_value: "secret-123".to_string(),
                 current_value: "".to_string(),
                 secret: true,
             });
 
-        let mut custom_env = restclient_core::models::Environment::new("default", "Staging");
+        let mut custom_env = zest_core::models::Environment::new("default", "Staging");
         custom_env
             .variables
-            .push(restclient_core::models::EnvironmentVariable {
+            .push(zest_core::models::EnvironmentVariable {
                 key: "baseUrl".to_string(),
                 initial_value: "https://staging.api.com".to_string(),
                 current_value: "".to_string(),

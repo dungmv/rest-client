@@ -11,10 +11,10 @@ Tài liệu này đặc tả chi tiết kiến trúc và triển khai cho **Giai
 
 ---
 
-## 2. Kiến trúc Module (`restclient-core::runner` & `crates/cli`)
+## 2. Kiến trúc Module (`zest-core::runner` & `crates/cli`)
 
 ```
-restclient/
+zest/
 ├── crates/
 │   ├── core/
 │   │   ├── src/
@@ -27,7 +27,7 @@ restclient/
 │   │   │       ├── mod.rs           # Embedded Axum/Hyper mock server
 │   │   │       └── router.rs        # Route matching dựa trên URL, method, headers
 │   ├── app/                         # GPUI Desktop App (chứa Runner UI & Mock Server UI)
-│   └── cli/                         # Headless binary `restclient-cli` cho CI/CD
+│   └── cli/                         # Headless binary `zest-cli` cho CI/CD
 ```
 
 ---
@@ -88,15 +88,15 @@ invalid_user,wrong_pass,NONE,401
 ## 5. Headless CLI Runner (`crates/cli` — Newman Alternative)
 
 ### 5.1 Khởi Tạo Sub-crate `crates/cli`
-Xây dựng file nhị phân độc lập `restclient-cli` không phụ thuộc vào thư viện GUI GPUI, có kích thước cực nhỏ (< 15MB) và chạy được trên môi trường Linux Alpine/Ubuntu server không có màn hình.
+Xây dựng file nhị phân độc lập `zest-cli` không phụ thuộc vào thư viện GUI GPUI, có kích thước cực nhỏ (< 15MB) và chạy được trên môi trường Linux Alpine/Ubuntu server không có màn hình.
 
 ### 5.2 Cú Pháp Lệnh CLI:
 ```bash
 # Chạy bộ test cơ bản
-restclient-cli run ./my-collection --env staging
+zest-cli run ./my-collection --env staging
 
 # Chạy với dữ liệu CSV và xuất báo cáo HTML
-restclient-cli run ./my-collection \
+zest-cli run ./my-collection \
   --folder "E2E Checkout Flow" \
   --env production \
   --data ./test-cases.csv \
@@ -107,7 +107,7 @@ restclient-cli run ./my-collection \
 # Tích hợp GitHub Actions Workflow:
 # - name: Run API Integration Tests
 #   run: |
-#     ./restclient-cli run ./.restclient/workspaces/api --env ci-test
+#     ./zest-cli run ./.zest/workspaces/api --env ci-test
 ```
 
 ### 5.3 Mã Trả Về (Exit Codes):

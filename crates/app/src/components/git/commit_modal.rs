@@ -33,7 +33,7 @@ impl GitCommitModal {
 pub struct ChangesViewProps {
     pub git_clone: Entity<GitState>,
     pub ws_clone: Entity<WorkspaceDataState>,
-    pub status_opt: Option<restclient_core::git::GitStatusResult>,
+    pub status_opt: Option<zest_core::git::GitStatusResult>,
     pub selected_file: Option<(String, bool)>,
     pub diff_content: Option<String>,
     pub commit_input: Entity<InputState>,

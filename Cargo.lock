@@ -5589,64 +5589,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "restclient"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "cocoa 0.26.1",
- "dirs 6.0.0",
- "embed-resource",
- "gpui-component",
- "gpui-kit",
- "gpui-pre",
- "lsp-types",
- "objc",
- "quick-xml",
- "restclient-core",
- "rfd",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "restclient-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "bytes",
- "chrono",
- "cookie_store",
- "dirs 6.0.0",
- "futures-util",
- "hex",
- "hmac",
- "md-5",
- "notify 6.1.1",
- "rand 0.8.8",
- "regex",
- "reqwest",
- "reqwest_cookie_store",
- "rquickjs",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2 0.10.9",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
- "url",
- "urlencoding",
- "uuid",
-]
-
-[[package]]
 name = "resvg"
 version = "0.45.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9015,6 +8957,64 @@ dependencies = [
  "proc-macro2 1.0.107",
  "quote 1.0.47",
  "syn 3.0.9",
+]
+
+[[package]]
+name = "zest"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "cocoa 0.26.1",
+ "dirs 6.0.0",
+ "embed-resource",
+ "gpui-component",
+ "gpui-kit",
+ "gpui-pre",
+ "lsp-types",
+ "objc",
+ "quick-xml",
+ "rfd",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "url",
+ "uuid",
+ "zest-core",
+]
+
+[[package]]
+name = "zest-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "cookie_store",
+ "dirs 6.0.0",
+ "futures-util",
+ "hex",
+ "hmac",
+ "md-5",
+ "notify 6.1.1",
+ "rand 0.8.8",
+ "regex",
+ "reqwest",
+ "reqwest_cookie_store",
+ "rquickjs",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "url",
+ "urlencoding",
+ "uuid",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 # Fix: Footer Git Status Showing "No Git" on Startup
 
 ## 1. Goal
-Fix the bug where RestClient's sidebar footer displays "No Git" upon application launch even when the current workspace directory is a valid Git repository.
+Fix the bug where Zest's sidebar footer displays "No Git" upon application launch even when the current workspace directory is a valid Git repository.
 
 ## 2. Root Cause Analysis
 1. **Missing Initial Refresh**: In `crates/app/src/state/app_state.rs`, `GitState::new(ws_dir)` was instantiated with `status: None` and `branch: None`. Neither `AppState::new` nor `AppView::new` ever called `git.refresh_status(cx)` on startup.

@@ -1,6 +1,6 @@
 # Kế hoạch phát triển tính năng (Roadmap to Full Parity — 7 Phases: Phase 0 to Phase 6)
 
-Tài liệu này xác định lộ trình phát triển toàn diện của **RestClient** qua 7 giai đoạn (từ Phase 0 đến Phase 6), bắt đầu từ nền tảng gửi/nhận HTTP cốt lõi, tiếp nối bằng Scripting, Đa giao thức, Xác thực, DevTools, Khả năng tương thích Import/Export và Bộ công cụ Kiểm thử & Tự động hóa toàn diện (Testing & Automation Suite).
+Tài liệu này xác định lộ trình phát triển toàn diện của **Zest** qua 7 giai đoạn (từ Phase 0 đến Phase 6), bắt đầu từ nền tảng gửi/nhận HTTP cốt lõi, tiếp nối bằng Scripting, Đa giao thức, Xác thực, DevTools, Khả năng tương thích Import/Export và Bộ công cụ Kiểm thử & Tự động hóa toàn diện (Testing & Automation Suite).
 
 ---
 
@@ -67,7 +67,7 @@ Tài liệu này xác định lộ trình phát triển toàn diện của **Res
 ---
 
 ## 🎯 Giai đoạn 2: Mở rộng Đa Giao thức (Protocols: GraphQL, WebSocket, SSE, gRPC)
-*Mục tiêu: Đưa RestClient trở thành API client toàn diện không chỉ giới hạn ở REST thông thường.*
+*Mục tiêu: Đưa Zest trở thành API client toàn diện không chỉ giới hạn ở REST thông thường.*
 
 1. **GraphQL Client Chuyên Dụng:**
    - Editor GraphQL 2 pane: Query/Mutation bên trái, Variables JSON bên phải.
@@ -144,7 +144,7 @@ Tài liệu này xác định lộ trình phát triển toàn diện của **Res
 ---
 
 ## 🎯 Giai đoạn 5: Khả năng Tương Thích & Nhập/Xuất (Import/Export & Migration)
-*Mục tiêu: Giúp người dùng chuyển ngay lập tức toàn bộ dữ liệu đang có từ Postman, Insomnia, OpenAPI và cURL sang RestClient mà không mất bất kỳ cấu hình nào.*
+*Mục tiêu: Giúp người dùng chuyển ngay lập tức toàn bộ dữ liệu đang có từ Postman, Insomnia, OpenAPI và cURL sang Zest mà không mất bất kỳ cấu hình nào.*
 
 1. **Import cURL Tự Động Khi Dán Trực Tiếp (Inline cURL Paste) — ✅ Đã hoàn thành (100% Implemented & Tested):**
    - Tự động nhận diện lệnh cURL khi dán vào thanh URL input.
@@ -183,10 +183,10 @@ Tài liệu này xác định lộ trình phát triển toàn diện của **Res
    - Mỗi hàng trong file tương ứng với 1 iteration của Collection Runner.
    - Các cột trong CSV tự động ánh xạ vào biến `{{column_name}}` trong URL, Header, Body và script `client.iterationData.get("column_name")`.
 3. **Headless CLI Test Runner (Tương đương Newman / Bruno CLI):**
-   - Tạo sub-crate CLI nhị phân riêng: `crates/cli` (`restclient-cli`).
+   - Tạo sub-crate CLI nhị phân riêng: `crates/cli` (`zest-cli`).
    - Lệnh chạy trong CI/CD pipeline (GitHub Actions, GitLab CI, Docker):
      ```bash
-     restclient-cli run ./my-api-collection --env staging --data users.csv --reporters cli,json,html
+     zest-cli run ./my-api-collection --env staging --data users.csv --reporters cli,json,html
      ```
    - Trả về exit code 0 nếu tất cả test đỗ, exit code 1 nếu có test trượt.
 4. **Báo Cáo Kiểm Thử Tự Động (Visual Test Reports):**

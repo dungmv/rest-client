@@ -1,21 +1,21 @@
-# AGENTS.md — RestClient Workspace Instructions
+# AGENTS.md — Zest Workspace Instructions
 
-This document governs all AI agent interactions and development sessions in the `restclient` repository. Every agent must strictly adhere to the architecture, standards, patterns, and constraints documented herein to ensure consistency and prevent regressions.
+This document governs all AI agent interactions and development sessions in the `zest` repository. Every agent must strictly adhere to the architecture, standards, patterns, and constraints documented herein to ensure consistency and prevent regressions.
 
 ---
 
 ## 1. Project Overview & Architecture
 
-`restclient` is a high-performance, macOS-native, local-first REST & API client built with **GPUI** (GPU-accelerated UI framework from Zed) and **Rust** (2024 edition).
+`zest` is a high-performance, macOS-native, local-first REST & API client built with **GPUI** (GPU-accelerated UI framework from Zed) and **Rust** (2024 edition).
 
 ### 1.1 Workspace Layout
 
 The project is structured as a Cargo workspace with two core crates:
 
 ```
-restclient/
+zest/
 ├── crates/
-│   ├── core/                  # [restclient-core] Pure domain, storage, and networking engine
+│   ├── core/                  # [zest-core] Pure domain, storage, and networking engine
 │   │   ├── src/
 │   │   │   ├── models.rs      # Canonical domain & storage data models
 │   │   │   ├── cache/         # Bounded LRU memory cache infrastructure
@@ -26,7 +26,7 @@ restclient/
 │   │   │   ├── curl/          # cURL command parser & exporter
 │   │   │   ├── importers/     # OpenAPI 3.0/3.1 & Postman collection importers
 │   │   │   └── interpolation.rs # Variable resolution and substitution engine
-│   └── app/                   # [restclient-app] GPUI macOS native application
+│   └── app/                   # [zest] GPUI macOS native application
 │       ├── src/
 │       │   ├── app/           # AppView, composer inputs, inspector displays, subscriptions
 │       │   ├── components/    # Modular GPUI UI components (< 650 LOC per module)
@@ -76,13 +76,13 @@ These principles were forged through major refactoring milestones (SL-001 throug
 - Git operations in `git_ops.rs` must set `loading` or `is_syncing` and execute asynchronously.
 
 ### 2.5 Bounded Memory Caching (SL-002, SL-006)
-- All session caches storing responses or heavy payloads must use `restclient_core::cache::LruMemoryCache` with dual bounds:
+- All session caches storing responses or heavy payloads must use `zest_core::cache::LruMemoryCache` with dual bounds:
   - Max entry count (e.g., 100 entries).
   - Max memory capacity (e.g., 50 MB total byte size).
 - Responses and payloads must be wrapped in `Arc<HttpResponseRecord>` to achieve zero-copy $O(1)$ clones between background executors and UI states.
 
 ### 2.6 Local-First Storage & Schema Integrity (SL-005)
-- All storage models in `restclient_core::storage::models` must specify `#[serde(deny_unknown_fields)]`. Never add dynamic catch-all fields like `extra: BTreeMap`.
+- All storage models in `zest_core::storage::models` must specify `#[serde(deny_unknown_fields)]`. Never add dynamic catch-all fields like `extra: BTreeMap`.
 - File writes initiated by the application must register paths with `suppressed_paths` in `FsWorkspaceStore` to avoid spurious file-watcher echo loops.
 
 ---
@@ -99,7 +99,7 @@ These principles were forged through major refactoring milestones (SL-001 throug
   // CORRECT:
   let store = self.cookie_store.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
   ```
-- Use `Result` and `?` propagation in `restclient-core`. In UI callbacks, present user-friendly errors via `ToastState` or error badges.
+- Use `Result` and `?` propagation in `zest-core`. In UI callbacks, present user-friendly errors via `ToastState` or error badges.
 
 ### 3.3 Documentation & Language
 - **Source Code**: 100% English for all code comments, docstrings, struct field descriptions, error messages, and git commit messages.

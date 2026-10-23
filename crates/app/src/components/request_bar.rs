@@ -12,8 +12,8 @@ use gpui::{
 };
 use gpui_component::input::{Input, InputState};
 use gpui_component::scroll::ScrollableElement as _;
-use restclient_core::interpolation::scan_variables;
-use restclient_core::models::HttpMethod;
+use zest_core::interpolation::scan_variables;
+use zest_core::models::HttpMethod;
 
 #[allow(clippy::type_complexity)]
 #[derive(IntoElement)]

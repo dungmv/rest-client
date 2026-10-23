@@ -11,7 +11,7 @@ use gpui::{
 };
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
-use restclient_core::models::{Auth, HttpMethod};
+use zest_core::models::{Auth, HttpMethod};
 
 impl AppView {
     pub(crate) fn render_request_composer(

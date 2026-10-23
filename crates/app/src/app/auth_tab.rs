@@ -7,7 +7,7 @@ use gpui_component::input::InputState;
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
-use restclient_core::models::Auth;
+use zest_core::models::Auth;
 
 pub struct AuthTabInputs<'a> {
     pub bearer_token_input: &'a Entity<InputState>,

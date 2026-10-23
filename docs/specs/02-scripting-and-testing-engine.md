@@ -13,7 +13,7 @@ Tương tự, với Pre-request scripts:
 
 ---
 
-## 2. Kiến trúc Engine Thực thi Script (`restclient-core::scripting`)
+## 2. Kiến trúc Engine Thực thi Script (`zest-core::scripting`)
 
 ### 2.1 Lựa chọn Runtime: `rquickjs`
 
@@ -238,7 +238,7 @@ fn bind_crypto_functions(ctx: &rquickjs::Ctx, crypto_obj: &Object) { /* ... */ }
 
 ## 5. Đặc tả API JavaScript Sandbox (`client.*` & `pm.*`)
 
-RestClient cung cấp đối tượng toàn cục `client` (và alias `pm` để tương thích ngược script cũ của Postman):
+Zest cung cấp đối tượng toàn cục `client` (và alias `pm` để tương thích ngược script cũ của Postman):
 
 ### 5.1 Quản lý Biến Môi Trường (Variables & Environment)
 ```javascript
@@ -334,7 +334,7 @@ Các biến này được resolve bởi Rust trước khi script chạy (không 
 
 ## 6. Quy trình Thực thi Request kèm Scripts (Execution Lifecycle)
 
-RestClient phân tách hoàn toàn tầng giao diện (UI) và tầng thực thi mạng (HTTP Engine & Runner):
+Zest phân tách hoàn toàn tầng giao diện (UI) và tầng thực thi mạng (HTTP Engine & Runner):
 
 ```mermaid
 sequenceDiagram
@@ -366,7 +366,7 @@ sequenceDiagram
 
 ---
 
-## 7. Giao diện Người dùng trong RestClient (UI Components)
+## 7. Giao diện Người dùng trong Zest (UI Components)
 
 ### 7.1 Tab "Pre-request Script" & "Tests" trong Request Composer
 

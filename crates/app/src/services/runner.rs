@@ -4,10 +4,10 @@ use crate::state::{
     WorkspaceDataState,
 };
 use gpui::{App, Entity};
-use restclient_core::models::EnvironmentVariable;
-use restclient_core::storage::models::LocFile;
 use std::sync::Arc;
 use tokio::sync::oneshot;
+use zest_core::models::EnvironmentVariable;
+use zest_core::storage::models::LocFile;
 
 #[derive(Clone)]
 pub struct Runner {

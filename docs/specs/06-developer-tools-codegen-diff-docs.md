@@ -3,7 +3,7 @@
 ## 1. Trình Sinh Mã Nguồn Đa Ngôn Ngữ (Code Snippet Generator)
 
 ### 1.1 Mục Tiêu
-Giúp kỹ sư sau khi test thành công một API trên RestClient có thể sao chép ngay đoạn mã tương ứng để dán trực tiếp vào dự án backend hoặc frontend của họ mà không phải viết lại từ đầu.
+Giúp kỹ sư sau khi test thành công một API trên Zest có thể sao chép ngay đoạn mã tương ứng để dán trực tiếp vào dự án backend hoặc frontend của họ mà không phải viết lại từ đầu.
 
 ### 1.2 Danh Sách Ngôn Ngữ & Framework Hỗ Trợ (16 Targets)
 

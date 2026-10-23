@@ -1,4 +1,4 @@
-# RestClient — Postman & Insomnia Parity Architecture & Roadmap
+# Zest — Postman & Insomnia Parity Architecture & Roadmap
 
 > **Sứ mệnh (Mission):** Xây dựng một Desktop REST & API Client nguồn mở thế hệ mới bằng **Rust** và **GPUI** (Zed GUI engine), có hiệu năng siêu tốc (< 50MB RAM, khởi động < 0.2s), trải nghiệm cao cấp tương đương hoặc vượt trội **Postman** và **Insomnia**, nhưng tuân thủ triệt để triết lý:
 > - **100% Offline-First / Local-First:** Không ép buộc tạo tài khoản cloud, không thu phí lưu trữ, dữ liệu hoàn toàn nằm trên máy người dùng.
@@ -9,7 +9,7 @@
 
 ## 📑 Mục lục tài liệu thiết kế (Documentation Index)
 
-Thư mục `docs/` này bao gồm toàn bộ thiết kế chi tiết, kiến trúc kỹ thuật và kế hoạch thực thi để đưa RestClient đạt mức tương đương Postman & Insomnia:
+Thư mục `docs/` này bao gồm toàn bộ thiết kế chi tiết, kiến trúc kỹ thuật và kế hoạch thực thi để đưa Zest đạt mức tương đương Postman & Insomnia:
 
 | Tài liệu | Nội dung chính |
 |---|---|
@@ -30,7 +30,7 @@ Thư mục `docs/` này bao gồm toàn bộ thiết kế chi tiết, kiến tr�
 
 ## 📊 Bảng so sánh tính năng (Feature Parity Matrix)
 
-| Nhóm tính năng | Postman | Insomnia | RestClient (Hiện tại) | RestClient (Mục tiêu Parity) |
+| Nhóm tính năng | Postman | Insomnia | Zest (Hiện tại) | Zest (Mục tiêu Parity) |
 |---|:---:|:---:|:---:|:---:|
 | **Nền tảng & RAM** | Electron (~800MB - 1.5GB) | Electron (~600MB - 1.2GB) | **Rust + GPUI (~40MB)** | **Rust + GPUI (~50MB)** |
 | **Khởi động** | 3s - 8s | 2s - 5s | **< 0.2s** | **< 0.2s** |

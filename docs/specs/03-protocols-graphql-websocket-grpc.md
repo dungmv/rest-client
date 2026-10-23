@@ -7,7 +7,7 @@ API hiện đại không còn chỉ là các endpoint REST tĩnh. Các kiến tr
 - **Server-Sent Events (SSE):** Truyền dữ liệu dạng dòng (streaming tokens) đặc biệt phổ biến trong kỷ nguyên AI / Large Language Models (OpenAI, Gemini, Anthropic API).
 - **gRPC:** Giao tiếp microservice nội bộ với hiệu năng cao dựa trên HTTP/2 và Protobuf.
 
-Tài liệu này xác định cách thiết kế và mở rộng kiến trúc RestClient để hỗ trợ đầy đủ các giao thức trên.
+Tài liệu này xác định cách thiết kế và mở rộng kiến trúc Zest để hỗ trợ đầy đủ các giao thức trên.
 
 ---
 

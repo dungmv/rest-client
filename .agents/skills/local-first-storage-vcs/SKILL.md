@@ -7,20 +7,20 @@ description: >-
 
 # Local-First Storage & Git VCS Guide
 
-This skill governs the local-first filesystem storage layer (`restclient-core::storage`), disk persistence state (`PersistenceState`), and Git version control operations (`restclient-core::git` and `crates/app/src/state/git_ops.rs`).
+This skill governs the local-first filesystem storage layer (`zest-core::storage`), disk persistence state (`PersistenceState`), and Git version control operations (`zest-core::git` and `crates/app/src/state/git_ops.rs`).
 
 ---
 
 ## 1. Local-First Directory Hierarchy
 
-RestClient stores workspaces purely as human-readable, Git-friendly YAML files on disk:
+Zest stores workspaces purely as human-readable, Git-friendly YAML files on disk:
 
 ```
 my-workspace/
-├── .restclient/
+├── .zest/
 │   ├── local_state.yaml         # Local UI preferences (active environment, split ratio)
 │   └── cache/                   # *.loc binary response cache files (LRU managed)
-├── .gitignore                   # Automatically ignores .restclient/ and *.secrets.local.yaml
+├── .gitignore                   # Automatically ignores .zest/ and *.secrets.local.yaml
 ├── workspace.yaml               # Workspace metadata, default headers, workspace auth
 ├── environments/
 │   ├── dev.yaml                 # Public environment variables (checked into Git)
@@ -77,7 +77,7 @@ pub fn commit(&mut self, message: String, cx: &mut Context<Self>) {
 
     let git_dir = self.repo_path.clone();
     cx.background_executor().spawn(async move {
-        let result = restclient_core::git::git_commit(&git_dir, &message);
+        let result = zest_core::git::git_commit(&git_dir, &message);
         // Dispatch result back to UI thread
     }).detach();
 }
@@ -93,11 +93,11 @@ pub fn commit(&mut self, message: String, cx: &mut Context<Self>) {
 
 ```bash
 # 1. Run storage roundtrip and lifecycle tests
-cargo test --package restclient_core --lib storage::tests
+cargo test --package zest_core --lib storage::tests
 
 # 2. Run Git operations tests
-cargo test --package restclient_core --lib git::tests
+cargo test --package zest_core --lib git::tests
 
 # 3. Verify clippy compliance
-cargo clippy --package restclient_core --lib storage git -- -D warnings
+cargo clippy --package zest_core --lib storage git -- -D warnings
 ```

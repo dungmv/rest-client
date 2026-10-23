@@ -19,25 +19,25 @@ jobs:
           # Windows x64 (Win32 platform)
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            binary_name: restclient.exe
+            binary_name: zest.exe
             platform_suffix: windows-x86_64
 
           # Linux x64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            binary_name: restclient
+            binary_name: zest
             platform_suffix: linux-x86_64
 
           # macOS Apple Silicon (M-series)
           - os: macos-latest
             target: aarch64-apple-darwin
-            binary_name: restclient
+            binary_name: zest
             platform_suffix: macos-arm64
 
           # macOS Intel (x86_64)
           - os: macos-latest
             target: x86_64-apple-darwin
-            binary_name: restclient
+            binary_name: zest
             platform_suffix: macos-x86_64
 
     steps:
@@ -76,14 +76,14 @@ jobs:
           target: ${{ matrix.target }}
 
       - name: Build release binary
-        run: cargo build --release -p restclient --target ${{ matrix.target }}
+        run: cargo build --release -p zest --target ${{ matrix.target }}
 
       - name: Package archive (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $Tag = "${{ github.ref_name }}"
-          $ArchiveName = "restclient-${Tag}-${{ matrix.platform_suffix }}.zip"
+          $ArchiveName = "zest-${Tag}-${{ matrix.platform_suffix }}.zip"
           Compress-Archive -Path "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" -DestinationPath $ArchiveName
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Move-Item -Path $ArchiveName -Destination dist/
@@ -94,15 +94,15 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           VERSION="${TAG#v}"
-          APP_NAME="RestClient.app"
+          APP_NAME="Zest.app"
           CONTENTS="$APP_NAME/Contents"
 
           mkdir -p "$CONTENTS/MacOS"
           mkdir -p "$CONTENTS/Resources"
 
           # Copy binary and ensure execute permissions
-          cp "target/${{ matrix.target }}/release/restclient" "$CONTENTS/MacOS/restclient"
-          chmod +x "$CONTENTS/MacOS/restclient"
+          cp "target/${{ matrix.target }}/release/zest" "$CONTENTS/MacOS/zest"
+          chmod +x "$CONTENTS/MacOS/zest"
 
           # Populate Info.plist
           sed "s/__VERSION__/$VERSION/g" packaging/macos/Info.plist > "$CONTENTS/Info.plist"
@@ -132,30 +132,30 @@ jobs:
           mkdir -p "$DMG_TMP"
           cp -R "$APP_NAME" "$DMG_TMP/"
           ln -s /Applications "$DMG_TMP/Applications"
-          hdiutil create -volname "RestClient" -srcfolder "$DMG_TMP" -ov -format UDZO "dist/restclient-${TAG}-${{ matrix.platform_suffix }}.dmg"
+          hdiutil create -volname "Zest" -srcfolder "$DMG_TMP" -ov -format UDZO "dist/zest-${TAG}-${{ matrix.platform_suffix }}.dmg"
           rm -rf "$DMG_TMP"
 
-          # Also package .zip containing RestClient.app
-          zip -r -y "dist/restclient-${TAG}-${{ matrix.platform_suffix }}.zip" "$APP_NAME"
+          # Also package .zip containing Zest.app
+          zip -r -y "dist/zest-${TAG}-${{ matrix.platform_suffix }}.zip" "$APP_NAME"
 
       - name: Package archive (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           TAG="${{ github.ref_name }}"
-          PKG_NAME="restclient-${TAG}-${{ matrix.platform_suffix }}"
+          PKG_NAME="zest-${TAG}-${{ matrix.platform_suffix }}"
           mkdir -p "$PKG_NAME"
 
           # Copy binary and ensure execute permissions
-          cp "target/${{ matrix.target }}/release/restclient" "$PKG_NAME/restclient"
-          chmod +x "$PKG_NAME/restclient"
+          cp "target/${{ matrix.target }}/release/zest" "$PKG_NAME/zest"
+          chmod +x "$PKG_NAME/zest"
 
           # Copy desktop integration files
-          cp packaging/linux/restclient.desktop "$PKG_NAME/"
+          cp packaging/linux/zest.desktop "$PKG_NAME/"
           cp packaging/linux/install.sh "$PKG_NAME/"
           cp packaging/linux/uninstall.sh "$PKG_NAME/"
           chmod +x "$PKG_NAME/install.sh" "$PKG_NAME/uninstall.sh"
-          cp crates/app/resources/app_icon_256.png "$PKG_NAME/restclient.png"
+          cp crates/app/resources/app_icon_256.png "$PKG_NAME/zest.png"
 
           mkdir -p dist
           tar -czvf "dist/${PKG_NAME}.tar.gz" "$PKG_NAME"

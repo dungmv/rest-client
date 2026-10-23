@@ -14,7 +14,7 @@ use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
-use restclient_core::models::{Auth, KeyValuePair};
+use zest_core::models::{Auth, KeyValuePair};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ScopeSettingsTab {

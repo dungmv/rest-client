@@ -7,7 +7,7 @@ use crate::state::{
 };
 use gpui::*;
 use gpui_component::input::InputEvent;
-use restclient_core::models::{Auth, HttpRequestItem, RequestBody};
+use zest_core::models::{Auth, HttpRequestItem, RequestBody};
 
 pub struct SubscriptionTargets<'a> {
     pub workspace_state: &'a Entity<WorkspaceDataState>,
@@ -56,13 +56,13 @@ pub fn setup_app_subscriptions(
             InputEvent::Change => {
                 let val = input.read(cx).value().to_string();
                 let active_id = ed_url.read(cx).active_request_id().to_string();
-                if restclient_core::curl::is_curl_command(&val) {
+                if zest_core::curl::is_curl_command(&val) {
                     let ws_id = ws_url
                         .read(cx)
                         .find_request(&active_id)
                         .map(|r| r.workspace_id.clone())
                         .unwrap_or_else(|| "scratch".to_string());
-                    match restclient_core::curl::curl_to_request(&ws_id, &val) {
+                    match zest_core::curl::curl_to_request(&ws_id, &val) {
                         Ok(parsed) => {
                             let method_name = parsed.method.as_str().to_string();
                             let target_url = parsed.url.clone();

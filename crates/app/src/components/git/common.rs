@@ -7,7 +7,7 @@ use gpui::{
 };
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
-use restclient_core::git::GitFileStatus;
+use zest_core::git::GitFileStatus;
 
 pub fn render_status_badge(status: GitFileStatus) -> gpui::AnyElement {
     let color = match status {

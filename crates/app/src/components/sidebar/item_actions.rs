@@ -1,7 +1,7 @@
 use super::request_node::SidebarReqItem;
 use crate::state::{RequestSessionState, WorkspaceState};
 use gpui::{App, AppContext as _, Entity};
-use restclient_core::models::Folder;
+use zest_core::models::Folder;
 
 pub fn delete_request_item(
     ws_entity: &Entity<WorkspaceState>,

@@ -1,6 +1,6 @@
 use gpui::{Context, Task};
-use restclient_core::models::HttpRequestItem;
 use tokio::sync::oneshot;
+use zest_core::models::HttpRequestItem;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RequestTabKind {
@@ -227,7 +227,7 @@ pub fn effective_request_name_str(raw_name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use restclient_core::models::HttpMethod;
+    use zest_core::models::HttpMethod;
 
     #[test]
     fn test_editor_state_initial_and_active_request() {

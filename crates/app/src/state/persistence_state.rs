@@ -1,10 +1,10 @@
 use super::{EnvironmentState, RequestSessionState, WorkspaceDataState};
 use gpui::{Context, Entity, Task};
-use restclient_core::storage::models::{LocalState, RequestFile};
-use restclient_core::storage::{FsEvent, WorkspaceStore, WorkspaceWatcher};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
+use zest_core::storage::models::{LocalState, RequestFile};
+use zest_core::storage::{FsEvent, WorkspaceStore, WorkspaceWatcher};
 
 pub struct PersistenceState {
     pub store: Arc<dyn WorkspaceStore>,
@@ -161,7 +161,7 @@ impl PersistenceState {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<FsEvent>();
         let sup = self.store.suppressed_paths();
         if let Ok(watcher) =
-            restclient_core::storage::start_workspace_watcher(&self.workspace_path, sup, tx)
+            zest_core::storage::start_workspace_watcher(&self.workspace_path, sup, tx)
         {
             self.watcher = Some(watcher);
             let ws_clone = workspace_data.clone();

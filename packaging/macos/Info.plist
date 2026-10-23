@@ -7,17 +7,17 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>RestClient</string>
+    <string>Zest</string>
     <key>CFBundleDisplayName</key>
-    <string>RestClient</string>
+    <string>Zest</string>
     <key>CFBundleIdentifier</key>
-    <string>com.restclient.app</string>
+    <string>com.zest.app</string>
     <key>CFBundleVersion</key>
     <string>__VERSION__</string>
     <key>CFBundleShortVersionString</key>
     <string>__VERSION__</string>
     <key>CFBundleExecutable</key>
-    <string>restclient</string>
+    <string>zest</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>NSHighResolutionCapable</key>

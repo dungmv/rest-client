@@ -13,9 +13,9 @@ use gpui::{
 use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenuItem};
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
-use restclient_core::models::HttpMethod;
-use restclient_core::storage::models::RequestFile;
-use restclient_core::storage::serialize::to_yaml_string;
+use zest_core::models::HttpMethod;
+use zest_core::storage::models::RequestFile;
+use zest_core::storage::serialize::to_yaml_string;
 
 #[derive(Clone, Debug)]
 pub struct SidebarExampleItem {
@@ -198,7 +198,7 @@ pub fn render_request_node(
                                     ws_curl.read(cx).resolve_request_hierarchy(&r_clone);
                                 r_clone.headers = resolved_h;
                                 r_clone.auth = resolved_a;
-                                let curl = restclient_core::curl::request_to_curl(&r_clone, None);
+                                let curl = zest_core::curl::request_to_curl(&r_clone, None);
                                 cx.write_to_clipboard(gpui::ClipboardItem::new_string(curl));
                             }
                         }),

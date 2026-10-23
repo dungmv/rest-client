@@ -1,9 +1,9 @@
 use gpui::{Context, Task};
-use restclient_core::models::Environment;
-use restclient_core::storage::models::EnvironmentFile;
-use restclient_core::storage::WorkspaceStore;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use zest_core::models::Environment;
+use zest_core::storage::models::EnvironmentFile;
+use zest_core::storage::WorkspaceStore;
 
 pub struct EnvironmentState {
     pub store: Arc<dyn WorkspaceStore>,

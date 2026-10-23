@@ -4,13 +4,13 @@ mod tests {
         EnvironmentState, GitActiveModal, GitState, GitTab, ModalState, PersistenceState,
         ScopeSettingsTarget, SettingsTab, SidebarState, WorkspaceDataState,
     };
-    use restclient_core::models::{
+    use std::sync::Arc;
+    use zest_core::models::{
         Auth, Environment, EnvironmentVariable, Folder, HttpMethod, HttpRequestItem, KeyValuePair,
         StoredCookie, Workspace,
     };
-    use restclient_core::storage::models::{EnvironmentFile, WorkspaceMeta};
-    use restclient_core::storage::{FsWorkspaceStore, WorkspaceStore};
-    use std::sync::Arc;
+    use zest_core::storage::models::{EnvironmentFile, WorkspaceMeta};
+    use zest_core::storage::{FsWorkspaceStore, WorkspaceStore};
 
     #[test]
     fn test_git_state_defaults_and_toggle() {
@@ -66,7 +66,7 @@ mod tests {
     #[test]
     fn test_workspace_cookie_jar_persistence_and_removal() {
         let temp_dir = std::env::temp_dir().join(format!(
-            "restclient-test-cookies-{}",
+            "zest-test-cookies-{}",
             uuid::Uuid::new_v4().simple()
         ));
         let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
@@ -330,7 +330,7 @@ mod tests {
         let mut req_file = store.read_request(&rel_path).unwrap();
         req_file
             .examples
-            .push(restclient_core::storage::models::RequestExampleFile {
+            .push(zest_core::storage::models::RequestExampleFile {
                 name: "Success".to_string(),
                 status: 200,
                 headers: Vec::new(),
@@ -338,7 +338,7 @@ mod tests {
             });
         req_file
             .examples
-            .push(restclient_core::storage::models::RequestExampleFile {
+            .push(zest_core::storage::models::RequestExampleFile {
                 name: "Error".to_string(),
                 status: 400,
                 headers: Vec::new(),
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn test_create_and_reload_subfolder() {
         let temp_dir = std::env::temp_dir().join(format!(
-            "restclient-test-subfolder-{}",
+            "zest-test-subfolder-{}",
             uuid::Uuid::new_v4().simple()
         ));
         let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
@@ -423,10 +423,8 @@ mod tests {
 
     #[test]
     fn test_flush_environments() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "restclient_test_flush_env_{}",
-            uuid::Uuid::new_v4()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("zest_test_flush_env_{}", uuid::Uuid::new_v4()));
         let store: Arc<dyn WorkspaceStore> = Arc::new(FsWorkspaceStore::new(&temp_dir));
         let _ = store.init_workspace("Test WS");
 
@@ -589,10 +587,8 @@ mod tests {
 
     #[test]
     fn test_incremental_crud_operations() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "restclient-test-crud-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("zest-test-crud-{}", uuid::Uuid::new_v4().simple()));
         let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
         store.init_workspace("Incremental WS").unwrap();
 

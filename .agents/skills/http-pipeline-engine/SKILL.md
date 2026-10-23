@@ -7,7 +7,7 @@ description: >-
 
 # HTTP Pipeline & Execution Engine Guide
 
-This skill governs the networking pipeline in `restclient-core::http` and the application runner service in `crates/app/src/services/`.
+This skill governs the networking pipeline in `zest-core::http` and the application runner service in `crates/app/src/services/`.
 
 ---
 
@@ -72,7 +72,7 @@ Parent Folder Hierarchy (Inherited Auth, Headers)
 Request Settings (Direct overrides)
 ```
 
-### Variable Interpolation (`restclient_core::interpolation`):
+### Variable Interpolation (`zest_core::interpolation`):
 - Double curly braces `{{variable_name}}` are replaced with resolved values.
 - Dynamic fake variables (`{{$uuid}}`, `{{$timestamp}}`, `{{$randomEmail}}`) are evaluated per execution.
 - Use `VariableInterpolator::interpolate_cow()` to avoid heap allocations when no variables are present.
@@ -93,11 +93,11 @@ Refer to [`docs/specs/03-protocols-graphql-websocket-grpc.md`](docs/specs/03-pro
 
 ```bash
 # 1. Run core HTTP unit tests
-cargo test --package restclient_core --lib http::executor::tests
+cargo test --package zest_core --lib http::executor::tests
 
 # 2. Run runner and service unit tests
-cargo test --package restclient --lib services::http_engine::tests
+cargo test --package zest --lib services::http_engine::tests
 
 # 3. Clippy check
-cargo clippy --package restclient_core --lib -- -D warnings
+cargo clippy --package zest_core --lib -- -D warnings
 ```

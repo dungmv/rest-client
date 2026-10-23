@@ -7,7 +7,7 @@ description: >-
 
 # Interoperability, Importers & Spec Converters Guide
 
-This skill governs data migration and conversion between external formats and RestClient canonical domain models in `restclient-core::importers` and `restclient-core::curl`.
+This skill governs data migration and conversion between external formats and Zest canonical domain models in `zest-core::importers` and `zest-core::curl`.
 
 ---
 
@@ -51,7 +51,7 @@ if let Some((media_type, media_obj)) = content.into_iter().next() {
 
 ---
 
-## 3. cURL Command Parser & Generator (`restclient-core::curl`)
+## 3. cURL Command Parser & Generator (`zest-core::curl`)
 
 ### 3.1 Parser Capabilities
 - Detects cURL commands via `is_curl_command(text)`.
@@ -79,11 +79,11 @@ Refer to [`docs/specs/06-developer-tools-codegen-diff-docs.md`](docs/specs/06-de
 
 ```bash
 # 1. Run OpenAPI and Postman importer tests
-cargo test --package restclient_core --lib importers::tests
+cargo test --package zest_core --lib importers::tests
 
 # 2. Run cURL parser and exporter tests
-cargo test --package restclient_core --lib curl::tests
+cargo test --package zest_core --lib curl::tests
 
 # 3. Clippy check
-cargo clippy --package restclient_core --lib importers curl -- -D warnings
+cargo clippy --package zest_core --lib importers curl -- -D warnings
 ```

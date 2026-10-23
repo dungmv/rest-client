@@ -1,11 +1,11 @@
-# RestClient: High-Performance Desktop REST API Client in Rust
+# Zest: High-Performance Desktop REST API Client in Rust
 
 A fast, lightweight, and Git-friendly desktop REST API client (inspired by Yaak, Insomnia, and Bruno) built in **Rust** using Zed's **GPUI** UI framework and `gpui-component`.
 
 Targeted for **macOS** and **Windows** with real HTTP request execution from the ground up and plain-text filesystem persistence designed for seamless Git collaboration.
 
 <p align="center">
-  <img src="assets/screenshot.png" alt="RestClient Application Screenshot" width="100%">
+  <img src="assets/screenshot.png" alt="Zest Application Screenshot" width="100%">
 </p>
 
 ---
@@ -24,7 +24,7 @@ Targeted for **macOS** and **Windows** with real HTTP request execution from the
 
 ## ⚡ Performance & Resource Comparison
 
-| Metric / Specification | **RestClient** | **Bruno** | **Insomnia** | **Postman** |
+| Metric / Specification | **Zest** | **Bruno** | **Insomnia** | **Postman** |
 |---|:---:|:---:|:---:|:---:|
 | **Architecture & Engine** | **Native Rust + GPUI** | Electron + React | Electron + React | Electron (Chromium + Node) |
 | **Idle RAM Usage** | **~35 – 50 MB** | ~200 – 400 MB | ~450 – 800 MB | ~800 MB – 1.5 GB+ |
@@ -36,8 +36,8 @@ Targeted for **macOS** and **Windows** with real HTTP request execution from the
 | **Git Integration** | **Native In-App GUI** (`Cmd+Shift+G`) | External Git tool | Proprietary Git / Inso CLI | Cloud Team Workspaces |
 
 > [!TIP]
-> **Why is RestClient so lightweight compared to traditional API clients?**
-> - **Zero Electron / Chromium Overhead:** Traditional API clients bundle a full Chromium browser and Node.js runtime, consuming hundreds of megabytes of disk space and gigabytes of RAM. RestClient is compiled directly to native machine code with Zed's GPU-accelerated **GPUI** framework.
+> **Why is Zest so lightweight compared to traditional API clients?**
+> - **Zero Electron / Chromium Overhead:** Traditional API clients bundle a full Chromium browser and Node.js runtime, consuming hundreds of megabytes of disk space and gigabytes of RAM. Zest is compiled directly to native machine code with Zed's GPU-accelerated **GPUI** framework.
 > - **Dual-Bounded Memory Cache:** All responses, parsed trees, and historical states are managed through bounded LRU memory caches with strict capacity limits, preventing memory bloat during heavy workloads.
 > - **Sub-second Cold Start:** With zero JavaScript bundle parsing and zero Chromium initialization, the application opens and is ready to execute requests in under 200 milliseconds.
 
@@ -120,7 +120,7 @@ To prevent noisy diffs and merge conflicts when working in teams:
 The project is structured as a Cargo virtual workspace with clean separation between UI and the storage trait:
 
 ```
-restclient/
+zest/
 ├── crates/
 │   ├── core/                  # Pure business logic, models, executor, storage
 │   │   ├── src/
@@ -181,12 +181,12 @@ restclient/
 
 ### Run Development
 ```bash
-cargo run -p restclient
+cargo run -p zest
 ```
 
 ### Build Optimized Release
 ```bash
-cargo build --release -p restclient
+cargo build --release -p zest
 ```
 
 ### Run Test Suite

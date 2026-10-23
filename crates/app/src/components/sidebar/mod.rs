@@ -30,9 +30,9 @@ use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenuItem
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
-use restclient_core::git::GitStatusResult;
-use restclient_core::models::Folder;
 use std::collections::{HashMap, HashSet};
+use zest_core::git::GitStatusResult;
+use zest_core::models::Folder;
 
 pub struct SidebarRenderContext<'a> {
     pub folders: &'a [Folder],

@@ -1,9 +1,9 @@
 use super::WorkspaceDataState;
 use crate::settings::AppSettings;
 use gpui::Context;
-use restclient_core::models::{Folder, HttpMethod, HttpRequestItem};
-use restclient_core::storage::models::RequestFile;
 use std::path::PathBuf;
+use zest_core::models::{Folder, HttpMethod, HttpRequestItem};
+use zest_core::storage::models::RequestFile;
 
 impl WorkspaceDataState {
     pub fn create_request_internal(&mut self, folder_rel: Option<String>) -> HttpRequestItem {

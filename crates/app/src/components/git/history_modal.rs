@@ -25,8 +25,8 @@ impl GitHistoryModal {
 
 pub fn render_history_view(
     git_clone: Entity<GitState>,
-    history: Vec<restclient_core::git::GitCommitInfo>,
-    selected_commit: Option<restclient_core::git::GitCommitDetail>,
+    history: Vec<zest_core::git::GitCommitInfo>,
+    selected_commit: Option<zest_core::git::GitCommitDetail>,
     view_mode: DiffViewMode,
     mode_entity: Entity<DiffViewMode>,
     expanded_files: HashSet<String>,

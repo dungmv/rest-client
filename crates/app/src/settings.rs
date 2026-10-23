@@ -48,9 +48,9 @@ impl Default for AppSettings {
 impl AppSettings {
     pub fn config_file_path() -> PathBuf {
         if let Some(config_dir) = dirs::config_dir() {
-            config_dir.join("restclient").join("settings.json")
+            config_dir.join("zest").join("settings.json")
         } else {
-            PathBuf::from("./restclient-settings.json")
+            PathBuf::from("./zest-settings.json")
         }
     }
 

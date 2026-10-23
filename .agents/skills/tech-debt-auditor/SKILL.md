@@ -2,7 +2,7 @@
 name: tech-debt-auditor
 description: >-
   Use this skill to audit, diagnose, track, and resolve technical debt, anti-patterns,
-  performance bottlenecks, and memory leaks across restclient-core and restclient-app.
+  performance bottlenecks, and memory leaks across zest-core and zest.
 ---
 
 # Technical Debt Auditor & Resolution Runbook
@@ -42,7 +42,7 @@ When reviewing or writing code, automatically flag and eliminate these anti-patt
 
 ### 3. Unbounded Memory Growth (SL-002)
 - **Rule**: Never store arbitrary historical payloads in unbounded `HashMap<K, V>`.
-- Always wrap memory caches in `restclient_core::cache::LruMemoryCache` with both item count and byte size limits.
+- Always wrap memory caches in `zest_core::cache::LruMemoryCache` with both item count and byte size limits.
 
 ### 4. Blocking the UI Thread (TD-003, CC-004)
 - **Rule**: Never run `std::process::Command`, `std::thread::sleep`, or synchronous network calls inside GPUI update blocks.

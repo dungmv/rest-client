@@ -3,7 +3,7 @@
 ## 1. Bối cảnh & Mục tiêu
 Khi Postman chuyển đổi sang chính sách lưu trữ đám mây bắt buộc (Cloud-only) vào năm 2023 và Insomnia đưa ra yêu cầu đăng nhập tài khoản bắt buộc ở phiên bản 8, hàng triệu kỹ sư trên thế giới đã tìm kiếm giải pháp thay thế mã nguồn mở, lưu trữ cục bộ (Local-first / Git-friendly).
 
-Để RestClient trở thành sự thay thế khả dĩ nhất, rào cản di chuyển dữ liệu (Migration Barrier) phải bằng **0**. Người dùng phải có khả năng:
+Để Zest trở thành sự thay thế khả dĩ nhất, rào cản di chuyển dữ liệu (Migration Barrier) phải bằng **0**. Người dùng phải có khả năng:
 1. Nhập nguyên vẹn Collections, Folders, Requests và Environments từ Postman (v2.0 & v2.1).
 2. Nhập Workspaces từ Insomnia (v4 export).
 3. Nhập từ tài liệu kỹ thuật OpenAPI 3.0 / 3.1 & Swagger 2.0.
@@ -12,7 +12,7 @@ Khi Postman chuyển đổi sang chính sách lưu trữ đám mây bắt buộc
 
 ---
 
-## 2. Kiến trúc Module (`restclient-core`)
+## 2. Kiến trúc Module (`zest-core`)
 
 ```
 crates/core/src/
@@ -96,7 +96,7 @@ Postman v2.1 có cấu trúc lồng nhau dạng đệ quy (`item` có thể là 
 
 ### 3.2 Quy tắc Mapping:
 1. **URL & Variables:**
-   - Postman sử dụng cú pháp `{{variable_name}}` tương thích 100% với RestClient.
+   - Postman sử dụng cú pháp `{{variable_name}}` tương thích 100% với Zest.
    - Trường hợp `url` là String hoặc Object `{ raw: "..." }`, parser tự động chuẩn hóa về String URL và bảng Query KeyValuePair.
 2. **Body:**
    - `mode: "raw"` -> `RequestBody::Json` (nếu Header có `application/json`) hoặc `RequestBody::Raw`.
@@ -117,7 +117,7 @@ Postman v2.1 có cấu trúc lồng nhau dạng đệ quy (`item` có thể là 
 
 ### 4.1 Quy tắc sinh cây Request:
 1. **Phân nhóm theo Tags:**
-   - Mỗi `tag` trong OpenAPI spec được tạo thành một `Folder` tương ứng trong RestClient.
+   - Mỗi `tag` trong OpenAPI spec được tạo thành một `Folder` tương ứng trong Zest.
    - Các endpoints không có tag sẽ được đưa vào thư mục `General` hoặc root level.
 2. **Method & URL Path:**
    - Lấy URL từ `servers[0].url` (chuyển thành biến môi trường `{{base_url}}`).
@@ -138,7 +138,7 @@ Postman v2.1 có cấu trúc lồng nhau dạng đệ quy (`item` có thể là 
    - Người dùng chỉ cần sao chép câu lệnh cURL từ bất kỳ đâu (Chrome DevTools, Postman, Terminal, Docs) và nhấn `Ctrl + V` vào ô nhập URL.
    - Hệ thống tự động nhận diện tiền tố `curl` / `curl.exe` / `$ curl` qua `is_curl_command`.
    - Toàn bộ method, url, query parameters, headers, auth và body được trích xuất ngay lập tức, thanh URL hiển thị URL sạch, các tab được cập nhật đồng bộ và Toast thông báo hiển thị kết quả.
-2. **Kéo-Thả (Drag & Drop):** Người dùng có thể kéo trực tiếp file `.json` (Postman/OpenAPI) hoặc `.yaml` vào cửa sổ RestClient để hiển thị dialog preview import.
+2. **Kéo-Thả (Drag & Drop):** Người dùng có thể kéo trực tiếp file `.json` (Postman/OpenAPI) hoặc `.yaml` vào cửa sổ Zest để hiển thị dialog preview import.
 3. **Import Modal (`Ctrl + I` hoặc Menu `⋮` -> Import):**
    - Hỗ trợ 3 tab:
      - **File:** Chọn file từ ổ đĩa.

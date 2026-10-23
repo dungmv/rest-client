@@ -1,7 +1,7 @@
 use gpui::actions;
 
 actions!(
-    restclient,
+    zest,
     [
         SendRequest,
         ToggleCommandPalette,

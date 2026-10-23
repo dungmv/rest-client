@@ -5,7 +5,7 @@ use crate::state::{
 };
 use gpui::{div, AnyElement, Entity, IntoElement, ParentElement, Styled};
 use gpui_component::scroll::ScrollableElement as _;
-use restclient_core::models::KeyValuePair;
+use zest_core::models::KeyValuePair;
 
 pub fn render_form_editor(
     req_id_str: &str,

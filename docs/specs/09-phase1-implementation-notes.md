@@ -8,7 +8,7 @@
 
 ## 1. Tổng Quan & Mục Tiêu
 
-Giai đoạn 1 mang lại khả năng tự động hóa và lập trình linh hoạt cho **RestClient**, đạt được mức độ tương thích cao với **Postman** (`pm.*`) và **Insomnia**:
+Giai đoạn 1 mang lại khả năng tự động hóa và lập trình linh hoạt cho **Zest**, đạt được mức độ tương thích cao với **Postman** (`pm.*`) và **Insomnia**:
 1. **Pre-request Scripts:** Chạy mã JavaScript trước khi gửi request để thêm header động, sinh HMAC signature, tính toán timestamp hoặc chuẩn bị payload.
 2. **Post-response Scripts (Tests & Assertions):** Kiểm tra tính hợp lệ của HTTP Response (Status code, Headers, JSON Schema, nội dung phản hồi).
 3. **Request Chaining:** Tự động trích xuất token/dữ liệu từ response và lưu ngược vào Active Environment để các request tiếp theo tự động sử dụng.
@@ -29,7 +29,7 @@ Thay vì các engine nặng nề hoặc runtime hạn chế, dự án quyết đ
 
 ## 3. Kiến Trúc API JavaScript (`client.*` & `pm.*`)
 
-RestClient cung cấp đầy đủ API tương thích cả hai chuẩn `client.*` (chuẩn RestClient) và `pm.*` (chuẩn Postman):
+Zest cung cấp đầy đủ API tương thích cả hai chuẩn `client.*` (chuẩn Zest) và `pm.*` (chuẩn Postman):
 
 ### 3.1. Quản Lý Biến Môi Trường (`client.environment` & `client.variables`)
 - `client.environment.get(key: string): string | null`: Lấy giá trị biến môi trường.
@@ -85,7 +85,7 @@ Hệ thống tự động phân giải các placeholder dạng `{{$macro}}` trư
 
 ## 5. Quy Trình Request Chaining Hoàn Chỉnh
 
-RestClient tách rời tầng giao diện GPUI và tầng mạng bằng `HttpEngine` độc lập cùng bộ điều phối `Runner`:
+Zest tách rời tầng giao diện GPUI và tầng mạng bằng `HttpEngine` độc lập cùng bộ điều phối `Runner`:
 
 ```mermaid
 sequenceDiagram

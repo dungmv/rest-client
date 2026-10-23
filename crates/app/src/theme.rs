@@ -1,6 +1,6 @@
 use gpui::{Hsla, Rgba, WindowAppearance};
-use restclient_core::models::HttpMethod;
 use serde::{Deserialize, Serialize};
+use zest_core::models::HttpMethod;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]

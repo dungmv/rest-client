@@ -1,14 +1,12 @@
 use crate::settings::AppSettings;
 use gpui::Context;
-use restclient_core::http::ReqwestExecutor;
-use restclient_core::models::{
-    Auth, Folder, HttpRequestItem, KeyValuePair, StoredCookie, Workspace,
-};
-use restclient_core::storage::models::{FolderNode, WorkspaceMeta};
-use restclient_core::storage::{FsWorkspaceStore, WorkspaceStore};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use zest_core::http::ReqwestExecutor;
+use zest_core::models::{Auth, Folder, HttpRequestItem, KeyValuePair, StoredCookie, Workspace};
+use zest_core::storage::models::{FolderNode, WorkspaceMeta};
+use zest_core::storage::{FsWorkspaceStore, WorkspaceStore};
 
 pub struct WorkspaceDataState {
     pub store: Arc<dyn WorkspaceStore>,
@@ -27,15 +25,25 @@ pub struct WorkspaceDataState {
     pub recent_workspaces: Vec<String>,
 }
 
+fn default_workspace_dir() -> PathBuf {
+    dirs::document_dir()
+        .map(|d| d.join("zest"))
+        .or_else(|| dirs::home_dir().map(|h| h.join("Documents").join("zest")))
+        .unwrap_or_else(|| PathBuf::from("./zest"))
+}
+
 impl WorkspaceDataState {
     pub fn new() -> Self {
         let mut settings = AppSettings::load();
         let ws_dir = if let Some(curr) = &settings.current_workspace {
-            PathBuf::from(curr)
+            let path = PathBuf::from(curr);
+            if path.exists() {
+                path
+            } else {
+                default_workspace_dir()
+            }
         } else {
-            dirs::data_local_dir()
-                .map(|d| d.join("restclient").join("workspaces").join("my-workspace"))
-                .unwrap_or_else(|| PathBuf::from("./my-workspace"))
+            default_workspace_dir()
         };
 
         let default_name = ws_dir
@@ -63,7 +71,7 @@ impl WorkspaceDataState {
             scratch_request: HttpRequestItem::new(
                 "scratch",
                 "Untitled Request",
-                restclient_core::models::HttpMethod::Get,
+                zest_core::models::HttpMethod::Get,
                 "",
             ),
             parse_errors: HashMap::new(),
@@ -90,7 +98,7 @@ impl WorkspaceDataState {
             scratch_request: HttpRequestItem::new(
                 "scratch",
                 "Untitled Request",
-                restclient_core::models::HttpMethod::Get,
+                zest_core::models::HttpMethod::Get,
                 "",
             ),
             parse_errors: HashMap::new(),
@@ -133,11 +141,11 @@ impl WorkspaceDataState {
 
     pub fn execute_import_current_workspace(
         &mut self,
-        result: restclient_core::importers::ImportResult,
-        options: restclient_core::importers::ImportOptions,
+        result: zest_core::importers::ImportResult,
+        options: zest_core::importers::ImportOptions,
         cx: &mut Context<Self>,
-    ) -> anyhow::Result<restclient_core::importers::ImportSummary> {
-        let summary = restclient_core::importers::apply_import_to_workspace(
+    ) -> anyhow::Result<zest_core::importers::ImportSummary> {
+        let summary = zest_core::importers::apply_import_to_workspace(
             self.store.as_ref(),
             &result,
             &options,
@@ -151,17 +159,14 @@ impl WorkspaceDataState {
         &mut self,
         target_dir: PathBuf,
         workspace_name: &str,
-        result: restclient_core::importers::ImportResult,
-        options: restclient_core::importers::ImportOptions,
+        result: zest_core::importers::ImportResult,
+        options: zest_core::importers::ImportOptions,
         cx: &mut Context<Self>,
-    ) -> anyhow::Result<restclient_core::importers::ImportSummary> {
+    ) -> anyhow::Result<zest_core::importers::ImportSummary> {
         let new_store = Arc::new(FsWorkspaceStore::new(&target_dir));
         new_store.init_workspace(workspace_name)?;
-        let summary = restclient_core::importers::apply_import_to_workspace(
-            new_store.as_ref(),
-            &result,
-            &options,
-        )?;
+        let summary =
+            zest_core::importers::apply_import_to_workspace(new_store.as_ref(), &result, &options)?;
         self.open_workspace(target_dir, cx);
         Ok(summary)
     }
@@ -376,7 +381,7 @@ impl WorkspaceDataState {
             .map(|f| (f.headers.as_slice(), &f.auth))
             .collect();
 
-        restclient_core::http::resolve_hierarchical_headers_and_auth(
+        zest_core::http::resolve_hierarchical_headers_and_auth(
             ws_headers,
             ws_auth,
             &folder_chain,

@@ -4,7 +4,7 @@
 - **Khủng hoảng Cloud Lock-in của Postman/Insomnia:**
   - Postman bắt buộc lưu trữ dữ liệu API lên server của Postman. Nhiều công ty tài chính, y tế, an ninh mạng **nghiêm cấm** nhân viên sử dụng Postman vì lo ngại rò rỉ thông tin nội bộ (API Keys, Production Endpoints, PII Data).
   - Insomnia v8 yêu cầu login khiến nhiều tổ chức phải đóng băng phiên bản v7 cũ.
-- **Giải pháp của RestClient:**
+- **Giải pháp của Zest:**
   - Sử dụng chính hạ tầng Git sẵn có của tổ chức (GitHub, GitLab, Bitbucket, hoặc Server nội bộ).
   - Mọi Workspace là một Git repository cục bộ.
   - Mỗi request là một file plain-text JSON có key sắp xếp ổn định (Stable Key Order), giúp `git diff` đọc được từng dòng, review pull request như code thông thường.
@@ -16,7 +16,7 @@
 ```
 my-api-project/
 ├── .git/
-├── .restclient/
+├── .zest/
 │   ├── workspace.json          # Metadata của workspace
 │   ├── environments/
 │   │   ├── local.json          # Biến môi trường local (commit vào git)
@@ -37,13 +37,13 @@ my-api-project/
 - Các biến thông thường (URL, non-sensitive headers) được lưu vào `staging.json` và commit lên Git để chia sẻ cho đồng đội.
 - Các biến bí mật (Password, Secret Key, Private Token) được gắn cờ `is_secret: true`:
   - Trong UI: Luôn hiển thị dưới dạng dấu chấm `••••••••`.
-  - Trên đĩa: Lưu riêng vào file `*.secret.json`. RestClient tự động thêm `*.secret.json` vào `.gitignore` khi khởi tạo workspace, ngăn chặn 100% nguy cơ vô tình commit lộ API key lên GitHub!
+  - Trên đĩa: Lưu riêng vào file `*.secret.json`. Zest tự động thêm `*.secret.json` vào `.gitignore` khi khởi tạo workspace, ngăn chặn 100% nguy cơ vô tình commit lộ API key lên GitHub!
 
 ---
 
 ## 3. Tính năng Git Tích Hợp trong Giao diện UI
 
-Thay vì bắt người dùng phải mở cửa sổ Terminal rời để gõ lệnh `git`, RestClient tích hợp một Git Drawer chuyên dụng:
+Thay vì bắt người dùng phải mở cửa sổ Terminal rời để gõ lệnh `git`, Zest tích hợp một Git Drawer chuyên dụng:
 
 1. **Thanh trạng thái Branch & Dirty Indicator:**
    - Góc trái titlebar và footer hiển thị branch hiện tại (ví dụ: `⎇ feature/auth-v2`).

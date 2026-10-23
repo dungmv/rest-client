@@ -650,7 +650,7 @@ mod tests {
 
         let ctx_data = PreRequestContext {
             env_vars,
-            request_headers: vec![KeyValuePair::new("User-Agent", "RestClient")],
+            request_headers: vec![KeyValuePair::new("User-Agent", "Zest")],
             request_body_json: Some(r#"{"count": 1}"#.to_string()),
         };
 

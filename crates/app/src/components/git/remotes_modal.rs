@@ -22,7 +22,7 @@ impl GitRemotesModal {
 
 pub fn render_remotes_view(
     git_clone: Entity<GitState>,
-    remotes: Vec<restclient_core::git::GitRemote>,
+    remotes: Vec<zest_core::git::GitRemote>,
     remote_name_input: Entity<InputState>,
     remote_url_input: Entity<InputState>,
     is_loading: bool,

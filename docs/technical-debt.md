@@ -1,6 +1,6 @@
 # Danh mục Nợ Kỹ Thuật Tập Trung (Technical Debt Registry)
 
-> **Mục đích:** Tài liệu duy nhất và chính thức ghi nhận toàn diện các khoản nợ kỹ thuật (Technical Debt), các anti-pattern, điểm nghẽn kiến trúc và vấn đề hiệu năng/bộ nhớ tồn đọng trong codebase `restclient` (`restclient-core` và `restclient-app`), kèm mức độ ưu tiên và phương án khắc phục chi tiết. Mọi cập nhật về nợ kỹ thuật bắt buộc phải ghi nhận vào tài liệu này.
+> **Mục đích:** Tài liệu duy nhất và chính thức ghi nhận toàn diện các khoản nợ kỹ thuật (Technical Debt), các anti-pattern, điểm nghẽn kiến trúc và vấn đề hiệu năng/bộ nhớ tồn đọng trong codebase `zest` (`zest-core` và `zest`), kèm mức độ ưu tiên và phương án khắc phục chi tiết. Mọi cập nhật về nợ kỹ thuật bắt buộc phải ghi nhận vào tài liệu này.
 
 ---
 

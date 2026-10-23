@@ -538,7 +538,7 @@ mod tests {
     #[test]
     fn test_suppress_path_worker_lifecycle() {
         let temp_dir = std::env::temp_dir().join(format!(
-            "restclient-suppress-test-{}",
+            "zest-suppress-test-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()

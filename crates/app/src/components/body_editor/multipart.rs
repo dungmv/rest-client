@@ -13,7 +13,7 @@ use gpui::{
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
-use restclient_core::models::MultipartItem;
+use zest_core::models::MultipartItem;
 
 pub struct MultipartContext<'a> {
     pub req_id_str: &'a str,

@@ -9,7 +9,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let _ = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_stage_file(&ws_path, &p) })
+                .spawn(async move { zest_core::git::git_stage_file(&ws_path, &p) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
@@ -26,7 +26,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let _ = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_unstage_file(&ws_path, &p) })
+                .spawn(async move { zest_core::git::git_unstage_file(&ws_path, &p) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
@@ -42,7 +42,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let _ = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_stage_all(&ws_path) })
+                .spawn(async move { zest_core::git::git_stage_all(&ws_path) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
@@ -58,7 +58,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let _ = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_unstage_all(&ws_path) })
+                .spawn(async move { zest_core::git::git_unstage_all(&ws_path) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
@@ -127,7 +127,7 @@ impl GitState {
                 .background_executor()
                 .spawn(async move {
                     let str_paths: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
-                    restclient_core::git::git_stage_files(&ws_path, &str_paths)
+                    zest_core::git::git_stage_files(&ws_path, &str_paths)
                 })
                 .await;
             if let Some(this) = this.upgrade() {
@@ -151,7 +151,7 @@ impl GitState {
                 .background_executor()
                 .spawn(async move {
                     let str_paths: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
-                    restclient_core::git::git_unstage_files(&ws_path, &str_paths)
+                    zest_core::git::git_unstage_files(&ws_path, &str_paths)
                 })
                 .await;
             if let Some(this) = this.upgrade() {
@@ -170,7 +170,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let _ = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_discard_file(&ws_path, &p_task) })
+                .spawn(async move { zest_core::git::git_discard_file(&ws_path, &p_task) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
@@ -200,7 +200,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let res = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_commit(&ws_path, &msg) })
+                .spawn(async move { zest_core::git::git_commit(&ws_path, &msg) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
@@ -244,7 +244,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let res = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_checkout(&ws_path, &b_task) })
+                .spawn(async move { zest_core::git::git_checkout(&ws_path, &b_task) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
@@ -298,7 +298,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let res = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_create_branch(&ws_path, &n_task) })
+                .spawn(async move { zest_core::git::git_create_branch(&ws_path, &n_task) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
@@ -333,7 +333,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let res = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_pull(&ws_path) })
+                .spawn(async move { zest_core::git::git_pull(&ws_path) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
@@ -392,7 +392,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let res = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_push(&ws_path) })
+                .spawn(async move { zest_core::git::git_push(&ws_path) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {
@@ -445,7 +445,7 @@ impl GitState {
         cx.spawn(async move |this, cx| {
             let res = cx
                 .background_executor()
-                .spawn(async move { restclient_core::git::git_init(&ws_path) })
+                .spawn(async move { zest_core::git::git_init(&ws_path) })
                 .await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |git, cx| {

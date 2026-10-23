@@ -1,11 +1,11 @@
 use gpui::Context;
-use restclient_core::cache::ResponseCache;
-use restclient_core::models::{
+use std::sync::Arc;
+use zest_core::cache::ResponseCache;
+use zest_core::models::{
     ConsoleLogEntry, ConsoleLogLevel, ConsoleLogSource, HttpResponseRecord, TestResult,
 };
-use restclient_core::storage::models::RequestExampleFile;
-use restclient_core::storage::WorkspaceStore;
-use std::sync::Arc;
+use zest_core::storage::models::RequestExampleFile;
+use zest_core::storage::WorkspaceStore;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CachedResponseFormat {
@@ -178,8 +178,7 @@ impl ResponseState {
             .collect();
         let body = example.body.as_deref().unwrap_or("").as_bytes().to_vec();
         let size_bytes = body.len();
-        let status_text =
-            restclient_core::models::status_code_to_reason(example.status).to_string();
+        let status_text = zest_core::models::status_code_to_reason(example.status).to_string();
         let record = HttpResponseRecord {
             id: format!("example-{}", example.name),
             request_id: String::new(),
@@ -413,7 +412,7 @@ mod tests {
             headers: vec![("content-type".to_string(), "application/json".to_string())],
             cookies: vec![],
             body: b"{\"a\":1}".to_vec(),
-            timing: restclient_core::models::TimingBreakdown::default(),
+            timing: zest_core::models::TimingBreakdown::default(),
             request_sent: None,
             test_results: vec![],
             console_logs: vec![],
@@ -513,7 +512,7 @@ mod tests {
             headers: vec![("content-type".to_string(), "application/json".to_string())],
             cookies: vec![],
             body: json_body.into_bytes(),
-            timing: restclient_core::models::TimingBreakdown::default(),
+            timing: zest_core::models::TimingBreakdown::default(),
             request_sent: None,
             test_results: vec![],
             console_logs: vec![],
@@ -541,26 +540,26 @@ mod tests {
     #[test]
     fn test_load_for_request_from_cache() {
         let temp = tempfile::tempdir().unwrap();
-        let store = restclient_core::storage::FsWorkspaceStore::new(temp.path());
+        let store = zest_core::storage::FsWorkspaceStore::new(temp.path());
         store.init_workspace("Test WS").unwrap();
         let (_, rel_path) = store
             .create_request(
                 None,
                 "Login",
-                restclient_core::models::HttpMethod::Post,
+                zest_core::models::HttpMethod::Post,
                 "http://localhost:8000/login",
             )
             .unwrap();
 
-        let loc_file = restclient_core::storage::models::LocFile {
+        let loc_file = zest_core::storage::models::LocFile {
             sent_at: "2026-10-15T12:00:00Z".to_string(),
-            request: restclient_core::storage::models::LocRequestInfo {
-                method: restclient_core::models::HttpMethod::Post,
+            request: zest_core::storage::models::LocRequestInfo {
+                method: zest_core::models::HttpMethod::Post,
                 url: "http://localhost:8000/login".to_string(),
                 headers: vec![],
                 body: Some(r#"{"user":"alice"}"#.to_string()),
             },
-            response: restclient_core::storage::models::LocResponseInfo {
+            response: zest_core::storage::models::LocResponseInfo {
                 status: 200,
                 duration_ms: 42,
                 size: 15,
@@ -651,7 +650,7 @@ mod tests {
     #[test]
     fn test_view_example_preserves_http_status_without_name() {
         let mut state = ResponseState::new();
-        let ex = restclient_core::storage::models::RequestExampleFile {
+        let ex = zest_core::storage::models::RequestExampleFile {
             name: "Success 200".to_string(),
             status: 200,
             headers: vec![],

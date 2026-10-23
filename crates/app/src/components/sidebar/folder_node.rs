@@ -13,7 +13,7 @@ use gpui::{
 use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _};
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
-use restclient_core::models::Folder;
+use zest_core::models::Folder;
 
 pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option<AnyElement> {
     if !folder_has_matches(&folder.id, ctx.folders, ctx.requests, ctx.query) {

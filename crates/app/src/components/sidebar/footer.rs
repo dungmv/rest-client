@@ -9,7 +9,7 @@ use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
-use restclient_core::git::GitStatusResult;
+use zest_core::git::GitStatusResult;
 
 pub fn render_sidebar_footer(
     git_branch: &str,

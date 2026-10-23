@@ -10,7 +10,7 @@ use gpui_component::menu::{ContextMenuExt as _, PopupMenuItem};
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
-use restclient_core::models::{Environment, EnvironmentVariable};
+use zest_core::models::{Environment, EnvironmentVariable};
 
 #[derive(IntoElement)]
 pub struct EnvironmentModal {

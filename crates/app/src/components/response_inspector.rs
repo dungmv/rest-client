@@ -15,8 +15,8 @@ use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::text::TextView;
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
-use restclient_core::models::HttpResponseRecord;
-use restclient_core::storage::models::{RequestExampleFile, RequestFile, RequestKvItem};
+use zest_core::models::HttpResponseRecord;
+use zest_core::storage::models::{RequestExampleFile, RequestFile, RequestKvItem};
 
 #[derive(IntoElement)]
 pub struct ResponseInspector {
@@ -564,7 +564,7 @@ impl RenderOnce for ResponseInspector {
                                 let rs_wrap = resp_state_clone.clone();
                                 let resp_ed = self.response_editor.clone();
                                 let ws_s = self.workspace_state.clone();
-                                let c_resp = current_resp.clone().unwrap_or_else(|| std::sync::Arc::new(restclient_core::models::HttpResponseRecord::default()));
+                                let c_resp = current_resp.clone().unwrap_or_else(|| std::sync::Arc::new(zest_core::models::HttpResponseRecord::default()));
                                 let req_id_opt = active_id.clone();
                                 let wrap_lines = resp_s.wrap_lines;
 
