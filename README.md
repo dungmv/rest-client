@@ -17,7 +17,7 @@ Targeted for **macOS** and **Windows** with real HTTP request execution from the
 - 🐙 **Built-in Git Source Control GUI:** Staging, diff viewer, commit history, branch switcher, and remote sync (`push`/`pull`/`fetch`) right inside the app (`Cmd+Shift+G`).
 - 📥 **Universal Importers:** Direct support for OpenAPI 3.0/3.1 (JSON & YAML), Postman Collection v2.1, and bidirectional cURL CLI command translation (`Cmd+I`).
 - 🖱️ **Fluid Drag-and-Drop Organization:** Drag requests and folders with live dropzone indicators, folder nesting, and root un-nesting.
-- 📜 **QuickJS Scripting Sandbox:** Embedded ECMAScript engine with `pm.*` Postman-compatible APIs, crypto helpers, Faker dynamic variables (`{{$guid}}`, `{{$randomEmail}}`), and test assertion runners.
+- 📜 **QuickJS Scripting Sandbox:** Embedded ECMAScript engine with `z.*` APIs, crypto helpers, Faker dynamic variables (`{{$guid}}`, `{{$randomEmail}}`), and test assertion runners.
 - 🔒 **Zero-Leak Secret Separation:** Environment files only commit variable definitions; actual secret values remain strictly local in `.local/secrets/`.
 
 ---

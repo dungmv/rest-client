@@ -21,7 +21,7 @@ zest/
 │   │   │   ├── cache/         # Bounded LRU memory cache infrastructure
 │   │   │   ├── http/          # Reqwest-based HTTP executor, connection pool, cookies
 │   │   │   ├── storage/       # Local-first YAML storage, watcher, slugification
-│   │   │   ├── scripting/     # QuickJS (rquickjs) sandbox, pm.* API, fake vars
+│   │   │   ├── scripting/     # QuickJS (rquickjs) sandbox, z.* API, fake vars
 │   │   │   ├── git/           # Git VCS wrapper for local workspace versioning
 │   │   │   ├── curl/          # cURL command parser & exporter
 │   │   │   ├── importers/     # OpenAPI 3.0/3.1 & Postman collection importers
@@ -135,7 +135,7 @@ Specialized runbooks and checklists are located in `.agents/skills/`:
 | :--- | :--- |
 | [`gpui-architecture`](.agents/skills/gpui-architecture/SKILL.md) | Multi-entity state, event-driven subscriptions, GPUI input handles, component modularization |
 | [`http-pipeline-engine`](.agents/skills/http-pipeline-engine/SKILL.md) | Request executor, connection pooling, variable interpolation, auth resolution, multi-protocol specs |
-| [`scripting-automation`](.agents/skills/scripting-automation/SKILL.md) | QuickJS (`rquickjs`) engine, `pm.*` API, pre/post scripts, assertions, dynamic fake variables |
+| [`scripting-automation`](.agents/skills/scripting-automation/SKILL.md) | QuickJS (`rquickjs`) engine, `z.*` API, pre/post scripts, assertions, dynamic fake variables |
 | [`local-first-storage-vcs`](.agents/skills/local-first-storage-vcs/SKILL.md) | Local-first YAML persistence, file watcher suppression, secrets splitting, async Git operations |
 | [`interop-spec-converters`](.agents/skills/interop-spec-converters/SKILL.md) | OpenAPI 3.0/3.1, Postman v2.1, Insomnia v4, cURL parsers, cycle-safe resolvers, code generators |
 | [`tech-debt-auditor`](.agents/skills/tech-debt-auditor/SKILL.md) | Debt registry auditing, anti-pattern checklists, memory leak prevention, async conversions |

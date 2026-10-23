@@ -119,7 +119,7 @@ impl RenderOnce for TestResultsPanel {
                                     div()
                                         .text_color(t.text_secondary)
                                         .text_xs()
-                                        .child("Add tests in the \"Tests\" tab of the request editor using client.test(...)"),
+                                        .child("Add tests in the \"Tests\" tab of the request editor using z.test(...)"),
                                 )
                         } else {
                             div()

@@ -983,10 +983,10 @@ mod tests {
             req.script.as_ref().unwrap().pre_request.as_deref(),
             Some("console.log(1);")
         );
-        req.set_test_script("pm.test('ok');".to_string());
+        req.set_test_script("z.test('ok');".to_string());
         assert_eq!(
             req.script.as_ref().unwrap().post_response.as_deref(),
-            Some("pm.test('ok');")
+            Some("z.test('ok');")
         );
     }
 }

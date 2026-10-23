@@ -107,10 +107,7 @@ impl ScriptSandbox {
                 .map_err(|e| format!("{:?}", e))?;
 
             ctx.globals()
-                .set("client", client.clone())
-                .map_err(|e| format!("{:?}", e))?;
-            ctx.globals()
-                .set("pm", client)
+                .set("z", client)
                 .map_err(|e| format!("{:?}", e))?;
 
             inject_console(&ctx, console_entries.clone(), ConsoleLogSource::PreRequest)
@@ -204,7 +201,7 @@ impl ScriptSandbox {
                 .set("crypto", crypto_obj)
                 .map_err(|e| format!("{:?}", e))?;
 
-            // client.test(name, callback)
+            // z.test(name, callback)
             let tr_store = test_results.clone();
             let test_fn = Function::new(
                 ctx.clone(),
@@ -234,7 +231,7 @@ impl ScriptSandbox {
                 .set("test", test_fn)
                 .map_err(|e| format!("{:?}", e))?;
 
-            // client.assert(condition, msg?)
+            // z.assert(condition, msg?)
             let assert_fn = Function::new(
                 ctx.clone(),
                 |ctx: rquickjs::Ctx<'_>,
@@ -256,10 +253,7 @@ impl ScriptSandbox {
                 .map_err(|e| format!("{:?}", e))?;
 
             ctx.globals()
-                .set("client", client.clone())
-                .map_err(|e| format!("{:?}", e))?;
-            ctx.globals()
-                .set("pm", client)
+                .set("z", client)
                 .map_err(|e| format!("{:?}", e))?;
 
             inject_console(
@@ -314,14 +308,14 @@ fn build_environment_object<'js>(
 
     let obj = Object::new(ctx.clone())?;
 
-    // client.environment.get(key)
+    // z.environment.get(key)
     let map_for_get = map_cell.clone();
     let get_fn = Function::new(ctx.clone(), move |key: String| -> Option<String> {
         map_for_get.borrow().get(&key).cloned()
     })?;
     obj.set("get", get_fn)?;
 
-    // client.environment.set(key, val)
+    // z.environment.set(key, val)
     let mut_for_set = mutations.clone();
     let map_for_set = map_cell.clone();
     let set_fn = Function::new(
@@ -337,7 +331,7 @@ fn build_environment_object<'js>(
     )?;
     obj.set("set", set_fn)?;
 
-    // client.environment.unset(key)
+    // z.environment.unset(key)
     let mut_for_unset = mutations;
     let map_for_unset = map_cell;
     let unset_fn = Function::new(ctx.clone(), move |key: String| {
@@ -395,7 +389,7 @@ fn build_request_object<'js>(
 ) -> rquickjs::Result<Object<'js>> {
     let req_obj = Object::new(ctx.clone())?;
 
-    // client.request.headers.add(k, v)
+    // z.request.headers.add(k, v)
     let headers_obj = Object::new(ctx.clone())?;
     let hm_clone = header_mutations;
     let add_fn = Function::new(ctx.clone(), move |name: String, val: String| {
@@ -404,7 +398,7 @@ fn build_request_object<'js>(
     headers_obj.set("add", add_fn)?;
     req_obj.set("headers", headers_obj)?;
 
-    // client.request.body.json() and setJson(obj)
+    // z.request.body.json() and setJson(obj)
     let body_obj = Object::new(ctx.clone())?;
     let json_content = req_ctx.request_body_json.clone();
     let body_override_clone = body_override.clone();
@@ -471,7 +465,7 @@ fn build_response_object<'js>(
     let body_str = resp_ctx.response_body.clone();
     let body_clone_for_json = body_str.clone();
 
-    // client.response.json()
+    // z.response.json()
     let json_fn = Function::new(
         ctx.clone(),
         move |ctx: rquickjs::Ctx<'js>| -> rquickjs::Result<Value<'js>> {
@@ -482,7 +476,7 @@ fn build_response_object<'js>(
     )?;
     resp_obj.set("json", json_fn)?;
 
-    // client.response.text()
+    // z.response.text()
     let text_fn = Function::new(ctx.clone(), move || -> String { body_str.clone() })?;
     resp_obj.set("text", text_fn)?;
 
@@ -656,23 +650,23 @@ mod tests {
 
         let script = r#"
             // Read env
-            const t = client.environment.get("token");
-            client.assert(t === "old_token", "Token should match");
+            const t = z.environment.get("token");
+            z.assert(t === "old_token", "Token should match");
 
             // Mutate env
-            client.environment.set("token", "new_token_123");
-            client.environment.set("computed", 42);
+            z.environment.set("token", "new_token_123");
+            z.environment.set("computed", 42);
 
             // Add dynamic header
-            client.request.headers.add("X-Custom-Header", "Value123");
+            z.request.headers.add("X-Custom-Header", "Value123");
 
             // Mutate body
-            const body = client.request.body.json();
+            const body = z.request.body.json();
             body.count = body.count + 5;
             body.injected = true;
-            client.request.body.setJson(body);
+            z.request.body.setJson(body);
 
-            console.log("Pre-request finished with token:", client.environment.get("token"));
+            console.log("Pre-request finished with token:", z.environment.get("token"));
         "#;
 
         let output = ScriptSandbox::run_pre_request(script, ctx_data);
@@ -721,22 +715,22 @@ mod tests {
 
         let script = r#"
             // Test assertions
-            client.test("Status code is 200", () => {
-                client.assert(client.response.status === 200);
+            z.test("Status code is 200", () => {
+                z.assert(z.response.status === 200);
             });
 
-            client.test("Response time is under 500ms", () => {
-                client.assert(client.response.time < 500);
+            z.test("Response time is under 500ms", () => {
+                z.assert(z.response.time < 500);
             });
 
-            client.test("Status is active", () => {
-                const j = client.response.json();
-                client.assert(j.status === "active", "Status must be active");
+            z.test("Status is active", () => {
+                const j = z.response.json();
+                z.assert(j.status === "active", "Status must be active");
             });
 
             // Request chaining: extract access token to environment
-            const data = client.response.json();
-            client.environment.set("access_token", data.access_token);
+            const data = z.response.json();
+            z.environment.set("access_token", data.access_token);
         "#;
 
         let output = ScriptSandbox::run_post_response(script, ctx_data);
@@ -771,8 +765,8 @@ mod tests {
         };
 
         let script = r#"
-            client.test("Should fail assertion", () => {
-                client.assert(client.response.status === 200, "Expected 200 OK");
+            z.test("Should fail assertion", () => {
+                z.assert(z.response.status === 200, "Expected 200 OK");
             });
         "#;
 
@@ -790,16 +784,16 @@ mod tests {
     fn test_crypto_utilities() {
         let ctx_data = PreRequestContext::default();
         let script = r#"
-            const sig = client.crypto.hmacSha256("my_secret", "payload_data");
-            client.environment.set("hmac", sig);
+            const sig = z.crypto.hmacSha256("my_secret", "payload_data");
+            z.environment.set("hmac", sig);
 
-            const md5 = client.crypto.md5("hello world");
-            client.environment.set("md5", md5);
+            const md5 = z.crypto.md5("hello world");
+            z.environment.set("md5", md5);
 
-            const b64 = client.crypto.base64Encode("Antigravity Client");
-            client.environment.set("b64", b64);
-            const dec = client.crypto.base64Decode(b64);
-            client.assert(dec === "Antigravity Client");
+            const b64 = z.crypto.base64Encode("Antigravity Client");
+            z.environment.set("b64", b64);
+            const dec = z.crypto.base64Decode(b64);
+            z.assert(dec === "Antigravity Client");
         "#;
 
         let output = ScriptSandbox::run_pre_request(script, ctx_data);
@@ -827,17 +821,17 @@ mod tests {
     }
 
     #[test]
-    fn test_pm_alias() {
+    fn test_z_primary() {
         let ctx_data = PreRequestContext::default();
         let script = r#"
-            pm.environment.set("from_pm", "success");
+            z.environment.set("from_z", "success");
         "#;
 
         let output = ScriptSandbox::run_pre_request(script, ctx_data);
         assert!(output.error.is_none());
         assert_eq!(
             output.env_mutations[0],
-            ("from_pm".to_string(), Some("success".to_string()))
+            ("from_z".to_string(), Some("success".to_string()))
         );
     }
 

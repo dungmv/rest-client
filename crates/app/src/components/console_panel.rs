@@ -1,4 +1,4 @@
-﻿use crate::state::{ConsoleFilter, ResponseState};
+use crate::state::{ConsoleFilter, ResponseState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -352,8 +352,8 @@ impl RenderOnce for ConsolePanel {
                                         .child("console.log(\"Requesting endpoint with auth token\");")
                                         .child("")
                                         .child("// In Tests / Post-response Script:")
-                                        .child("console.log(\"Response status:\", client.response.status);")
-                                        .child("console.log(\"Data:\", client.response.json());"),
+                                        .child("console.log(\"Response status:\", z.response.status);")
+                                        .child("console.log(\"Data:\", z.response.json());"),
                                 )
                         } else if filtered_logs.is_empty() {
                             // Filter returned no results

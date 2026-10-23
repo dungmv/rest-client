@@ -27,9 +27,9 @@ Thay vì các engine nặng nề hoặc runtime hạn chế, dự án quyết đ
 
 ---
 
-## 3. Kiến Trúc API JavaScript (`client.*` & `pm.*`)
+## 3. Kiến Trúc API JavaScript (`z.*`)
 
-Zest cung cấp đầy đủ API tương thích cả hai chuẩn `client.*` (chuẩn Zest) và `pm.*` (chuẩn Postman):
+Zest cung cấp chuẩn `z.*` làm đối tượng ngữ cảnh duy nhất trong Pre-request và Post-response scripts:
 
 ### 3.1. Quản Lý Biến Môi Trường (`client.environment` & `client.variables`)
 - `client.environment.get(key: string): string | null`: Lấy giá trị biến môi trường.

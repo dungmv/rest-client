@@ -32,7 +32,7 @@ pub struct PreRequestOutput {
     pub env_mutations: Vec<(String, Option<String>)>,
     /// Added or overridden headers
     pub header_mutations: Vec<(String, String)>,
-    /// Present if the script invoked client.request.body.setJson(...)
+    /// Present if the script invoked z.request.body.setJson(...)
     pub body_override: Option<String>,
     /// Script execution error if any (non-fatal, will not crash the app)
     pub error: Option<String>,

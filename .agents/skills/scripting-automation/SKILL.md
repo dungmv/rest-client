@@ -2,12 +2,12 @@
 name: scripting-automation
 description: >-
   Use this skill when developing, refactoring, or testing the JavaScript scripting engine (rquickjs),
-  Postman pm.* API compatibility, pre/post-request scripts, assertions, and dynamic fake variables.
+  `z.*` API, pre/post-request scripts, assertions, and dynamic fake variables.
 ---
 
 # Scripting Engine & Automation Guide
 
-This skill governs the JavaScript automation engine implemented in `zest-core::scripting`, providing high compatibility with Postman (`pm.*`) and Insomnia scripting workflows.
+This skill governs the JavaScript automation engine implemented in `zest-core::scripting`, providing high performance scripting workflows.
 
 ---
 
@@ -16,50 +16,51 @@ This skill governs the JavaScript automation engine implemented in `zest-core::s
 - **Runtime**: QuickJS embedded engine via `rquickjs` (v0.8).
 - **Core Modules** in `crates/core/src/scripting/`:
   - `sandbox.rs`: JS execution context, timer management, and sandboxing.
-  - `api.rs`: Postman-compatible `pm.*` API injection into the JS global scope.
+  - `api.rs`: `z.*` API injection into the JS global scope.
   - `fake_vars.rs`: Macro generation for dynamic fake variables (`{{$uuid}}`, `{{$timestamp}}`, etc.).
 
 ---
 
-## 2. Supported `pm.*` API Specifications
+## 2. Supported `z.*` API Specifications
 
-Scripts executed in Zest have access to the global `pm` (and alias `postman`) object:
+Scripts executed in Zest have access solely to the global `z` object:
 
 ### 2.1 Variables & Environment Management
-- `pm.environment.get(key: string): string`
-- `pm.environment.set(key: string, value: any): void`
-- `pm.environment.unset(key: string): void`
-- `pm.variables.get(key: string): string`
-- `pm.variables.set(key: string, value: any): void`
+- `z.environment.get(key: string): string`
+- `z.environment.set(key: string, value: any): void`
+- `z.environment.unset(key: string): void`
+- `z.variables.get(key: string): string`
+- `z.variables.set(key: string, value: any): void`
 
 ### 2.2 Pre-Request Script Mutations (`apply_pre_script_mutations`)
 Pre-request scripts can mutate the outgoing request before network transmission:
-- `pm.request.headers.add({ key: string, value: string })`
-- `pm.request.headers.upsert({ key: string, value: string })`
-- `pm.request.headers.remove(key: string)`
-- `pm.request.body.raw`: Read or overwrite the raw request body.
+- `z.request.headers.add(name: string, value: string)`
+- `z.request.headers.get(name: string): string | null`
+- `z.request.headers.all(): Record<string, string>`
+- `z.request.body.json()`: Read JSON request body.
+- `z.request.body.setJson(obj: any)`: Overwrite JSON request body.
 
-### 2.3 Assertions & Test Suite (`pm.test` & `pm.expect`)
+### 2.3 Assertions & Test Suite (`z.test` & `z.assert`)
 Post-response scripts can declare assertions:
 ```javascript
-pm.test("Status code is 200 OK", function () {
-    pm.response.to.have.status(200);
+z.test("Status code is 200 OK", function () {
+    z.assert(z.response.status === 200, "Status must be 200");
 });
 
-pm.test("Response contains access token", function () {
-    const jsonData = pm.response.json();
-    pm.expect(jsonData.token).to.be.a("string");
+z.test("Response contains access token", function () {
+    const jsonData = z.response.json();
+    z.assert(jsonData && jsonData.token, "Token must be present");
     // Request Chaining: Store token for downstream requests
-    pm.environment.set("access_token", jsonData.token);
+    z.environment.set("access_token", jsonData.token);
 });
 ```
 
 ### 2.4 Cryptographic Utilities
-- `pm.crypto.md5(str)`
-- `pm.crypto.sha1(str)`
-- `pm.crypto.sha256(str)`
-- `pm.crypto.hmacSha256(secret, message)`
-- `pm.crypto.base64Encode(str)` / `pm.crypto.base64Decode(str)`
+- `z.crypto.md5(str)`
+- `z.crypto.sha256(str)`
+- `z.crypto.hmacSha256(secret, message)`
+- `z.crypto.base64Encode(str)` / `z.crypto.base64Decode(str)`
+- `z.crypto.uuidv4()`
 
 ---
 

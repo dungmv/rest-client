@@ -112,8 +112,7 @@ const JS_KEYWORDS: &[&str] = &[
 const JS_LITERALS: &[&str] = &["true", "false", "null", "undefined", "NaN", "Infinity"];
 
 const JS_GLOBALS: &[&str] = &[
-    "client",
-    "pm",
+    "z",
     "console",
     "JSON",
     "Math",
@@ -504,8 +503,8 @@ impl ScriptCompletionProvider {
         let is_tests = self.kind == ScriptEditorKind::Tests;
 
         match base_path {
-            // Root client / pm
-            "client" | "pm" => {
+            // Root z
+            "z" => {
                 let mut list = vec![
                     CandidateDef {
                         name: "environment",
@@ -564,8 +563,8 @@ impl ScriptCompletionProvider {
                 list
             }
 
-            // client.environment / pm.environment
-            "client.environment" | "pm.environment" => vec![
+            // z.environment
+            "z.environment" => vec![
                 CandidateDef {
                     name: "get",
                     insert_text: "get()",
@@ -611,8 +610,8 @@ impl ScriptCompletionProvider {
                 },
             ],
 
-            // client.variables / pm.variables
-            "client.variables" | "pm.variables" => vec![
+            // z.variables
+            "z.variables" => vec![
                 CandidateDef {
                     name: "get",
                     insert_text: "get()",
@@ -636,8 +635,8 @@ impl ScriptCompletionProvider {
                 },
             ],
 
-            // client.request / pm.request
-            "client.request" | "pm.request" => vec![
+            // z.request
+            "z.request" => vec![
                 CandidateDef {
                     name: "headers",
                     insert_text: "headers",
@@ -668,8 +667,8 @@ impl ScriptCompletionProvider {
                 },
             ],
 
-            // client.request.headers / pm.request.headers
-            "client.request.headers" | "pm.request.headers" => vec![
+            // z.request.headers
+            "z.request.headers" => vec![
                 CandidateDef {
                     name: "add",
                     insert_text: "add()",
@@ -693,8 +692,8 @@ impl ScriptCompletionProvider {
                 },
             ],
 
-            // client.request.body / pm.request.body
-            "client.request.body" | "pm.request.body" => vec![
+            // z.request.body
+            "z.request.body" => vec![
                 CandidateDef {
                     name: "json",
                     insert_text: "json()",
@@ -718,8 +717,8 @@ impl ScriptCompletionProvider {
                 },
             ],
 
-            // client.response / pm.response
-            "client.response" | "pm.response" if is_tests => vec![
+            // z.response
+            "z.response" if is_tests => vec![
                 CandidateDef {
                     name: "status",
                     insert_text: "status",
@@ -764,26 +763,28 @@ impl ScriptCompletionProvider {
                 },
             ],
 
-            // client.response.headers / pm.response.headers
-            "client.response.headers" | "pm.response.headers" if is_tests => vec![
-                CandidateDef {
-                    name: "get",
-                    insert_text: "get()",
-                    kind: CompletionItemKind::METHOD,
-                    detail: "(name: string): string | null",
-                    doc: "Gets the value of a response header (case-insensitive).",
-                },
-                CandidateDef {
-                    name: "all",
-                    insert_text: "all()",
-                    kind: CompletionItemKind::METHOD,
-                    detail: "(): Record<string, string>",
-                    doc: "Returns all response headers as a key-value object.",
-                },
-            ],
+            // z.response.headers
+            "z.response.headers" if is_tests => {
+                vec![
+                    CandidateDef {
+                        name: "get",
+                        insert_text: "get()",
+                        kind: CompletionItemKind::METHOD,
+                        detail: "(name: string): string | null",
+                        doc: "Gets the value of a response header (case-insensitive).",
+                    },
+                    CandidateDef {
+                        name: "all",
+                        insert_text: "all()",
+                        kind: CompletionItemKind::METHOD,
+                        detail: "(): Record<string, string>",
+                        doc: "Returns all response headers as a key-value object.",
+                    },
+                ]
+            }
 
-            // client.crypto / pm.crypto
-            "client.crypto" | "pm.crypto" => vec![
+            // z.crypto
+            "z.crypto" => vec![
                 CandidateDef {
                     name: "hmacSha256",
                     insert_text: "hmacSha256()",
@@ -885,18 +886,11 @@ impl ScriptCompletionProvider {
             "" => {
                 let mut list = vec![
                     CandidateDef {
-                        name: "client",
-                        insert_text: "client.",
+                        name: "z",
+                        insert_text: "z.",
                         kind: CompletionItemKind::MODULE,
-                        detail: "Client",
-                        doc: "Zest root scripting context.",
-                    },
-                    CandidateDef {
-                        name: "pm",
-                        insert_text: "pm.",
-                        kind: CompletionItemKind::MODULE,
-                        detail: "Client (Postman Alias)",
-                        doc: "Postman-compatible scripting namespace alias.",
+                        detail: "Zest",
+                        doc: "Zest root scripting context (z.response, z.environment, z.request, z.test).",
                     },
                     CandidateDef {
                         name: "console",
@@ -951,15 +945,15 @@ impl ScriptCompletionProvider {
 
                 if is_tests {
                     list.push(CandidateDef {
-                        name: "client.test",
-                        insert_text: "client.test(\"Status is 200\", () => {\n    client.assert(client.response.status === 200, \"Expected 200 OK\");\n});\n",
+                        name: "z.test",
+                        insert_text: "z.test(\"Status is 200\", () => {\n    z.assert(z.response.status === 200, \"Expected 200 OK\");\n});\n",
                         kind: CompletionItemKind::SNIPPET,
                         detail: "Snippet: Status code assertion",
                         doc: "Generates a complete test suite verifying HTTP 200 OK status.",
                     });
                     list.push(CandidateDef {
-                        name: "client.assert",
-                        insert_text: "client.assert(client.response.status === 200, \"Status must be 200\");",
+                        name: "z.assert",
+                        insert_text: "z.assert(z.response.status === 200, \"Status must be 200\");",
                         kind: CompletionItemKind::SNIPPET,
                         detail: "Snippet: Assertion statement",
                         doc: "Asserts a condition in test scripts.",
@@ -1027,7 +1021,7 @@ impl CompletionProvider for ScriptCompletionProvider {
             }
         }
 
-        // 2. Check for variable key inside client.environment.get("...", pm.variables.get("...", etc.
+        // 2. Check for variable key inside z.environment.get("...", z.variables.get("...", etc.
         if let Some(quote_idx) = slice.rfind(['"', '\'']) {
             let before_quote = slice[..quote_idx].trim_end();
             if before_quote.ends_with(".get(")
@@ -1156,37 +1150,37 @@ impl RenderOnce for ScriptEditor {
             ScriptEditorKind::PreRequest => vec![
                 (
                     "Set Timestamp Header",
-                    "client.request.headers.add(\"X-Timestamp\", Date.now().toString());\n",
+                    "z.request.headers.add(\"X-Timestamp\", Date.now().toString());\n",
                 ),
                 (
                     "HMAC-SHA256 Signature",
-                    "const sig = client.crypto.hmacSha256(\"my_secret\", Date.now().toString());\nclient.request.headers.add(\"X-Signature\", sig);\n",
+                    "const sig = z.crypto.hmacSha256(\"my_secret\", Date.now().toString());\nz.request.headers.add(\"X-Signature\", sig);\n",
                 ),
                 (
                     "Set Env Variable",
-                    "client.environment.set(\"custom_key\", \"custom_value\");\n",
+                    "z.environment.set(\"custom_key\", \"custom_value\");\n",
                 ),
                 (
                     "Mutate JSON Body",
-                    "const body = client.request.body.json();\nif (body) {\n    body.timestamp = Date.now();\n    client.request.body.setJson(body);\n}\n",
+                    "const body = z.request.body.json();\nif (body) {\n    body.timestamp = Date.now();\n    z.request.body.setJson(body);\n}\n",
                 ),
             ],
             ScriptEditorKind::Tests => vec![
                 (
                     "Status code: 200",
-                    "client.test(\"Status code is 200\", () => {\n    client.assert(client.response.status === 200, \"Expected 200 OK\");\n});\n",
+                    "z.test(\"Status code is 200\", () => {\n    z.assert(z.response.status === 200, \"Expected 200 OK\");\n});\n",
                 ),
                 (
                     "Response time < 500ms",
-                    "client.test(\"Response time is under 500ms\", () => {\n    client.assert(client.response.time < 500, \"Too slow\");\n});\n",
+                    "z.test(\"Response time is under 500ms\", () => {\n    z.assert(z.response.time < 500, \"Too slow\");\n});\n",
                 ),
                 (
                     "JSON value check",
-                    "client.test(\"Verify JSON property\", () => {\n    const data = client.response.json();\n    client.assert(data !== null, \"Response should be JSON\");\n});\n",
+                    "z.test(\"Verify JSON property\", () => {\n    const data = z.response.json();\n    z.assert(data !== null, \"Response should be JSON\");\n});\n",
                 ),
                 (
                     "Save Token to Env",
-                    "// Request Chaining: extract token from response\nconst data = client.response.json();\nif (data && data.token) {\n    client.environment.set(\"access_token\", data.token);\n}\n",
+                    "// Request Chaining: extract token from response\nconst data = z.response.json();\nif (data && data.token) {\n    z.environment.set(\"access_token\", data.token);\n}\n",
                 ),
             ],
         };
@@ -1306,7 +1300,7 @@ mod tests {
     #[test]
     fn test_js_highlighter_tokenizes_keywords_and_literals() {
         let mut highlighter = JavaScriptHighlighter::new();
-        let code = "const token = client.response.json(); // comment\nclient.assert(true, 'ok');";
+        let code = "const token = z.response.json(); // comment\nz.assert(true, 'ok');";
         highlighter.text = Rope::from(code);
         let range = 0..code.len();
         let styles = highlighter.styles(&range, &DummyResolver);
@@ -1328,35 +1322,35 @@ mod tests {
     #[test]
     fn test_script_completions_candidates_pre_request() {
         let provider = ScriptCompletionProvider::new(ScriptEditorKind::PreRequest);
-        let root = provider.get_candidates("client");
+        let root = provider.get_candidates("z");
         assert!(root.iter().any(|c| c.name == "environment"));
         assert!(root.iter().any(|c| c.name == "request"));
         assert!(root.iter().any(|c| c.name == "crypto"));
         assert!(
             !root.iter().any(|c| c.name == "response"),
-            "Pre-request script should not suggest client.response"
+            "Pre-request script should not suggest z.response"
         );
         assert!(
             !root.iter().any(|c| c.name == "test"),
-            "Pre-request script should not suggest client.test"
+            "Pre-request script should not suggest z.test"
         );
     }
 
     #[test]
     fn test_script_completions_candidates_tests() {
         let provider = ScriptCompletionProvider::new(ScriptEditorKind::Tests);
-        let root = provider.get_candidates("client");
+        let root = provider.get_candidates("z");
         assert!(root.iter().any(|c| c.name == "environment"));
         assert!(
             root.iter().any(|c| c.name == "response"),
-            "Tests script must suggest client.response"
+            "Tests script must suggest z.response"
         );
         assert!(
             root.iter().any(|c| c.name == "test"),
-            "Tests script must suggest client.test"
+            "Tests script must suggest z.test"
         );
 
-        let resp = provider.get_candidates("client.response");
+        let resp = provider.get_candidates("z.response");
         assert!(resp.iter().any(|c| c.name == "status"));
         assert!(resp.iter().any(|c| c.name == "json"));
         assert!(resp.iter().any(|c| c.name == "headers"));
@@ -1365,7 +1359,7 @@ mod tests {
     #[test]
     fn test_script_completions_crypto_methods() {
         let provider = ScriptCompletionProvider::new(ScriptEditorKind::PreRequest);
-        let crypto = provider.get_candidates("client.crypto");
+        let crypto = provider.get_candidates("z.crypto");
         assert!(crypto.iter().any(|c| c.name == "hmacSha256"));
         assert!(crypto.iter().any(|c| c.name == "sha256"));
         assert!(crypto.iter().any(|c| c.name == "uuidv4"));
@@ -1376,11 +1370,11 @@ mod tests {
     fn test_script_completions_query_resolution() {
         let provider = ScriptCompletionProvider::new(ScriptEditorKind::Tests);
 
-        // Test 1: "client."
-        let code = "client.";
+        // Test 1: "z."
+        let code = "z.";
         let rope = Rope::from(code);
         let full_text = rope.to_string();
-        let safe_offset = 7.min(full_text.len());
+        let safe_offset = 2.min(full_text.len());
         let slice = &full_text[..safe_offset];
         let query_start = slice
             .rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != '$' && c != '.')
@@ -1396,12 +1390,12 @@ mod tests {
         } else {
             ("".to_string(), expr.to_string(), query_start)
         };
-        assert_eq!(base_path, "client");
+        assert_eq!(base_path, "z");
         assert_eq!(query, "");
-        assert_eq!(replace_start, 7);
+        assert_eq!(replace_start, 2);
 
-        // Test 2: "client.request.headers.a"
-        let code2 = "client.request.headers.a";
+        // Test 2: "z.request.headers.a"
+        let code2 = "z.request.headers.a";
         let rope2 = Rope::from(code2);
         let full_text2 = rope2.to_string();
         let safe_offset2 = code2.len();
@@ -1420,9 +1414,9 @@ mod tests {
         } else {
             ("".to_string(), expr2.to_string(), query_start2)
         };
-        assert_eq!(base_path2, "client.request.headers");
+        assert_eq!(base_path2, "z.request.headers");
         assert_eq!(query2, "a");
-        assert_eq!(replace_start2, 23);
+        assert_eq!(replace_start2, 18);
 
         let candidates = provider.get_candidates(&base_path2);
         let filtered: Vec<_> = candidates
