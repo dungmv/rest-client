@@ -16,7 +16,6 @@ pub mod settings_modal;
 pub mod sidebar;
 pub mod status_badge;
 pub mod tabs_with_badge;
-pub mod test_results_panel;
 pub mod titlebar;
 pub mod toast;
 
@@ -40,6 +39,5 @@ pub use settings_modal::*;
 pub use sidebar::*;
 pub use status_badge::*;
 pub use tabs_with_badge::*;
-pub use test_results_panel::*;
 pub use titlebar::*;
 pub use toast::*;

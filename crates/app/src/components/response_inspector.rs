@@ -390,26 +390,17 @@ impl RenderOnce for ResponseInspector {
                             "-".to_string()
                         } else {
                             let total_tests = resp_s.test_results.len();
-                            let passed_tests = resp_s.test_results.iter().filter(|r| r.passed).count();
-                            if total_tests > 0 {
+                            let passed_tests =
+                                resp_s.test_results.iter().filter(|r| r.passed).count();
+                            let total_logs = resp_s.console_logs.len();
+                            if total_tests > 0 && total_logs > 0 {
+                                format!("{}/{} • {}", passed_tests, total_tests, total_logs)
+                            } else if total_tests > 0 {
                                 format!("{}/{}", passed_tests, total_tests)
                             } else {
-                                "0".to_string()
+                                format!("{}", total_logs)
                             }
                         };
-                        TabItem::new("tab-resp-tests", "Tests")
-                            .active(active_tab == ResponseTabKind::Tests)
-                            .badge(badge_str)
-                            .on_click(move |_, _, cx| {
-                                rs_c.update(cx, |state, cx| {
-                                    state.set_active_tab(ResponseTabKind::Tests, cx);
-                                });
-                            })
-                    })
-                    .child({
-                        let rs_c = resp_state_clone.clone();
-                        let total_logs = resp_s.console_logs.len();
-                        let badge_str = format!("{}", total_logs);
                         TabItem::new("tab-resp-console", "Console")
                             .active(active_tab == ResponseTabKind::Console)
                             .badge(badge_str)
@@ -1196,7 +1187,7 @@ impl RenderOnce for ResponseInspector {
                                     div().p(px(12.)).text_xs().text_color(t.text_muted).child("No cookies received.").into_any_element()
                                 }
                             }
-                            ResponseTabKind::Tests => {
+                            ResponseTabKind::Console => {
                                 if is_sending_this_request {
                                     div()
                                         .size_full()
@@ -1205,27 +1196,24 @@ impl RenderOnce for ResponseInspector {
                                         .items_center()
                                         .justify_center()
                                         .gap(px(8.))
-                                        .child(Icon::new(IconName::RefreshCw).size(px(20.)).text_color(t.primary))
+                                        .child(
+                                            Icon::new(IconName::RefreshCw)
+                                                .size(px(20.))
+                                                .text_color(t.primary),
+                                        )
                                         .child(
                                             div()
                                                 .text_xs()
                                                 .text_color(t.text_secondary)
-                                                .child("Sending request... Tests will execute after response is received."),
+                                                .child("Sending request... Scripts and tests will execute after response is received."),
                                         )
                                         .into_any_element()
                                 } else {
-                                    crate::components::TestResultsPanel::new(
-                                        resp_s.test_results.clone(),
-                                        resp_s.console_logs.clone(),
+                                    crate::components::ConsolePanel::new(
+                                        resp_state_clone.clone(),
                                     )
                                     .into_any_element()
                                 }
-                            }
-                            ResponseTabKind::Console => {
-                                crate::components::ConsolePanel::new(
-                                    resp_state_clone.clone(),
-                                )
-                                .into_any_element()
                             }
                         }
                     }),

@@ -1,9 +1,7 @@
 use gpui::Context;
 use std::sync::Arc;
 use zest_core::cache::ResponseCache;
-use zest_core::models::{
-    ConsoleLogEntry, ConsoleLogLevel, ConsoleLogSource, HttpResponseRecord, TestResult,
-};
+use zest_core::models::{ConsoleLogEntry, ConsoleLogLevel, HttpResponseRecord, TestResult};
 use zest_core::storage::models::RequestExampleFile;
 use zest_core::storage::WorkspaceStore;
 
@@ -34,7 +32,6 @@ pub enum ResponseTabKind {
     Request,
     Headers,
     Cookies,
-    Tests,
     Console,
 }
 
@@ -42,8 +39,8 @@ pub enum ResponseTabKind {
 pub enum ConsoleFilter {
     #[default]
     All,
-    PreRequest,
-    PostResponse,
+    Tests,
+    Logs,
     Errors,
 }
 
@@ -356,6 +353,7 @@ impl ResponseState {
     }
 
     pub fn clear_console_logs(&mut self, cx: &mut Context<Self>) {
+        self.test_results.clear();
         self.console_logs.clear();
         cx.notify();
     }
@@ -382,13 +380,23 @@ impl ResponseState {
         cx.notify();
     }
 
+    pub fn filtered_test_results(&self) -> Vec<&TestResult> {
+        self.test_results
+            .iter()
+            .filter(|res| match self.console_filter {
+                ConsoleFilter::All | ConsoleFilter::Tests => true,
+                ConsoleFilter::Logs => false,
+                ConsoleFilter::Errors => !res.passed,
+            })
+            .collect()
+    }
+
     pub fn filtered_console_logs(&self) -> Vec<&ConsoleLogEntry> {
         self.console_logs
             .iter()
             .filter(|entry| match self.console_filter {
-                ConsoleFilter::All => true,
-                ConsoleFilter::PreRequest => entry.source == ConsoleLogSource::PreRequest,
-                ConsoleFilter::PostResponse => entry.source == ConsoleLogSource::PostResponse,
+                ConsoleFilter::All | ConsoleFilter::Logs => true,
+                ConsoleFilter::Tests => false,
                 ConsoleFilter::Errors => entry.level == ConsoleLogLevel::Error,
             })
             .collect()
@@ -398,6 +406,7 @@ impl ResponseState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zest_core::models::ConsoleLogSource;
 
     #[test]
     fn test_start_sending_clears_active_data() {
@@ -441,6 +450,20 @@ mod tests {
     #[test]
     fn test_console_logs_filtering() {
         let mut state = ResponseState::new();
+        state.test_results = vec![
+            TestResult {
+                name: "Status is 200".to_string(),
+                passed: true,
+                error_message: None,
+                duration_ms: 2,
+            },
+            TestResult {
+                name: "Has token".to_string(),
+                passed: false,
+                error_message: Some("Expected token".to_string()),
+                duration_ms: 1,
+            },
+        ];
         state.console_logs = vec![
             ConsoleLogEntry {
                 source: ConsoleLogSource::PreRequest,
@@ -464,21 +487,24 @@ mod tests {
 
         // Default filter: All
         state.console_filter = ConsoleFilter::All;
+        assert_eq!(state.filtered_test_results().len(), 2);
         assert_eq!(state.filtered_console_logs().len(), 3);
 
-        // PreRequest filter
-        state.console_filter = ConsoleFilter::PreRequest;
-        let pre_logs = state.filtered_console_logs();
-        assert_eq!(pre_logs.len(), 1);
-        assert_eq!(pre_logs[0].message, "Pre script log");
+        // Tests filter
+        state.console_filter = ConsoleFilter::Tests;
+        assert_eq!(state.filtered_test_results().len(), 2);
+        assert_eq!(state.filtered_console_logs().len(), 0);
 
-        // PostResponse filter
-        state.console_filter = ConsoleFilter::PostResponse;
-        let post_logs = state.filtered_console_logs();
-        assert_eq!(post_logs.len(), 2);
+        // Logs filter
+        state.console_filter = ConsoleFilter::Logs;
+        assert_eq!(state.filtered_test_results().len(), 0);
+        assert_eq!(state.filtered_console_logs().len(), 3);
 
         // Errors filter
         state.console_filter = ConsoleFilter::Errors;
+        let err_tests = state.filtered_test_results();
+        assert_eq!(err_tests.len(), 1);
+        assert_eq!(err_tests[0].name, "Has token");
         let err_logs = state.filtered_console_logs();
         assert_eq!(err_logs.len(), 1);
         assert_eq!(err_logs[0].message, "Post script error");
