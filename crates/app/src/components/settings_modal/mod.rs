@@ -3,7 +3,7 @@ mod general_tab;
 mod network_tab;
 mod shortcuts_tab;
 
-use crate::state::{ModalState, RequestSessionState, SettingsTab, WorkspaceDataState};
+use crate::state::{ModalState, SettingsTab, WorkspaceDataState};
 use crate::theme::theme;
 use gpui::{
     div, px, App, Entity, InteractiveElement as _, IntoElement, MouseButton, ParentElement,
@@ -17,19 +17,16 @@ use gpui_kit::assets::IconName;
 pub struct SettingsModal {
     workspace_state: Entity<WorkspaceDataState>,
     modal_state: Entity<ModalState>,
-    editor_state: Entity<RequestSessionState>,
 }
 
 impl SettingsModal {
     pub fn new(
         workspace_state: Entity<WorkspaceDataState>,
         modal_state: Entity<ModalState>,
-        editor_state: Entity<RequestSessionState>,
     ) -> Self {
         Self {
             workspace_state,
             modal_state,
-            editor_state,
         }
     }
 }
@@ -39,7 +36,6 @@ impl RenderOnce for SettingsModal {
         let t = theme();
         let ws_clone = self.workspace_state.clone();
         let modal_clone = self.modal_state.clone();
-        let ed_clone = self.editor_state.clone();
 
         let active_tab = modal_clone.read(cx).settings_tab;
         let cookie_count = ws_clone.read(cx).cookies.len();
@@ -311,7 +307,8 @@ impl RenderOnce for SettingsModal {
                                                 }
                                                 SettingsTab::Network => {
                                                     network_tab::render_network_tab(
-                                                        &ws_clone, &ed_clone, cx,
+                                                        &modal_clone,
+                                                        cx,
                                                     )
                                                     .into_any_element()
                                                 }

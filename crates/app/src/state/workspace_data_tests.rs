@@ -42,12 +42,15 @@ mod tests {
 
     #[test]
     fn test_modal_state_defaults() {
-        let mut modals = ModalState::new();
+        let mut modals = ModalState::default();
         assert!(!modals.show_env_modal);
         assert!(!modals.show_settings_modal);
         assert_eq!(modals.settings_tab, SettingsTab::General);
         assert!(modals.cookie_filter_query.is_empty());
         assert!(!modals.show_command_palette);
+        assert_eq!(modals.request_timeout_secs, 30);
+        assert!(modals.follow_redirects);
+        assert!(modals.validate_tls);
 
         modals.show_settings_modal = true;
         modals.settings_tab = SettingsTab::Cookies;

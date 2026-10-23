@@ -31,6 +31,9 @@ pub struct ModalState {
     pub import_target_folder_rel: Option<String>,
     pub theme_preference: crate::theme::ThemePreference,
     pub split_layout_vertical: bool,
+    pub request_timeout_secs: u64,
+    pub follow_redirects: bool,
+    pub validate_tls: bool,
 }
 
 impl Default for ModalState {
@@ -49,6 +52,9 @@ impl Default for ModalState {
             import_target_folder_rel: None,
             theme_preference: crate::theme::ThemePreference::System,
             split_layout_vertical: false,
+            request_timeout_secs: 30,
+            follow_redirects: true,
+            validate_tls: true,
         }
     }
 }
@@ -59,7 +65,34 @@ impl ModalState {
         let settings = AppSettings::load();
         state.theme_preference =
             crate::theme::ThemePreference::from_str_opt(settings.theme.as_deref());
+        state.request_timeout_secs = settings.request_timeout_secs;
+        state.follow_redirects = settings.follow_redirects;
+        state.validate_tls = settings.validate_tls;
         state
+    }
+
+    pub fn set_request_timeout_secs(&mut self, secs: u64, cx: &mut Context<Self>) {
+        self.request_timeout_secs = secs;
+        let mut settings = AppSettings::load();
+        settings.request_timeout_secs = secs;
+        let _ = settings.save();
+        cx.notify();
+    }
+
+    pub fn set_follow_redirects(&mut self, follow: bool, cx: &mut Context<Self>) {
+        self.follow_redirects = follow;
+        let mut settings = AppSettings::load();
+        settings.follow_redirects = follow;
+        let _ = settings.save();
+        cx.notify();
+    }
+
+    pub fn set_validate_tls(&mut self, validate: bool, cx: &mut Context<Self>) {
+        self.validate_tls = validate;
+        let mut settings = AppSettings::load();
+        settings.validate_tls = validate;
+        let _ = settings.save();
+        cx.notify();
     }
 
     pub fn toggle_split_layout(&mut self, cx: &mut Context<Self>) {

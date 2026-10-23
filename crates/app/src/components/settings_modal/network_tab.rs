@@ -1,4 +1,4 @@
-use crate::state::{RequestSessionState, WorkspaceDataState};
+use crate::state::ModalState;
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -8,21 +8,13 @@ use gpui::{
 use gpui_component::Icon;
 use gpui_kit::assets::IconName;
 
-pub fn render_network_tab(
-    workspace_state: &Entity<WorkspaceDataState>,
-    editor_state: &Entity<RequestSessionState>,
-    cx: &App,
-) -> impl IntoElement {
+pub fn render_network_tab(modal_state: &Entity<ModalState>, cx: &App) -> impl IntoElement {
     let t = theme();
-    let ws_clone = workspace_state.clone();
-    let ed_clone = editor_state.clone();
-
-    let active_id = ed_clone.read(cx).active_request_id().to_string();
-    let active_req = ws_clone.read(cx).find_request(&active_id).cloned();
-    let settings = active_req
-        .as_ref()
-        .map(|r| r.settings.clone())
-        .unwrap_or_default();
+    let modal_clone = modal_state.clone();
+    let modal_ref = modal_clone.read(cx);
+    let cur_timeout = modal_ref.request_timeout_secs;
+    let cur_follow = modal_ref.follow_redirects;
+    let cur_tls = modal_ref.validate_tls;
 
     div()
         .w_full()
@@ -49,7 +41,7 @@ pub fn render_network_tab(
                     div()
                         .text_xs()
                         .text_color(t.text_muted)
-                        .child("Configure timeout, redirect policy, and TLS verification for the active HTTP request."),
+                        .child("Configure global timeout, redirect policy, and TLS verification for HTTP requests."),
                 ),
         )
         // 1. Timeout presets
@@ -84,7 +76,7 @@ pub fn render_network_tab(
                                 .text_xs()
                                 .font_family(".SystemMonoFont")
                                 .text_color(t.primary)
-                                .child(format!("{}s", settings.timeout_secs())),
+                                .child(format!("{}s", cur_timeout)),
                         ),
                 )
                 .child(
@@ -99,10 +91,8 @@ pub fn render_network_tab(
                         .gap(px(8.))
                         .pt(px(2.))
                         .children([10, 30, 60, 120].into_iter().map(|s| {
-                            let is_cur = settings.timeout_secs() == s;
-                            let ed_set = ed_clone.clone();
-                            let ws_set = ws_clone.clone();
-                            let id_set = active_id.clone();
+                            let is_cur = cur_timeout == s;
+                            let modal_set = modal_clone.clone();
                             div()
                                 .id(format!("timeout-{}s", s))
                                 .px(px(14.))
@@ -127,13 +117,8 @@ pub fn render_network_tab(
                                     }
                                 })
                                 .on_click(move |_, _, cx| {
-                                    ws_set.update(cx, |ws, _| {
-                                        ws.update_active_request(&id_set, |r| {
-                                            r.set_timeout_secs(s);
-                                        });
-                                    });
-                                    ed_set.update(cx, |st, cx| {
-                                        st.mark_dirty(cx);
+                                    modal_set.update(cx, |st, cx| {
+                                        st.set_request_timeout_secs(s, cx);
                                     });
                                 })
                                 .child(format!("{}s", s))
@@ -142,10 +127,7 @@ pub fn render_network_tab(
         )
         // 2. Follow Redirects toggle
         .child({
-            let cur_follow = settings.follow_redirects;
-            let ed_set = ed_clone.clone();
-            let ws_set = ws_clone.clone();
-            let id_set = active_id.clone();
+            let modal_set = modal_clone.clone();
             div()
                 .w_full()
                 .min_w_0()
@@ -208,13 +190,8 @@ pub fn render_network_tab(
                             }
                         })
                         .on_click(move |_, _, cx| {
-                            ws_set.update(cx, |ws, _| {
-                                ws.update_active_request(&id_set, |r| {
-                                    r.set_follow_redirects(!cur_follow);
-                                });
-                            });
-                            ed_set.update(cx, |st, cx| {
-                                st.mark_dirty(cx);
+                            modal_set.update(cx, |st, cx| {
+                                st.set_follow_redirects(!cur_follow, cx);
                             });
                         })
                         .when(cur_follow, |this| {
@@ -225,10 +202,7 @@ pub fn render_network_tab(
         })
         // 3. Validate TLS Certificates toggle
         .child({
-            let cur_tls = settings.validate_tls;
-            let ed_set = ed_clone;
-            let ws_set = ws_clone;
-            let id_set = active_id;
+            let modal_set = modal_clone;
             div()
                 .w_full()
                 .min_w_0()
@@ -291,13 +265,8 @@ pub fn render_network_tab(
                             }
                         })
                         .on_click(move |_, _, cx| {
-                            ws_set.update(cx, |ws, _| {
-                                ws.update_active_request(&id_set, |r| {
-                                    r.set_validate_tls(!cur_tls);
-                                });
-                            });
-                            ed_set.update(cx, |st, cx| {
-                                st.mark_dirty(cx);
+                            modal_set.update(cx, |st, cx| {
+                                st.set_validate_tls(!cur_tls, cx);
                             });
                         })
                         .when(cur_tls, |this| {

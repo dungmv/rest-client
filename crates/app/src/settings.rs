@@ -2,6 +2,14 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+fn default_timeout_secs() -> u64 {
+    30
+}
+
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     #[serde(default)]
@@ -14,6 +22,12 @@ pub struct AppSettings {
     pub window_width: Option<f32>,
     #[serde(default)]
     pub window_height: Option<f32>,
+    #[serde(default = "default_timeout_secs")]
+    pub request_timeout_secs: u64,
+    #[serde(default = "default_true")]
+    pub follow_redirects: bool,
+    #[serde(default = "default_true")]
+    pub validate_tls: bool,
 }
 
 impl Default for AppSettings {
@@ -24,6 +38,9 @@ impl Default for AppSettings {
             theme: None,
             window_width: Some(1200.0),
             window_height: Some(800.0),
+            request_timeout_secs: default_timeout_secs(),
+            follow_redirects: true,
+            validate_tls: true,
         }
     }
 }

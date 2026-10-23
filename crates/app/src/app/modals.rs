@@ -58,11 +58,7 @@ pub fn attach_modal_overlays(
         ))
     })
     .when(show_settings_modal, |this| {
-        this.child(SettingsModal::new(
-            ws_entity.clone(),
-            modal_entity.clone(),
-            ed_entity.clone(),
-        ))
+        this.child(SettingsModal::new(ws_entity.clone(), modal_entity.clone()))
     })
     .when(show_scope_settings_modal, |this| {
         this.child(ScopeSettingsModal::new(

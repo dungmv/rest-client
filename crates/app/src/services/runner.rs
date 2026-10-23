@@ -1,6 +1,7 @@
 use super::http_engine::{ExecEvent, HttpEngine};
 use crate::state::{
-    EnvironmentState, RequestSessionState, ResponseState, ToastState, WorkspaceDataState,
+    EnvironmentState, ModalState, RequestSessionState, ResponseState, ToastState,
+    WorkspaceDataState,
 };
 use gpui::{App, Entity};
 use restclient_core::models::EnvironmentVariable;
@@ -15,6 +16,7 @@ pub struct Runner {
     pub env_state: Entity<EnvironmentState>,
     pub response_state: Entity<ResponseState>,
     pub toast_state: Entity<ToastState>,
+    pub modal_state: Entity<ModalState>,
     pub engine: Arc<HttpEngine>,
 }
 
@@ -25,6 +27,7 @@ impl Runner {
         env_state: Entity<EnvironmentState>,
         response_state: Entity<ResponseState>,
         toast_state: Entity<ToastState>,
+        modal_state: Entity<ModalState>,
         engine: Arc<HttpEngine>,
     ) -> Self {
         Self {
@@ -33,6 +36,7 @@ impl Runner {
             env_state,
             response_state,
             toast_state,
+            modal_state,
             engine,
         }
     }
@@ -54,6 +58,14 @@ impl Runner {
             let (resolved_headers, resolved_auth) = ws.resolve_request_hierarchy(&req_item);
             req_item.headers = resolved_headers;
             req_item.auth = resolved_auth;
+        }
+
+        // Apply Global Network & Execution settings
+        {
+            let modal = self.modal_state.read(cx);
+            req_item.set_timeout_secs(modal.request_timeout_secs);
+            req_item.set_follow_redirects(modal.follow_redirects);
+            req_item.set_validate_tls(modal.validate_tls);
         }
 
         let cached_env = self.env_state.read(cx).effective_environment();

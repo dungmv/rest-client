@@ -65,6 +65,7 @@ impl AppView {
             state.env.clone(),
             state.response.clone(),
             state.toast.clone(),
+            state.modal.clone(),
             engine,
         );
 
