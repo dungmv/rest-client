@@ -1,6 +1,9 @@
 use crate::settings::AppSettings;
 use gpui::Context;
-use restclient_core::models::{Auth, Folder, HttpRequestItem, KeyValuePair, Workspace};
+use restclient_core::http::ReqwestExecutor;
+use restclient_core::models::{
+    Auth, Folder, HttpRequestItem, KeyValuePair, StoredCookie, Workspace,
+};
 use restclient_core::storage::models::{FolderNode, WorkspaceMeta};
 use restclient_core::storage::{FsWorkspaceStore, WorkspaceStore};
 use std::collections::HashMap;
@@ -9,6 +12,7 @@ use std::sync::Arc;
 
 pub struct WorkspaceDataState {
     pub store: Arc<dyn WorkspaceStore>,
+    pub executor: Arc<ReqwestExecutor>,
     pub workspace_path: PathBuf,
     pub workspace_meta: WorkspaceMeta,
     pub active_workspace: Option<Workspace>,
@@ -17,6 +21,7 @@ pub struct WorkspaceDataState {
     pub scratch_request: HttpRequestItem,
     pub parse_errors: HashMap<String, String>,
     pub pins: Vec<String>,
+    pub cookies: Vec<StoredCookie>,
     pub last_renamed_request: Option<(String, String)>,
     pub last_renamed_example: Option<(String, String, String)>,
     pub recent_workspaces: Vec<String>,
@@ -49,6 +54,7 @@ impl WorkspaceDataState {
 
         let mut state = Self {
             store,
+            executor: Arc::new(ReqwestExecutor::new()),
             workspace_path: ws_dir,
             workspace_meta: WorkspaceMeta::default(),
             active_workspace: Some(Workspace::new(&default_name)),
@@ -62,6 +68,7 @@ impl WorkspaceDataState {
             ),
             parse_errors: HashMap::new(),
             pins: Vec::new(),
+            cookies: Vec::new(),
             last_renamed_request: None,
             last_renamed_example: None,
             recent_workspaces: settings.recent_workspaces,
@@ -74,6 +81,7 @@ impl WorkspaceDataState {
     pub fn new_for_path(path: PathBuf, store: Arc<dyn WorkspaceStore>) -> Self {
         let mut state = Self {
             store,
+            executor: Arc::new(ReqwestExecutor::new()),
             workspace_path: path,
             workspace_meta: WorkspaceMeta::default(),
             active_workspace: Some(Workspace::new("Test Workspace")),
@@ -87,6 +95,7 @@ impl WorkspaceDataState {
             ),
             parse_errors: HashMap::new(),
             pins: Vec::new(),
+            cookies: Vec::new(),
             last_renamed_request: None,
             last_renamed_example: None,
             recent_workspaces: Vec::new(),
@@ -181,6 +190,13 @@ impl WorkspaceDataState {
         });
 
         self.pins = self.store.load_pins().unwrap_or_default();
+        self.cookies = self
+            .store
+            .load_cookies()
+            .ok()
+            .and_then(|val| serde_json::from_value::<Vec<StoredCookie>>(val).ok())
+            .unwrap_or_default();
+        self.executor.restore_stored_cookies(&self.cookies);
         self.reload_tree();
     }
 

@@ -7,17 +7,26 @@ pub enum ScopeSettingsTarget {
     Folder(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SettingsTab {
+    #[default]
+    General,
+    Network,
+    Cookies,
+    Shortcuts,
+}
+
 #[derive(Debug, Clone)]
 pub struct ModalState {
     pub show_env_modal: bool,
     pub selected_env_modal_id: Option<String>,
     pub env_filter_query: String,
     pub var_filter_query: String,
-    pub show_cookies_modal: bool,
     pub show_command_palette: bool,
     pub show_settings_modal: bool,
+    pub settings_tab: SettingsTab,
+    pub cookie_filter_query: String,
     pub scope_settings_target: Option<ScopeSettingsTarget>,
-    pub show_rename_workspace_modal: bool,
     pub show_import_modal: bool,
     pub import_target_folder_rel: Option<String>,
     pub theme_preference: crate::theme::ThemePreference,
@@ -31,11 +40,11 @@ impl Default for ModalState {
             selected_env_modal_id: None,
             env_filter_query: String::new(),
             var_filter_query: String::new(),
-            show_cookies_modal: false,
             show_command_palette: false,
             show_settings_modal: false,
+            settings_tab: SettingsTab::General,
+            cookie_filter_query: String::new(),
             scope_settings_target: None,
-            show_rename_workspace_modal: false,
             show_import_modal: false,
             import_target_folder_rel: None,
             theme_preference: crate::theme::ThemePreference::System,
@@ -55,6 +64,11 @@ impl ModalState {
 
     pub fn toggle_split_layout(&mut self, cx: &mut Context<Self>) {
         self.split_layout_vertical = !self.split_layout_vertical;
+        cx.notify();
+    }
+
+    pub fn set_split_layout_vertical(&mut self, vertical: bool, cx: &mut Context<Self>) {
+        self.split_layout_vertical = vertical;
         cx.notify();
     }
 
@@ -96,18 +110,8 @@ impl ModalState {
         cx.notify();
     }
 
-    pub fn toggle_cookies_modal(&mut self, cx: &mut Context<Self>) {
-        self.show_cookies_modal = !self.show_cookies_modal;
-        cx.notify();
-    }
-
-    pub fn open_cookies_modal(&mut self, cx: &mut Context<Self>) {
-        self.show_cookies_modal = true;
-        cx.notify();
-    }
-
-    pub fn close_cookies_modal(&mut self, cx: &mut Context<Self>) {
-        self.show_cookies_modal = false;
+    pub fn set_cookie_filter_query(&mut self, query: String, cx: &mut Context<Self>) {
+        self.cookie_filter_query = query;
         cx.notify();
     }
 
@@ -133,6 +137,17 @@ impl ModalState {
 
     pub fn open_settings_modal(&mut self, cx: &mut Context<Self>) {
         self.show_settings_modal = true;
+        cx.notify();
+    }
+
+    pub fn open_settings_tab(&mut self, tab: SettingsTab, cx: &mut Context<Self>) {
+        self.settings_tab = tab;
+        self.show_settings_modal = true;
+        cx.notify();
+    }
+
+    pub fn set_settings_tab(&mut self, tab: SettingsTab, cx: &mut Context<Self>) {
+        self.settings_tab = tab;
         cx.notify();
     }
 
@@ -173,11 +188,6 @@ impl ModalState {
         cx.notify();
     }
 
-    pub fn toggle_rename_workspace_modal(&mut self, cx: &mut Context<Self>) {
-        self.show_rename_workspace_modal = !self.show_rename_workspace_modal;
-        cx.notify();
-    }
-
     pub fn set_theme_preference(
         &mut self,
         pref: crate::theme::ThemePreference,
@@ -208,19 +218,9 @@ impl ModalState {
             cx.notify();
             return true;
         }
-        if self.show_rename_workspace_modal {
-            self.show_rename_workspace_modal = false;
-            cx.notify();
-            return true;
-        }
         if self.show_import_modal {
             self.show_import_modal = false;
             self.import_target_folder_rel = None;
-            cx.notify();
-            return true;
-        }
-        if self.show_cookies_modal {
-            self.show_cookies_modal = false;
             cx.notify();
             return true;
         }

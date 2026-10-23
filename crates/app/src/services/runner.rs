@@ -184,6 +184,7 @@ impl Runner {
                                     r.last_status_code = Some(status);
                                 }
                                 let _ = ws.store.save_response_cache(&req_id, &loc_file);
+                                ws.sync_cookies_from_executor();
                                 cx.notify();
                             });
 

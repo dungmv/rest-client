@@ -1,7 +1,7 @@
 use crate::components::status_badge::MethodBadge;
 use crate::state::{
     EnvironmentState, GitActiveModal, GitState, GitTab, ModalState, PersistenceState,
-    RequestSessionState, SidebarState, WorkspaceDataState,
+    RequestSessionState, SettingsTab, SidebarState, WorkspaceDataState,
 };
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
@@ -275,6 +275,43 @@ impl RenderOnce for CommandPalette {
                                                 ),
                                         )
                                         .child(div().text_xs().text_color(t.text_muted).child("Ctrl+,"))
+                                )
+                            })
+                            // Action: Manage Cookies (Settings -> Cookies tab)
+                            .when(q.is_empty() || "cookies".contains(&q) || "cookie jar".contains(&q) || "session".contains(&q), |this| {
+                                let modal_s = modal_clone.clone();
+                                this.child(
+                                    div()
+                                        .id("cmd-open-cookies")
+                                        .px(px(8.))
+                                        .py(px(6.))
+                                        .rounded(px(4.))
+                                        .hover(|s| s.bg(t.bg_hover))
+                                        .cursor_pointer()
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .on_click(move |_, _, cx| {
+                                            modal_s.update(cx, |state, cx| {
+                                                state.close_command_palette(cx);
+                                                state.open_settings_tab(SettingsTab::Cookies, cx);
+                                            });
+                                        })
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(8.))
+                                                .child(Icon::new(IconName::Cookie).size(px(14.)))
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                        .text_color(t.text_primary)
+                                                        .child("Settings: Manage Cookies"),
+                                                ),
+                                        )
+                                        .child(div().text_xs().text_color(t.text_muted).child("Settings"))
                                 )
                             })
                             // Action: Git Source Control

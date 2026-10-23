@@ -473,8 +473,31 @@ impl WorkspaceDataState {
         cx.notify();
     }
 
+    pub fn sync_cookies_from_executor(&mut self) {
+        self.cookies = self.executor.get_stored_cookies();
+        if let Ok(val) = serde_json::to_value(&self.cookies) {
+            let _ = self.store.save_cookies(&val);
+        }
+    }
+
+    pub fn remove_cookie_internal(&mut self, domain: &str, path: &str, name: &str) {
+        self.executor.remove_cookie(domain, path, name);
+        self.sync_cookies_from_executor();
+    }
+
+    pub fn remove_cookie(&mut self, domain: &str, path: &str, name: &str, cx: &mut Context<Self>) {
+        self.remove_cookie_internal(domain, path, name);
+        cx.notify();
+    }
+
+    pub fn clear_cookies_internal(&mut self) {
+        self.executor.clear_cookies();
+        self.cookies.clear();
+        let _ = self.store.save_cookies(&serde_json::json!([]));
+    }
+
     pub fn clear_cookies(&mut self, cx: &mut Context<Self>) {
-        let _ = self.store.save_cookies(&serde_json::json!({}));
+        self.clear_cookies_internal();
         cx.notify();
     }
 

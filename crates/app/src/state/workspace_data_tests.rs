@@ -2,11 +2,11 @@
 mod tests {
     use crate::state::{
         EnvironmentState, GitActiveModal, GitState, GitTab, ModalState, PersistenceState,
-        ScopeSettingsTarget, SidebarState, WorkspaceDataState,
+        ScopeSettingsTarget, SettingsTab, SidebarState, WorkspaceDataState,
     };
     use restclient_core::models::{
         Auth, Environment, EnvironmentVariable, Folder, HttpMethod, HttpRequestItem, KeyValuePair,
-        Workspace,
+        StoredCookie, Workspace,
     };
     use restclient_core::storage::models::{EnvironmentFile, WorkspaceMeta};
     use restclient_core::storage::{FsWorkspaceStore, WorkspaceStore};
@@ -44,17 +44,76 @@ mod tests {
     fn test_modal_state_defaults() {
         let mut modals = ModalState::new();
         assert!(!modals.show_env_modal);
-        assert!(!modals.show_cookies_modal);
         assert!(!modals.show_settings_modal);
+        assert_eq!(modals.settings_tab, SettingsTab::General);
+        assert!(modals.cookie_filter_query.is_empty());
         assert!(!modals.show_command_palette);
 
         modals.show_settings_modal = true;
+        modals.settings_tab = SettingsTab::Cookies;
         modals.scope_settings_target = Some(ScopeSettingsTarget::Workspace);
         assert!(modals.show_settings_modal);
+        assert_eq!(modals.settings_tab, SettingsTab::Cookies);
         assert_eq!(
             modals.scope_settings_target,
             Some(ScopeSettingsTarget::Workspace)
         );
+    }
+
+    #[test]
+    fn test_workspace_cookie_jar_persistence_and_removal() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "restclient-test-cookies-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let store = Arc::new(FsWorkspaceStore::new(&temp_dir));
+        store.init_workspace("Cookie WS").unwrap();
+
+        let mut ws_state = WorkspaceDataState::new_for_path(temp_dir.clone(), store.clone());
+        assert!(ws_state.cookies.is_empty());
+
+        let initial_cookies = vec![
+            StoredCookie {
+                name: "auth_token".to_string(),
+                value: "secret_jwt".to_string(),
+                domain: "api.example.com".to_string(),
+                path: "/".to_string(),
+                expires: None,
+                secure: true,
+                http_only: true,
+                same_site: Some("Strict".to_string()),
+            },
+            StoredCookie {
+                name: "prefs".to_string(),
+                value: "compact".to_string(),
+                domain: "app.example.com".to_string(),
+                path: "/".to_string(),
+                expires: None,
+                secure: false,
+                http_only: false,
+                same_site: None,
+            },
+        ];
+
+        ws_state.executor.restore_stored_cookies(&initial_cookies);
+        ws_state.sync_cookies_from_executor();
+        assert_eq!(ws_state.cookies.len(), 2);
+
+        // Reloading workspace state from disk should restore cookies from .local/cookies.json
+        let ws_reloaded = WorkspaceDataState::new_for_path(temp_dir.clone(), store.clone());
+        assert_eq!(ws_reloaded.cookies.len(), 2);
+        assert_eq!(ws_reloaded.cookies[0].name, "auth_token");
+
+        // Remove single cookie
+        ws_state.remove_cookie_internal("api.example.com", "/", "auth_token");
+        assert_eq!(ws_state.cookies.len(), 1);
+        assert_eq!(ws_state.cookies[0].name, "prefs");
+
+        // Clear all cookies
+        ws_state.clear_cookies_internal();
+        assert!(ws_state.cookies.is_empty());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
@@ -106,7 +165,6 @@ mod tests {
         assert!(sidebar.renaming_folder.is_none());
         assert!(sidebar.renaming_env.is_none());
         assert!(sidebar.renaming_example.is_none());
-        assert!(sidebar.renaming_workspace.is_none());
 
         assert!(sidebar.renaming_request_id().is_none());
         assert!(sidebar.rename_input().is_none());
@@ -116,7 +174,6 @@ mod tests {
         assert!(sidebar.rename_env_input().is_none());
         assert!(sidebar.renaming_example().is_none());
         assert!(sidebar.rename_example_input().is_none());
-        assert!(sidebar.rename_workspace_input().is_none());
     }
 
     #[test]

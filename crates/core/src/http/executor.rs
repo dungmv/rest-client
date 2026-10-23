@@ -1,6 +1,7 @@
 use crate::models::{
     Auth, Environment, HttpMethod, HttpRequestItem, HttpResponseRecord, KeyValuePair,
-    MultipartItem, RequestBody, RequestSentInfo, RequestSettings, TimingBreakdown,
+    MultipartItem, ParsedCookie, RequestBody, RequestSentInfo, RequestSettings, StoredCookie,
+    TimingBreakdown,
 };
 use chrono::Utc;
 use cookie_store::CookieStore;
@@ -419,6 +420,83 @@ impl ReqwestExecutor {
     pub fn get_all_cookies(&self) -> Vec<String> {
         let store = self.cookie_store.lock().unwrap_or_else(|e| e.into_inner());
         store.iter_any().map(|c| c.to_string()).collect()
+    }
+
+    pub fn get_stored_cookies(&self) -> Vec<StoredCookie> {
+        let store = self.cookie_store.lock().unwrap_or_else(|e| e.into_inner());
+        let mut list: Vec<StoredCookie> = store
+            .iter_any()
+            .map(|c| {
+                let raw_str = c.to_string();
+                let parsed = ParsedCookie::parse(&raw_str);
+                let domain = c
+                    .domain
+                    .as_cow()
+                    .map(|d| d.to_string())
+                    .or(parsed.domain)
+                    .unwrap_or_default();
+                let path = if c.path.is_empty() {
+                    parsed.path.unwrap_or_else(|| "/".to_string())
+                } else {
+                    c.path.to_string()
+                };
+                StoredCookie {
+                    name: c.name().to_string(),
+                    value: c.value().to_string(),
+                    domain,
+                    path,
+                    expires: parsed.expires,
+                    secure: c.secure().unwrap_or(parsed.secure),
+                    http_only: c.http_only().unwrap_or(parsed.http_only),
+                    same_site: c.same_site().map(|s| s.to_string()).or(parsed.same_site),
+                }
+            })
+            .collect();
+        list.sort_by(|a, b| {
+            a.domain
+                .cmp(&b.domain)
+                .then_with(|| a.path.cmp(&b.path))
+                .then_with(|| a.name.cmp(&b.name))
+        });
+        list
+    }
+
+    pub fn remove_cookie(&self, domain: &str, path: &str, name: &str) {
+        let mut store = self.cookie_store.lock().unwrap_or_else(|e| e.into_inner());
+        let clean_domain = domain.trim_start_matches('.');
+        store.remove(clean_domain, path, name);
+    }
+
+    pub fn restore_stored_cookies(&self, cookies: &[StoredCookie]) {
+        let mut store = self.cookie_store.lock().unwrap_or_else(|e| e.into_inner());
+        *store = CookieStore::default();
+        for c in cookies {
+            let host = c.domain.trim_start_matches('.');
+            if host.is_empty() || c.name.is_empty() {
+                continue;
+            }
+            let path = if c.path.starts_with('/') {
+                c.path.as_str()
+            } else {
+                "/"
+            };
+            let scheme = if c.secure { "https" } else { "http" };
+            let url_str = format!("{}://{}{}", scheme, host, path);
+            let Ok(url) = url::Url::parse(&url_str) else {
+                continue;
+            };
+            let mut raw = format!("{}={}; Path={}; Domain={}", c.name, c.value, path, host);
+            if c.secure {
+                raw.push_str("; Secure");
+            }
+            if c.http_only {
+                raw.push_str("; HttpOnly");
+            }
+            if let Some(ss) = &c.same_site {
+                raw.push_str(&format!("; SameSite={}", ss));
+            }
+            let _ = store.parse(&raw, &url);
+        }
     }
 
     pub fn clear_cookies(&self) {
@@ -1067,5 +1145,49 @@ mod tests {
         assert!(url_cookies.is_empty());
 
         executor.clear_cookies();
+    }
+
+    #[test]
+    fn test_stored_cookies_roundtrip_and_removal() {
+        let executor = ReqwestExecutor::new();
+        let sample = vec![
+            StoredCookie {
+                name: "session_id".to_string(),
+                value: "abc123xyz".to_string(),
+                domain: "api.example.com".to_string(),
+                path: "/".to_string(),
+                expires: None,
+                secure: true,
+                http_only: true,
+                same_site: Some("Lax".to_string()),
+            },
+            StoredCookie {
+                name: "theme".to_string(),
+                value: "dark".to_string(),
+                domain: "app.example.com".to_string(),
+                path: "/dashboard".to_string(),
+                expires: None,
+                secure: false,
+                http_only: false,
+                same_site: None,
+            },
+        ];
+
+        executor.restore_stored_cookies(&sample);
+        let stored = executor.get_stored_cookies();
+        assert_eq!(stored.len(), 2);
+        assert_eq!(stored[0].domain, "api.example.com");
+        assert_eq!(stored[0].name, "session_id");
+        assert_eq!(stored[0].value, "abc123xyz");
+        assert!(stored[0].secure);
+        assert!(stored[0].http_only);
+
+        executor.remove_cookie("api.example.com", "/", "session_id");
+        let after_remove = executor.get_stored_cookies();
+        assert_eq!(after_remove.len(), 1);
+        assert_eq!(after_remove[0].name, "theme");
+
+        executor.clear_cookies();
+        assert!(executor.get_stored_cookies().is_empty());
     }
 }

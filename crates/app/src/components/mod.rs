@@ -2,14 +2,12 @@
 pub mod body_editor;
 pub mod command_palette;
 pub mod console_panel;
-pub mod cookies_modal;
 pub mod env_autocomplete;
 pub mod env_input;
 pub mod env_modal;
 pub mod git;
 pub mod import_modal;
 pub mod kv_table;
-pub mod rename_workspace_modal;
 pub mod request_bar;
 pub mod response_inspector;
 pub mod scope_settings_modal;
@@ -25,7 +23,6 @@ pub mod toast;
 pub use body_editor::*;
 pub use command_palette::*;
 pub use console_panel::*;
-pub use cookies_modal::*;
 pub use env_autocomplete::*;
 pub use env_input::*;
 pub use env_modal::*;
@@ -36,7 +33,6 @@ pub mod response_viewer {
 }
 pub use git::*;
 pub use import_modal::*;
-pub use rename_workspace_modal::*;
 pub use response_inspector::*;
 pub use scope_settings_modal::*;
 pub use script_editor::*;

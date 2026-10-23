@@ -34,11 +34,9 @@ pub fn attach_modal_overlays(
 
     let modal = modal_state.read(cx);
     let show_env_modal = modal.show_env_modal;
-    let show_cookies_modal = modal.show_cookies_modal;
     let show_settings_modal = modal.show_settings_modal;
     let show_scope_settings_modal = modal.scope_settings_target.is_some();
     let show_import_modal = modal.show_import_modal;
-    let show_rename_workspace_modal = modal.show_rename_workspace_modal;
     let show_command_palette = modal.show_command_palette;
 
     let show_git_modal = git_state.read(cx).show_modal;
@@ -58,9 +56,6 @@ pub fn attach_modal_overlays(
             modal_entity.clone(),
             sidebar_entity.clone(),
         ))
-    })
-    .when(show_cookies_modal, |this| {
-        this.child(CookiesModal::new(ws_entity.clone(), modal_entity.clone()))
     })
     .when(show_settings_modal, |this| {
         this.child(SettingsModal::new(
@@ -84,12 +79,6 @@ pub fn attach_modal_overlays(
             ws_entity.clone(),
             modal_entity.clone(),
             toast_entity.clone(),
-        ))
-    })
-    .when(show_rename_workspace_modal, |this| {
-        this.child(RenameWorkspaceModal::new(
-            ws_entity.clone(),
-            sidebar_entity.clone(),
         ))
     })
     .when(show_command_palette, move |this| {

@@ -19,7 +19,6 @@ use crate::state::*;
 use crate::theme::theme;
 use gpui::*;
 use gpui_component::resizable::{h_resizable, resizable_panel, v_resizable};
-use restclient_core::http::ReqwestExecutor;
 use std::sync::Arc;
 
 pub struct AppView {
@@ -52,7 +51,7 @@ impl AppView {
             ComposerInputs::new(window, state.env.clone(), highlighter_factory.clone(), cx);
         let mut inspector_displays = InspectorDisplays::new(window, highlighter_factory, cx);
 
-        let executor = Arc::new(ReqwestExecutor::new());
+        let executor = state.workspace.read(cx).executor.clone();
         let tokio_rt = Arc::new(
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()

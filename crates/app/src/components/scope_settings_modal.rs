@@ -19,6 +19,7 @@ use restclient_core::models::{Auth, KeyValuePair};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ScopeSettingsTab {
     #[default]
+    General,
     Headers,
     Auth,
 }
@@ -101,12 +102,51 @@ impl RenderOnce for ScopeSettingsModal {
             }
         };
 
-        // Tab state: Headers vs Auth
-        let tab_state = window.use_state(cx, |_, _| ScopeSettingsTab::Headers);
-        let active_tab = *tab_state.read(cx);
-
+        // Tab state: General (for Workspace) vs Headers vs Auth
         let is_folder = folder_id_opt.is_some();
+        let tab_state = window.use_state(cx, |_, _| ScopeSettingsTab::General);
+        let raw_tab = *tab_state.read(cx);
+        let active_tab = if is_folder && raw_tab == ScopeSettingsTab::General {
+            ScopeSettingsTab::Headers
+        } else {
+            raw_tab
+        };
         let headers_count = current_headers.len();
+
+        let (workspace_name, workspace_path_str) = {
+            let ws_r = ws_clone.read(cx);
+            let w_name = ws_r
+                .active_workspace
+                .as_ref()
+                .map(|w| w.name.clone())
+                .unwrap_or_else(|| "default".to_string());
+            let w_path = ws_r.workspace_path.to_string_lossy().to_string();
+            (w_name, w_path)
+        };
+
+        let ws_name_holder = window.use_keyed_state(
+            gpui::SharedString::from(format!("scope-ws-name-{}", workspace_path_str)),
+            cx,
+            |window, cx| {
+                let input =
+                    cx.new(|cx| InputState::new(window, cx).placeholder("Enter workspace name..."));
+                input.update(cx, |s, cx| s.set_value(workspace_name.clone(), window, cx));
+                let ws_s = ws_clone.clone();
+                let sub = cx.subscribe_in(&input, window, move |_, inp, ev, _, cx| {
+                    if let InputEvent::PressEnter { .. } = ev {
+                        let val = inp.read(cx).value().to_string();
+                        let trimmed = val.trim();
+                        if !trimmed.is_empty() {
+                            ws_s.update(cx, |ws, cx| {
+                                ws.rename_workspace(trimmed.to_string(), cx);
+                            });
+                        }
+                    }
+                });
+                (input, sub)
+            },
+        );
+        let ws_name_input = ws_name_holder.read(cx).0.clone();
 
         let auth_label = match &current_auth {
             Auth::Inherit => "Inherit",
@@ -578,6 +618,26 @@ impl RenderOnce for ScopeSettingsModal {
                             .flex()
                             .items_center()
                             .gap(px(16.))
+                            .when(!is_folder, |this| {
+                                let tab = tab_state.clone();
+                                let is_active = active_tab == ScopeSettingsTab::General;
+                                this.child(
+                                    div()
+                                        .id("tab-scope-general")
+                                        .cursor_pointer()
+                                        .pb(px(8.))
+                                        .border_b_2()
+                                        .border_color(if is_active { t.border_focus } else { gpui::transparent_black() })
+                                        .text_xs()
+                                        .font_weight(if is_active { gpui::FontWeight::BOLD } else { gpui::FontWeight::NORMAL })
+                                        .text_color(if is_active { t.text_primary } else { t.text_muted })
+                                        .on_click(move |_, window, cx| {
+                                            tab.update(cx, |state, _| *state = ScopeSettingsTab::General);
+                                            window.refresh();
+                                        })
+                                        .child("General"),
+                                )
+                            })
                             .child({
                                 let tab = tab_state.clone();
                                 let is_active = active_tab == ScopeSettingsTab::Headers;
@@ -622,6 +682,192 @@ impl RenderOnce for ScopeSettingsModal {
                             .p(px(16.))
                             .overflow_y_scrollbar()
                             .child(match active_tab {
+                                ScopeSettingsTab::General => {
+                                    let ws_open = ws_clone.clone();
+                                    let ws_save = ws_clone.clone();
+                                    let name_inp = ws_name_input.clone();
+                                    let name_inp_save = ws_name_input.clone();
+                                    let cur_inp_val = ws_name_input.read(cx).value().to_string();
+                                    let is_name_changed =
+                                        !cur_inp_val.trim().is_empty() && cur_inp_val.trim() != workspace_name.trim();
+
+                                    div()
+                                        .w_full()
+                                        .min_w_0()
+                                        .flex()
+                                        .flex_col()
+                                        .gap(px(14.))
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .font_weight(gpui::FontWeight::BOLD)
+                                                .text_color(t.text_secondary)
+                                                .child("WORKSPACE & STORAGE"),
+                                        )
+                                        .child(
+                                            div()
+                                                .w_full()
+                                                .min_w_0()
+                                                .p(px(14.))
+                                                .rounded(px(6.))
+                                                .bg(t.bg_app)
+                                                .border_1()
+                                                .border_color(t.border)
+                                                .flex()
+                                                .flex_col()
+                                                .gap(px(14.))
+                                                // Workspace Name (Editable + Save)
+                                                .child(
+                                                    div()
+                                                        .w_full()
+                                                        .min_w_0()
+                                                        .flex()
+                                                        .flex_col()
+                                                        .gap(px(6.))
+                                                        .child(
+                                                            div()
+                                                                .text_xs()
+                                                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                                .text_color(t.text_primary)
+                                                                .child("Workspace Name"),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .w_full()
+                                                                .min_w_0()
+                                                                .flex()
+                                                                .items_center()
+                                                                .gap(px(8.))
+                                                                .child(
+                                                                    div()
+                                                                        .flex_1()
+                                                                        .min_w_0()
+                                                                        .h(px(30.))
+                                                                        .px(px(8.))
+                                                                        .rounded(px(5.))
+                                                                        .bg(t.bg_input)
+                                                                        .border_1()
+                                                                        .border_color(t.border)
+                                                                        .flex()
+                                                                        .items_center()
+                                                                        .child(
+                                                                            Input::new(&name_inp)
+                                                                                .id("ws-settings-name-input")
+                                                                                .appearance(false)
+                                                                                .bordered(false)
+                                                                                .focus_bordered(false),
+                                                                        ),
+                                                                )
+                                                                .child(
+                                                                    div()
+                                                                        .id("btn-ws-settings-save-name")
+                                                                        .flex_shrink_0()
+                                                                        .h(px(30.))
+                                                                        .px(px(12.))
+                                                                        .rounded(px(5.))
+                                                                        .bg(if is_name_changed {
+                                                                            t.primary
+                                                                        } else {
+                                                                            t.bg_input
+                                                                        })
+                                                                        .border_1()
+                                                                        .border_color(if is_name_changed {
+                                                                            t.primary
+                                                                        } else {
+                                                                            t.border
+                                                                        })
+                                                                        .text_color(if is_name_changed {
+                                                                            t.primary_foreground
+                                                                        } else {
+                                                                            t.text_muted
+                                                                        })
+                                                                        .cursor_pointer()
+                                                                        .flex()
+                                                                        .items_center()
+                                                                        .justify_center()
+                                                                        .text_xs()
+                                                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                                        .hover(|s| s.opacity(0.9))
+                                                                        .on_click(move |_, _, cx| {
+                                                                            let val = name_inp_save.read(cx).value().to_string();
+                                                                            let trimmed = val.trim();
+                                                                            if !trimmed.is_empty() {
+                                                                                ws_save.update(cx, |ws, cx| {
+                                                                                    ws.rename_workspace(trimmed.to_string(), cx);
+                                                                                });
+                                                                            }
+                                                                        })
+                                                                        .child("Save"),
+                                                                ),
+                                                        ),
+                                                )
+                                                // Separator
+                                                .child(div().w_full().h(px(1.)).bg(t.border_subtle))
+                                                // Storage Directory
+                                                .child(
+                                                    div()
+                                                        .w_full()
+                                                        .min_w_0()
+                                                        .flex()
+                                                        .items_center()
+                                                        .justify_between()
+                                                        .gap(px(12.))
+                                                        .child(
+                                                            div()
+                                                                .flex_shrink_0()
+                                                                .text_xs()
+                                                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                                .text_color(t.text_primary)
+                                                                .child("Storage Directory"),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .flex()
+                                                                .items_center()
+                                                                .gap(px(8.))
+                                                                .min_w_0()
+                                                                .child(
+                                                                    div()
+                                                                        .truncate()
+                                                                        .text_xs()
+                                                                        .font_family(".SystemMonoFont")
+                                                                        .text_color(t.text_secondary)
+                                                                        .child(workspace_path_str),
+                                                                )
+                                                                .child(
+                                                                    div()
+                                                                        .id("btn-ws-settings-open-folder")
+                                                                        .flex_shrink_0()
+                                                                        .px(px(8.))
+                                                                        .py(px(3.))
+                                                                        .rounded(px(4.))
+                                                                        .bg(t.bg_input)
+                                                                        .border_1()
+                                                                        .border_color(t.border)
+                                                                        .text_color(t.text_secondary)
+                                                                        .hover(|s| {
+                                                                            s.bg(t.bg_hover).text_color(t.text_primary)
+                                                                        })
+                                                                        .cursor_pointer()
+                                                                        .flex()
+                                                                        .items_center()
+                                                                        .gap(px(4.))
+                                                                        .text_xs()
+                                                                        .on_click(move |_, _, cx| {
+                                                                            ws_open.update(cx, |ws, _| {
+                                                                                ws.open_workspace_folder();
+                                                                            });
+                                                                        })
+                                                                        .child(
+                                                                            Icon::new(IconName::FolderOpen).size(px(12.)),
+                                                                        )
+                                                                        .child("Reveal"),
+                                                                ),
+                                                        ),
+                                                ),
+                                        )
+                                        .into_any_element()
+                                }
                                 ScopeSettingsTab::Headers => {
                                     let ws_up = ws_clone.clone();
                                     let tgt = target.clone();

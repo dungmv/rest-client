@@ -19,7 +19,6 @@ pub struct SidebarState {
     pub renaming_folder: Option<RenamingState<String>>,
     pub renaming_env: Option<RenamingState<String>>,
     pub renaming_example: Option<RenamingState<(String, String)>>,
-    pub renaming_workspace: Option<RenamingState<String>>,
     pub nav_history: Vec<String>,
     pub nav_index: usize,
 }
@@ -36,7 +35,6 @@ impl Default for SidebarState {
             renaming_folder: None,
             renaming_env: None,
             renaming_example: None,
-            renaming_workspace: None,
             nav_history: Vec::new(),
             nav_index: 0,
         }
@@ -250,47 +248,6 @@ impl SidebarState {
         cx.notify();
     }
 
-    pub fn start_renaming_workspace(
-        &mut self,
-        curr_name: String,
-        ws: Entity<WorkspaceDataState>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.cancel_any_renaming(cx);
-
-        let input = cx.new(|cx| {
-            let mut s = InputState::new(window, cx);
-            s.set_value(curr_name.clone(), window, cx);
-            s.select_all(window, cx);
-            s.focus(window, cx);
-            s
-        });
-
-        let sub = cx.subscribe(
-            &input,
-            move |this, input, event: &gpui_component::input::InputEvent, cx| {
-                if let gpui_component::input::InputEvent::PressEnter { .. } = event {
-                    let val = input.read(cx).value().to_string();
-                    this.cancel_renaming_workspace(cx);
-                    let trimmed = val.trim();
-                    if !trimmed.is_empty() {
-                        ws.update(cx, |ws, cx| {
-                            ws.rename_workspace(trimmed.to_string(), cx);
-                        });
-                    }
-                }
-            },
-        );
-
-        self.renaming_workspace = Some(RenamingState {
-            id: curr_name,
-            input,
-            subscription: sub,
-        });
-        cx.notify();
-    }
-
     pub fn start_renaming_environment(
         &mut self,
         env_id: String,
@@ -368,10 +325,6 @@ impl SidebarState {
         self.renaming_example.as_ref().map(|r| &r.input)
     }
 
-    pub fn rename_workspace_input(&self) -> Option<&Entity<InputState>> {
-        self.renaming_workspace.as_ref().map(|r| &r.input)
-    }
-
     pub fn cancel_renaming_request(&mut self, cx: &mut Context<Self>) {
         if self.renaming_request.take().is_some() {
             cx.notify();
@@ -396,12 +349,6 @@ impl SidebarState {
         }
     }
 
-    pub fn cancel_renaming_workspace(&mut self, cx: &mut Context<Self>) {
-        if self.renaming_workspace.take().is_some() {
-            cx.notify();
-        }
-    }
-
     pub fn cancel_any_renaming(&mut self, cx: &mut Context<Self>) -> bool {
         let mut cancelled = false;
         if self.renaming_request.take().is_some() {
@@ -414,9 +361,6 @@ impl SidebarState {
             cancelled = true;
         }
         if self.renaming_example.take().is_some() {
-            cancelled = true;
-        }
-        if self.renaming_workspace.take().is_some() {
             cancelled = true;
         }
         if cancelled {

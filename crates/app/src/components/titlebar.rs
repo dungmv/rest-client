@@ -211,7 +211,6 @@ impl RenderOnce for AppTitleBar {
             .child({
                 let ws_s = ws_clone.clone();
                 let modal_s = modal_clone.clone();
-                let sb_s = sb_clone.clone();
                 let recent = ws.recent_workspaces.clone();
                 let ws_path = ws.workspace_path.clone();
 
@@ -241,9 +240,6 @@ impl RenderOnce for AppTitleBar {
                     .dropdown_menu(move |menu, _window, _cx| {
                         let ws_new = ws_s.clone();
                         let ws_open = ws_s.clone();
-                        let sb_rename = sb_s.clone();
-                        let ws_rename = ws_s.clone();
-                        let curr_ws_name = ws_name.clone();
                         let modal_settings = modal_s.clone();
                         let ws_folder = ws_s.clone();
                         let ws_clean = ws_s.clone();
@@ -257,20 +253,6 @@ impl RenderOnce for AppTitleBar {
                                         modal_settings.update(cx, |state, cx| {
                                             state.open_scope_settings(
                                                 ScopeSettingsTarget::Workspace,
-                                                cx,
-                                            );
-                                        });
-                                    }),
-                            )
-                            .item(
-                                PopupMenuItem::new("Rename Workspace...")
-                                    .icon(IconName::Pencil)
-                                    .on_click(move |_, window, cx| {
-                                        sb_rename.update(cx, |state, cx| {
-                                            state.start_renaming_workspace(
-                                                curr_ws_name.clone(),
-                                                ws_rename.clone(),
-                                                window,
                                                 cx,
                                             );
                                         });
