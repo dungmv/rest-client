@@ -389,17 +389,7 @@ impl RenderOnce for ResponseInspector {
                         let badge_str = if is_sending_this_request {
                             "-".to_string()
                         } else {
-                            let total_tests = resp_s.test_results.len();
-                            let passed_tests =
-                                resp_s.test_results.iter().filter(|r| r.passed).count();
-                            let total_logs = resp_s.console_logs.len();
-                            if total_tests > 0 && total_logs > 0 {
-                                format!("{}/{} • {}", passed_tests, total_tests, total_logs)
-                            } else if total_tests > 0 {
-                                format!("{}/{}", passed_tests, total_tests)
-                            } else {
-                                format!("{}", total_logs)
-                            }
+                            format!("{}", resp_s.console_logs.len())
                         };
                         TabItem::new("tab-resp-console", "Console")
                             .active(active_tab == ResponseTabKind::Console)
