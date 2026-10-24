@@ -1,6 +1,6 @@
 use crate::state::EnvironmentState;
 use anyhow::Result;
-use gpui::{App, Entity, Task, Window};
+use gpui::{App, Entity, KeyDownEvent, ScrollHandle, Task, Window};
 use gpui_component::input::{CompletionProvider, InlineToken, InputContent};
 use gpui_component::RopeExt;
 use lsp_types::{
@@ -345,6 +345,83 @@ impl CompletionProvider for EnvCompletionProvider {
     }
 }
 
+#[derive(Default, Clone, Debug)]
+pub struct AutocompleteNavState {
+    pub selected_index: usize,
+    pub dismissed: bool,
+    pub last_query: Option<String>,
+}
+
+/// Handles keyboard navigation events (`ArrowDown`, `ArrowUp`, `Enter`, `Tab`, `Escape`)
+/// for autocomplete popups. Returns `true` if the event was consumed.
+pub fn handle_autocomplete_keydown<F>(
+    event: &KeyDownEvent,
+    candidates: &[EnvVarCandidate],
+    nav_state: &Entity<AutocompleteNavState>,
+    scroll_handle: &ScrollHandle,
+    window: &mut Window,
+    cx: &mut App,
+    on_select: F,
+) -> bool
+where
+    F: FnOnce(&EnvVarCandidate, &mut Window, &mut App),
+{
+    match event.keystroke.key.as_str() {
+        "down" | "arrowdown" => {
+            cx.stop_propagation();
+            let len = candidates.len();
+            if len > 0 {
+                let next_idx = nav_state.update(cx, |st, cx| {
+                    st.selected_index = (st.selected_index + 1) % len;
+                    cx.notify();
+                    st.selected_index
+                });
+                scroll_handle.scroll_to_item(next_idx);
+            }
+            true
+        }
+        "up" | "arrowup" => {
+            cx.stop_propagation();
+            let len = candidates.len();
+            if len > 0 {
+                let prev_idx = nav_state.update(cx, |st, cx| {
+                    if st.selected_index == 0 {
+                        st.selected_index = len - 1;
+                    } else {
+                        st.selected_index -= 1;
+                    }
+                    cx.notify();
+                    st.selected_index
+                });
+                scroll_handle.scroll_to_item(prev_idx);
+            }
+            true
+        }
+        "enter" | "tab" => {
+            cx.stop_propagation();
+            let sel_idx = nav_state.read(cx).selected_index;
+            if let Some(cand) = candidates.get(sel_idx) {
+                let cand_clone = cand.clone();
+                nav_state.update(cx, |st, cx| {
+                    st.dismissed = true;
+                    cx.notify();
+                });
+                on_select(&cand_clone, window, cx);
+            }
+            true
+        }
+        "escape" => {
+            cx.stop_propagation();
+            nav_state.update(cx, |st, cx| {
+                st.dismissed = true;
+                cx.notify();
+            });
+            true
+        }
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -459,5 +536,21 @@ mod tests {
 
         let (_, _, is_res) = get_variable_details(&env, "nonExistent");
         assert!(!is_res);
+    }
+
+    #[test]
+    fn test_autocomplete_nav_state() {
+        let mut state = AutocompleteNavState::default();
+        assert_eq!(state.selected_index, 0);
+        assert!(!state.dismissed);
+        assert_eq!(state.last_query, None);
+
+        state.last_query = Some("foo".to_string());
+        state.selected_index = 2;
+        state.dismissed = true;
+
+        assert_eq!(state.selected_index, 2);
+        assert!(state.dismissed);
+        assert_eq!(state.last_query, Some("foo".to_string()));
     }
 }

@@ -1,13 +1,13 @@
 use crate::components::env_autocomplete::{
     build_tokenized_content, detect_unclosed_env_var, get_env_completions, get_variable_details,
-    get_variable_kind_and_color,
+    get_variable_kind_and_color, handle_autocomplete_keydown, AutocompleteNavState,
 };
 use crate::state::{EnvironmentState, ModalState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    deferred, div, px, App, Entity, InteractiveElement as _, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement as _, Styled, Window,
+    deferred, div, px, App, Entity, Focusable as _, InteractiveElement as _, IntoElement,
+    ParentElement, SharedString, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::input::{Input, InputState};
 use gpui_component::scroll::ScrollableElement as _;
@@ -43,7 +43,38 @@ where
     } else {
         (Vec::new(), None)
     };
-    let show_autocomplete = !completion_candidates.is_empty();
+    let auto_state = window.use_keyed_state(
+        SharedString::from(format!("auto-nav-{}", input_id)),
+        cx,
+        |_window, _cx| AutocompleteNavState::default(),
+    );
+    let scroll_handle = window.use_keyed_state(
+        SharedString::from(format!("auto-scroll-{}", input_id)),
+        cx,
+        |_window, _cx| gpui::ScrollHandle::new(),
+    );
+
+    let current_q = unclosed.as_ref().map(|(_, _, q)| q.clone());
+    let last_q = auto_state.read(cx).last_query.clone();
+    if last_q != current_q {
+        auto_state.update(cx, |st, _| {
+            st.last_query = current_q;
+            st.dismissed = false;
+            st.selected_index = 0;
+        });
+    }
+
+    let is_focused = input_state.read(cx).focus_handle(cx).is_focused(window);
+    let is_dismissed = auto_state.read(cx).dismissed;
+    let show_autocomplete = is_focused && !is_dismissed && !completion_candidates.is_empty();
+
+    let num_candidates = completion_candidates.len();
+    if num_candidates > 0 && auto_state.read(cx).selected_index >= num_candidates {
+        auto_state.update(cx, |st, _| {
+            st.selected_index = num_candidates - 1;
+        });
+    }
+    let selected_index = auto_state.read(cx).selected_index;
 
     let hover_token_state = window.use_keyed_state(
         SharedString::from(format!("hover-env-{}", input_id)),
@@ -61,6 +92,52 @@ where
     div()
         .relative()
         .w_full()
+        .when(show_autocomplete, |this| {
+            let auto_s = auto_state.clone();
+            let scr_h = scroll_handle.read(cx).clone();
+            let cands = completion_candidates.clone();
+            let inp_c = input_state.clone();
+            let env_c = env_state.cloned();
+            let on_up_c = on_update.clone();
+            let (start_idx, end_idx) = unclosed
+                .as_ref()
+                .map(|(s, e, _)| (*s, *e))
+                .unwrap_or((0, 0));
+            let cur_text = current_val.clone();
+
+            this.capture_key_down(move |event, window, cx| {
+                handle_autocomplete_keydown(
+                    event,
+                    &cands,
+                    &auto_s,
+                    &scr_h,
+                    window,
+                    cx,
+                    |cand, window, cx| {
+                        let mut new_text = cur_text.clone();
+                        if start_idx <= new_text.len()
+                            && end_idx <= new_text.len()
+                            && start_idx <= end_idx
+                        {
+                            new_text.replace_range(
+                                start_idx..end_idx,
+                                &format!("{{{{{}}}}}", cand.name),
+                            );
+                            let content = if let Some(env_ent) = &env_c {
+                                let env = env_ent.read(cx);
+                                build_tokenized_content(&new_text, env)
+                            } else {
+                                gpui_component::input::InputContent::new(&new_text)
+                            };
+                            inp_c.update(cx, |inp, cx| {
+                                inp.set_value(content, window, cx);
+                            });
+                            on_up_c(new_text, window, cx);
+                        }
+                    },
+                );
+            })
+        })
         .child(
             div()
                 .h(px(28.))
@@ -215,140 +292,140 @@ where
             let inp_target = input_state.clone();
             let env_target = env_state.cloned();
             let on_up = on_update.clone();
+            let auto_s = auto_state.clone();
+            let scr_h = scroll_handle.read(cx).clone();
 
             this.child(
                 deferred(
                     div()
                         .absolute()
-                        .top(px(34.))
+                        .top(px(32.))
                         .left(px(0.))
                         .w(px(340.))
                         .max_h(px(200.))
                         .rounded(px(6.))
                         .bg(t.bg_card)
                         .border_1()
-                        .border_color(t.primary)
+                        .border_color(t.border)
                         .shadow_2xl()
                         .occlude()
+                        .on_mouse_down(gpui::MouseButton::Left, |_, window, cx| {
+                            window.prevent_default();
+                            cx.stop_propagation();
+                        })
                         .flex()
                         .flex_col()
                         .overflow_hidden()
                         .child(
                             div()
-                                .px(px(10.))
-                                .py(px(5.))
-                                .border_b_1()
-                                .border_color(t.border)
-                                .bg(t.bg_panel)
-                                .flex()
-                                .items_center()
-                                .justify_between()
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .font_weight(gpui::FontWeight::BOLD)
-                                        .text_color(t.text_secondary)
-                                        .child("ENVIRONMENT VARIABLES"),
-                                )
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(t.text_muted)
-                                        .child("Click to insert"),
-                                ),
-                        )
-                        .child(
-                            div()
+                                .id(SharedString::from(format!("{}-auto-list", input_id)))
                                 .flex_1()
                                 .p(px(4.))
+                                .track_scroll(&scr_h)
                                 .overflow_y_scrollbar()
                                 .bg(t.bg_card)
                                 .flex()
                                 .flex_col()
                                 .gap(px(2.))
-                                .children(completion_candidates.into_iter().map(|cand| {
-                                    let cand_name = cand.name.clone();
-                                    let cand_val = cand.value.clone();
-                                    let cand_scope = cand.scope.clone();
-                                    let cur_text = current_text.clone();
-                                    let inp_c = inp_target.clone();
-                                    let env_c = env_target.clone();
-                                    let on_up_c = on_up.clone();
-                                    let (_kind, cand_color, cand_bg_tint) =
-                                        get_variable_kind_and_color(&cand_scope, true);
+                                .children(completion_candidates.into_iter().enumerate().map(
+                                    |(idx, cand)| {
+                                        let cand_name = cand.name.clone();
+                                        let cand_val = cand.value.clone();
+                                        let cand_scope = cand.scope.clone();
+                                        let cur_text = current_text.clone();
+                                        let inp_c = inp_target.clone();
+                                        let env_c = env_target.clone();
+                                        let on_up_c = on_up.clone();
+                                        let auto_s_c = auto_s.clone();
+                                        let is_selected = idx == selected_index;
+                                        let (_kind, cand_color, cand_bg_tint) =
+                                            get_variable_kind_and_color(&cand_scope, true);
 
-                                    div()
-                                        .id(SharedString::from(format!(
-                                            "{}-cand-{}",
-                                            input_id, cand.name
-                                        )))
-                                        .cursor_pointer()
-                                        .px(px(8.))
-                                        .py(px(5.))
-                                        .rounded(px(4.))
-                                        .hover(|s| s.bg(t.bg_hover))
-                                        .flex()
-                                        .items_center()
-                                        .justify_between()
-                                        .on_click(move |_, window, cx| {
-                                            let mut new_text = cur_text.clone();
-                                            if start_idx <= new_text.len()
-                                                && end_idx <= new_text.len()
-                                                && start_idx <= end_idx
-                                            {
-                                                new_text.replace_range(
-                                                    start_idx..end_idx,
-                                                    &format!("{{{{{}}}}}", cand_name),
-                                                );
-                                                let content = if let Some(env_ent) = &env_c {
-                                                    let env = env_ent.read(cx);
-                                                    build_tokenized_content(&new_text, env)
-                                                } else {
-                                                    gpui_component::input::InputContent::new(
-                                                        &new_text,
-                                                    )
-                                                };
-                                                inp_c.update(cx, |inp, cx| {
-                                                    inp.set_value(content, window, cx);
+                                        div()
+                                            .id(SharedString::from(format!(
+                                                "{}-cand-{}",
+                                                input_id, cand.name
+                                            )))
+                                            .cursor_pointer()
+                                            .px(px(8.))
+                                            .py(px(5.))
+                                            .rounded(px(4.))
+                                            .bg(if is_selected {
+                                                t.bg_selected
+                                            } else {
+                                                gpui::transparent_black()
+                                            })
+                                            .hover(|s| s.bg(t.bg_hover))
+                                            .flex()
+                                            .items_center()
+                                            .justify_between()
+                                            .on_click(move |_, window, cx| {
+                                                auto_s_c.update(cx, |st, cx| {
+                                                    st.dismissed = true;
+                                                    cx.notify();
                                                 });
-                                                on_up_c(new_text, window, cx);
-                                            }
-                                        })
-                                        .child(
-                                            div()
-                                                .flex()
-                                                .items_center()
-                                                .gap(px(8.))
-                                                .child(
-                                                    div()
-                                                        .text_xs()
-                                                        .font_weight(gpui::FontWeight::BOLD)
-                                                        .font_family(".SystemMonoFont")
-                                                        .text_color(cand_color)
-                                                        .child(format!("{{{{{}}}}}", cand.name)),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_xs()
-                                                        .font_family(".SystemMonoFont")
-                                                        .text_color(t.text_muted)
-                                                        .child(format!("= \"{}\"", cand_val)),
-                                                ),
-                                        )
-                                        .child(
-                                            div()
-                                                .px(px(6.))
-                                                .py(px(1.))
-                                                .rounded(px(3.))
-                                                .bg(cand_bg_tint)
-                                                .border_1()
-                                                .border_color(cand_color)
-                                                .text_xs()
-                                                .font_weight(gpui::FontWeight::MEDIUM)
-                                                .text_color(cand_color)
-                                                .child(cand_scope),
-                                        )
-                                })),
+                                                let mut new_text = cur_text.clone();
+                                                if start_idx <= new_text.len()
+                                                    && end_idx <= new_text.len()
+                                                    && start_idx <= end_idx
+                                                {
+                                                    new_text.replace_range(
+                                                        start_idx..end_idx,
+                                                        &format!("{{{{{}}}}}", cand_name),
+                                                    );
+                                                    let content = if let Some(env_ent) = &env_c {
+                                                        let env = env_ent.read(cx);
+                                                        build_tokenized_content(&new_text, env)
+                                                    } else {
+                                                        gpui_component::input::InputContent::new(
+                                                            &new_text,
+                                                        )
+                                                    };
+                                                    inp_c.update(cx, |inp, cx| {
+                                                        inp.set_value(content, window, cx);
+                                                    });
+                                                    on_up_c(new_text, window, cx);
+                                                }
+                                            })
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap(px(8.))
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .font_weight(gpui::FontWeight::BOLD)
+                                                            .font_family(".SystemMonoFont")
+                                                            .text_color(cand_color)
+                                                            .child(format!(
+                                                                "{{{{{}}}}}",
+                                                                cand.name
+                                                            )),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .font_family(".SystemMonoFont")
+                                                            .text_color(t.text_muted)
+                                                            .child(format!("= \"{}\"", cand_val)),
+                                                    ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .px(px(6.))
+                                                    .py(px(1.))
+                                                    .rounded(px(3.))
+                                                    .bg(cand_bg_tint)
+                                                    .border_1()
+                                                    .border_color(cand_color)
+                                                    .text_xs()
+                                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                                    .text_color(cand_color)
+                                                    .child(cand_scope),
+                                            )
+                                    },
+                                )),
                         ),
                 )
                 .with_priority(100),

@@ -1,14 +1,15 @@
 use crate::components::env_autocomplete::{
     build_tokenized_content, detect_unclosed_env_var, get_env_completions, get_variable_details,
-    get_variable_kind_and_color,
+    get_variable_kind_and_color, handle_autocomplete_keydown, AutocompleteNavState,
 };
 use crate::components::status_badge::MethodBadge;
 use crate::state::{EnvironmentState, ModalState, RequestSessionState};
 use crate::theme::theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    deferred, div, px, App, AppContext as _, Entity, FontWeight, InteractiveElement as _,
-    IntoElement, ParentElement, RenderOnce, StatefulInteractiveElement as _, Styled, Window,
+    deferred, div, px, App, AppContext as _, Entity, Focusable as _, FontWeight,
+    InteractiveElement as _, IntoElement, ParentElement, RenderOnce,
+    StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::input::{Input, InputState};
 use gpui_component::scroll::ScrollableElement as _;
@@ -100,7 +101,38 @@ impl RenderOnce for RequestBar {
         );
         let hovered_token = hover_token_state.read(cx).clone();
 
-        let show_autocomplete = !completion_candidates.is_empty();
+        let auto_state = window.use_keyed_state(
+            gpui::SharedString::from("auto-nav-url-bar"),
+            cx,
+            |_window, _cx| AutocompleteNavState::default(),
+        );
+        let scroll_handle = window.use_keyed_state(
+            gpui::SharedString::from("auto-scroll-url-bar"),
+            cx,
+            |_window, _cx| gpui::ScrollHandle::new(),
+        );
+
+        let current_q = unclosed.as_ref().map(|(_, _, q)| q.clone());
+        let last_q = auto_state.read(cx).last_query.clone();
+        if last_q != current_q {
+            auto_state.update(cx, |st, _| {
+                st.last_query = current_q;
+                st.dismissed = false;
+                st.selected_index = 0;
+            });
+        }
+
+        let is_focused = self.url_input.read(cx).focus_handle(cx).is_focused(window);
+        let is_dismissed = auto_state.read(cx).dismissed;
+        let show_autocomplete = is_focused && !is_dismissed && !completion_candidates.is_empty();
+
+        let num_candidates = completion_candidates.len();
+        if num_candidates > 0 && auto_state.read(cx).selected_index >= num_candidates {
+            auto_state.update(cx, |st, _| {
+                st.selected_index = num_candidates - 1;
+            });
+        }
+        let selected_index = auto_state.read(cx).selected_index;
 
         div()
             .relative()
@@ -129,6 +161,59 @@ impl RenderOnce for RequestBar {
                     .flex()
                     .items_center()
                     .gap(px(2.))
+                    .when(show_autocomplete, |this| {
+                        let auto_s = auto_state.clone();
+                        let scr_h = scroll_handle.read(cx).clone();
+                        let cands = completion_candidates.clone();
+                        let (start_idx, end_idx) = unclosed
+                            .as_ref()
+                            .map(|(pos, end, _)| (*pos, *end))
+                            .unwrap_or((0, 0));
+                        let current_url = url.clone();
+                        let inp_target = url_input_clone.clone();
+                        let ed_target = ed_clone.clone();
+                        let ws_c = ws_clone.clone();
+                        let ws_data_target = self.workspace_state.clone();
+                        let req_id_str = ed_clone.read(cx).active_request_id().to_string();
+
+                        this.capture_key_down(move |event, window, cx| {
+                            handle_autocomplete_keydown(
+                                event,
+                                &cands,
+                                &auto_s,
+                                &scr_h,
+                                window,
+                                cx,
+                                |cand, window, cx| {
+                                    let mut new_u = current_url.clone();
+                                    if start_idx <= new_u.len()
+                                        && end_idx <= new_u.len()
+                                        && start_idx <= end_idx
+                                    {
+                                        new_u.replace_range(
+                                            start_idx..end_idx,
+                                            &format!("{{{{{}}}}}", cand.name),
+                                        );
+                                        let content = {
+                                            let ws = ws_c.read(cx);
+                                            build_tokenized_content(&new_u, ws)
+                                        };
+                                        inp_target.update(cx, |inp, cx| {
+                                            inp.set_value(content, window, cx);
+                                        });
+                                        ws_data_target.update(cx, |ws, _| {
+                                            ws.update_active_request(&req_id_str, |r| {
+                                                r.apply_url(&new_u);
+                                            });
+                                        });
+                                        ed_target.update(cx, |ed, cx| {
+                                            ed.mark_dirty(cx);
+                                        });
+                                    }
+                                },
+                            );
+                        })
+                    })
                     // Method dropdown trigger
                     .child({
                         let ed_s = ed_clone.clone();
@@ -307,6 +392,8 @@ impl RenderOnce for RequestBar {
                 let ed_target = ed_clone.clone();
                 let ws_data_target = self.workspace_state.clone();
                 let req_id_str = ed_clone.read(cx).active_request_id().to_string();
+                let auto_s = auto_state.clone();
+                let scr_h = scroll_handle.read(cx).clone();
 
                 this.child(
                     deferred(
@@ -319,137 +406,135 @@ impl RenderOnce for RequestBar {
                             .rounded(px(6.))
                             .bg(t.bg_card)
                             .border_1()
-                            .border_color(t.primary)
+                            .border_color(t.border)
                             .shadow_2xl()
                             .occlude()
+                            .on_mouse_down(gpui::MouseButton::Left, |_, window, cx| {
+                                window.prevent_default();
+                                cx.stop_propagation();
+                            })
                             .flex()
                             .flex_col()
                             .overflow_hidden()
                             .child(
                                 div()
-                                    .px(px(10.))
-                                    .py(px(6.))
-                                    .border_b_1()
-                                    .border_color(t.border)
-                                    .bg(t.bg_panel)
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .font_weight(gpui::FontWeight::BOLD)
-                                            .text_color(t.text_secondary)
-                                            .child("ENVIRONMENT VARIABLES"),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(t.text_muted)
-                                            .child("Click to insert"),
-                                    ),
-                            )
-                            .child(
-                                div()
+                                    .id("url-auto-list")
                                     .flex_1()
                                     .p(px(4.))
+                                    .track_scroll(&scr_h)
                                     .overflow_y_scrollbar()
                                     .bg(t.bg_card)
                                     .flex()
                                     .flex_col()
                                     .gap(px(2.))
-                                    .children(completion_candidates.into_iter().map(|cand| {
-                                        let cand_name = cand.name.clone();
-                                        let cand_val = cand.value.clone();
-                                        let cand_scope = cand.scope.clone();
-                                        let url_c = current_url.clone();
-                                        let inp_c = inp_target.clone();
-                                        let ed_c = ed_target.clone();
-                                        let ws_c = ws_clone.clone();
-                                        let ws_data_c = ws_data_target.clone();
-                                        let req_id_c = req_id_str.clone();
-                                        let (_kind, cand_color, cand_bg_tint) =
-                                            get_variable_kind_and_color(&cand_scope, true);
+                                    .children(completion_candidates.into_iter().enumerate().map(
+                                        |(idx, cand)| {
+                                            let cand_name = cand.name.clone();
+                                            let cand_val = cand.value.clone();
+                                            let cand_scope = cand.scope.clone();
+                                            let url_c = current_url.clone();
+                                            let inp_c = inp_target.clone();
+                                            let ed_c = ed_target.clone();
+                                            let ws_c = ws_clone.clone();
+                                            let ws_data_c = ws_data_target.clone();
+                                            let req_id_c = req_id_str.clone();
+                                            let auto_s_c = auto_s.clone();
+                                            let is_selected = idx == selected_index;
+                                            let (_kind, cand_color, cand_bg_tint) =
+                                                get_variable_kind_and_color(&cand_scope, true);
 
-                                        div()
-                                            .id(gpui::SharedString::from(format!(
-                                                "cand-{}",
-                                                cand.name
-                                            )))
-                                            .cursor_pointer()
-                                            .px(px(8.))
-                                            .py(px(5.))
-                                            .rounded(px(4.))
-                                            .hover(|s| s.bg(t.bg_hover))
-                                            .flex()
-                                            .items_center()
-                                            .justify_between()
-                                            .on_click(move |_, window, cx| {
-                                                let mut new_u = url_c.clone();
-                                                if start_idx <= new_u.len()
-                                                    && end_idx <= new_u.len()
-                                                    && start_idx <= end_idx
-                                                {
-                                                    new_u.replace_range(
-                                                        start_idx..end_idx,
-                                                        &format!("{{{{{}}}}}", cand_name),
-                                                    );
-                                                    let content = {
-                                                        let ws = ws_c.read(cx);
-                                                        build_tokenized_content(&new_u, ws)
-                                                    };
-                                                    inp_c.update(cx, |inp, cx| {
-                                                        inp.set_value(content, window, cx);
+                                            div()
+                                                .id(gpui::SharedString::from(format!(
+                                                    "cand-{}",
+                                                    cand.name
+                                                )))
+                                                .cursor_pointer()
+                                                .px(px(8.))
+                                                .py(px(5.))
+                                                .rounded(px(4.))
+                                                .bg(if is_selected {
+                                                    t.bg_selected
+                                                } else {
+                                                    gpui::transparent_black()
+                                                })
+                                                .hover(|s| s.bg(t.bg_hover))
+                                                .flex()
+                                                .items_center()
+                                                .justify_between()
+                                                .on_click(move |_, window, cx| {
+                                                    auto_s_c.update(cx, |st, cx| {
+                                                        st.dismissed = true;
+                                                        cx.notify();
                                                     });
-                                                    ws_data_c.update(cx, |ws, _| {
-                                                        ws.update_active_request(&req_id_c, |r| {
-                                                            r.apply_url(&new_u);
+                                                    let mut new_u = url_c.clone();
+                                                    if start_idx <= new_u.len()
+                                                        && end_idx <= new_u.len()
+                                                        && start_idx <= end_idx
+                                                    {
+                                                        new_u.replace_range(
+                                                            start_idx..end_idx,
+                                                            &format!("{{{{{}}}}}", cand_name),
+                                                        );
+                                                        let content = {
+                                                            let ws = ws_c.read(cx);
+                                                            build_tokenized_content(&new_u, ws)
+                                                        };
+                                                        inp_c.update(cx, |inp, cx| {
+                                                            inp.set_value(content, window, cx);
                                                         });
-                                                    });
-                                                    ed_c.update(cx, |ed, cx| {
-                                                        ed.mark_dirty(cx);
-                                                    });
-                                                }
-                                            })
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .items_center()
-                                                    .gap(px(8.))
-                                                    .child(
-                                                        div()
-                                                            .text_xs()
-                                                            .font_weight(gpui::FontWeight::BOLD)
-                                                            .font_family(".SystemMonoFont")
-                                                            .text_color(cand_color)
-                                                            .child(format!(
-                                                                "{{{{{}}}}}",
-                                                                cand.name
-                                                            )),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .truncate()
-                                                            .max_w(px(150.))
-                                                            .text_xs()
-                                                            .font_family(".SystemMonoFont")
-                                                            .text_color(t.text_muted)
-                                                            .child(cand_val),
-                                                    ),
-                                            )
-                                            .child(
-                                                div()
-                                                    .px(px(6.))
-                                                    .py(px(1.))
-                                                    .rounded(px(3.))
-                                                    .bg(cand_bg_tint)
-                                                    .border_1()
-                                                    .border_color(cand_color)
-                                                    .text_xs()
-                                                    .text_color(cand_color)
-                                                    .child(cand_scope),
-                                            )
-                                    })),
+                                                        ws_data_c.update(cx, |ws, _| {
+                                                            ws.update_active_request(
+                                                                &req_id_c,
+                                                                |r| {
+                                                                    r.apply_url(&new_u);
+                                                                },
+                                                            );
+                                                        });
+                                                        ed_c.update(cx, |ed, cx| {
+                                                            ed.mark_dirty(cx);
+                                                        });
+                                                    }
+                                                })
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap(px(8.))
+                                                        .child(
+                                                            div()
+                                                                .text_xs()
+                                                                .font_weight(gpui::FontWeight::BOLD)
+                                                                .font_family(".SystemMonoFont")
+                                                                .text_color(cand_color)
+                                                                .child(format!(
+                                                                    "{{{{{}}}}}",
+                                                                    cand.name
+                                                                )),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .truncate()
+                                                                .max_w(px(150.))
+                                                                .text_xs()
+                                                                .font_family(".SystemMonoFont")
+                                                                .text_color(t.text_muted)
+                                                                .child(cand_val),
+                                                        ),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .px(px(6.))
+                                                        .py(px(1.))
+                                                        .rounded(px(3.))
+                                                        .bg(cand_bg_tint)
+                                                        .border_1()
+                                                        .border_color(cand_color)
+                                                        .text_xs()
+                                                        .text_color(cand_color)
+                                                        .child(cand_scope),
+                                                )
+                                        },
+                                    )),
                             ),
                     )
                     .with_priority(100),
