@@ -125,7 +125,7 @@ impl RenderOnce for ResponseInspector {
                                         .border_1()
                                         .border_color(gpui::Hsla { a: 0.3, ..status_color })
                                         .text_xs()
-                                        .font_weight(gpui::FontWeight::BOLD)
+                                        .font_weight(gpui::FontWeight::NORMAL)
                                         .text_color(status_color)
                                         .child(format!("● {} {}", resp.status_code, resp.status_text)),
                                 )

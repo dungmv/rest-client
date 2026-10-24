@@ -334,26 +334,6 @@ pub fn render_folder_node(folder: &Folder, ctx: &SidebarRenderContext) -> Option
                                     .into_any_element()
                             },
                         ),
-                )
-                .when(
-                    folder_git_status != SidebarGitStatus::Clean,
-                    |this| match folder_git_status {
-                        SidebarGitStatus::New => this.child(
-                            div()
-                                .text_xs()
-                                .font_weight(gpui::FontWeight::BOLD)
-                                .text_color(git_green)
-                                .child("U"),
-                        ),
-                        SidebarGitStatus::Modified => this.child(
-                            div()
-                                .text_xs()
-                                .font_weight(gpui::FontWeight::BOLD)
-                                .text_color(git_yellow)
-                                .child("M"),
-                        ),
-                        SidebarGitStatus::Clean => this,
-                    },
                 ),
         )
         // Folder items

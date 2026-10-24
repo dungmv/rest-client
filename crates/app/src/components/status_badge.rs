@@ -44,11 +44,22 @@ impl RenderOnce for MethodBadge {
 #[derive(IntoElement)]
 pub struct StatusCodeBadge {
     status_code: u16,
+    font_weight: gpui::FontWeight,
 }
 
 impl StatusCodeBadge {
     pub fn new(status_code: u16) -> Self {
-        Self { status_code }
+        Self {
+            status_code,
+            font_weight: gpui::FontWeight::NORMAL,
+        }
+    }
+
+    // Builder method for future customization of status badge font weight
+    #[allow(dead_code)]
+    pub fn font_weight(mut self, weight: gpui::FontWeight) -> Self {
+        self.font_weight = weight;
+        self
     }
 }
 
@@ -66,7 +77,7 @@ impl RenderOnce for StatusCodeBadge {
             .bg(bg_color)
             .text_color(color)
             .text_xs()
-            .font_weight(gpui::FontWeight::BOLD)
+            .font_weight(self.font_weight)
             .child(format!("{}", self.status_code))
     }
 }
@@ -82,5 +93,14 @@ mod tests {
 
         let bold_badge = badge.font_weight(gpui::FontWeight::SEMIBOLD);
         assert_eq!(bold_badge.font_weight, gpui::FontWeight::SEMIBOLD);
+    }
+
+    #[test]
+    fn test_status_code_badge_font_weight_default_and_builder() {
+        let badge = StatusCodeBadge::new(200);
+        assert_eq!(badge.font_weight, gpui::FontWeight::NORMAL);
+
+        let custom_badge = badge.font_weight(gpui::FontWeight::MEDIUM);
+        assert_eq!(custom_badge.font_weight, gpui::FontWeight::MEDIUM);
     }
 }

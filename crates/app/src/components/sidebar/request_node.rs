@@ -409,11 +409,7 @@ pub fn render_request_node(
                     div()
                         .text_xs()
                         .font_family(".SystemMonoFont")
-                        .font_weight(if req_git_status != SidebarGitStatus::Clean {
-                            gpui::FontWeight::MEDIUM
-                        } else {
-                            gpui::FontWeight::NORMAL
-                        })
+                        .font_weight(gpui::FontWeight::NORMAL)
                         .text_color(req_name_color)
                         .truncate()
                         .child(req.display_name.clone())
@@ -437,29 +433,6 @@ pub fn render_request_node(
                             .child(Icon::new(IconName::RefreshCw).size(px(12.))),
                     )
                 })
-                .when(ctx.unsaved_requests.contains(&req.id), |this| {
-                    this.child(div().text_xs().text_color(t.primary).child("●"))
-                })
-                .when(
-                    req_git_status != SidebarGitStatus::Clean,
-                    |this| match req_git_status {
-                        SidebarGitStatus::New => this.child(
-                            div()
-                                .text_xs()
-                                .font_weight(gpui::FontWeight::BOLD)
-                                .text_color(git_green)
-                                .child("U"),
-                        ),
-                        SidebarGitStatus::Modified => this.child(
-                            div()
-                                .text_xs()
-                                .font_weight(gpui::FontWeight::BOLD)
-                                .text_color(git_yellow)
-                                .child("M"),
-                        ),
-                        SidebarGitStatus::Clean => this,
-                    },
-                )
                 .when_some(req.last_status_code, |this, code| {
                     this.child(StatusCodeBadge::new(code))
                 }),
